@@ -56,7 +56,7 @@ function AppShell() {
   return (
     <>
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
-      <div className="flex h-[100dvh] w-full flex-col bg-background">
+      <div className="flex w-full flex-col bg-background viewport-full">
         {/* Full-width top bar (desktop) — includes collapse toggle at far left */}
         <div
           className="hidden md:flex shrink-0"
@@ -114,10 +114,10 @@ function AppShell() {
         </div>
 
         {/* Below: Ribbon + sidebar + editor */}
-        <div className="relative flex flex-1 min-h-0">
-          {/* Mobile header */}
+        <div className="relative flex flex-1 min-h-0 flex-col md:flex-row">
+          {/* Mobile header — in flex flow on mobile, pushes content down */}
           <header
-            className="flex items-center gap-2 px-3 md:hidden absolute top-0 left-0 right-0 z-10"
+            className="flex items-center gap-2 px-3 md:hidden shrink-0 z-10"
             style={{ height: 40, background: "var(--tab-active)", borderBottom: "1px solid var(--border)" }}
           >
             <button

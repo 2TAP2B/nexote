@@ -124,6 +124,12 @@ body {
   height: 100%;
 }
 
+/* Full viewport height with dvh fallback for mobile browsers */
+.viewport-full {
+  height: 100vh;
+  height: 100dvh;
+}
+
 body {
   background-color: var(--background);
   color: var(--foreground);
