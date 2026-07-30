@@ -31,56 +31,61 @@ export default function TabBar({ onOpenPalette }: TabBarProps) {
   }, [menuOpen]);
 
   return (
-    <div className="relative flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-muted/40 px-2 py-2">
-      {openTabs.map((id) => {
-        const note = notesById[id];
-        const title = note?.title || "Untitled";
-        const active = id === activeId;
-        return (
-          <div
-            key={id}
-            role="tab"
-            tabIndex={0}
-            aria-selected={active}
-            onClick={() => void openTab(id)}
-            onMouseDown={(e) => {
-              if (e.button === 1) {
-                e.preventDefault();
-                closeTab(id);
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                void openTab(id);
-              }
-            }}
-            className={[
-              "group flex max-w-[200px] min-w-[110px] cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
-              active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
-            ].join(" ")}
-          >
-            <span className="truncate">{title}</span>
-            <button
-              type="button"
-              aria-label="Close tab"
-              title="Close tab"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeTab(id);
+    <div className="flex shrink-0 items-center gap-1 border-b border-border bg-muted/40 px-2 py-2">
+      {/* Scrollable tabs. Kept in their own overflow container so the "+"
+          menu (which lives outside this container) is never clipped. */}
+      <div className="flex flex-1 items-center gap-1 overflow-x-auto">
+        {openTabs.map((id) => {
+          const note = notesById[id];
+          const title = note?.title || "Untitled";
+          const active = id === activeId;
+          return (
+            <div
+              key={id}
+              role="tab"
+              tabIndex={0}
+              aria-selected={active}
+              onClick={() => void openTab(id)}
+              onMouseDown={(e) => {
+                if (e.button === 1) {
+                  e.preventDefault();
+                  closeTab(id);
+                }
               }}
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  void openTab(id);
+                }
+              }}
+              className={[
+                "group flex max-w-[200px] min-w-[110px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
+                active
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+              ].join(" ")}
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        );
-      })}
+              <span className="truncate">{title}</span>
+              <button
+                type="button"
+                aria-label="Close tab"
+                title="Close tab"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(id);
+                }}
+                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
 
-      {/* "+" button with dropdown menu */}
-      <div ref={menuRef} className="relative">
+      {/* "+" button with dropdown menu. Lives outside the scroll container so
+          the menu isn't clipped by overflow-x-auto. */}
+      <div ref={menuRef} className="relative shrink-0">
         <button
           type="button"
           aria-label="New tab actions"
