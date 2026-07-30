@@ -6,7 +6,6 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  Pen,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -62,6 +61,11 @@ export type TreeControls = {
   collapseAll: () => void;
   toggleSort: () => void;
   sorted: boolean;
+  // Whether all folders are currently expanded (drives the merged
+  // expand/collapse toggle button).
+  allExpanded: boolean;
+  // Toggles between expand-all and collapse-all based on allExpanded.
+  toggleExpandCollapse: () => void;
 };
 
 type FileTreeProps = {
@@ -99,10 +103,37 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
 
   const toggleSort = useCallback(() => setSorted((v) => !v), []);
 
+  // Compute whether all folders are expanded.
+  const folderPaths = useMemo(() => allFolderPaths(tree), [tree]);
+  const allExpanded = folderPaths.every((p) => openMap[p] ?? true);
+
+  const toggleExpandCollapse = useCallback(() => {
+    if (allExpanded) {
+      collapseAll();
+    } else {
+      expandAll();
+    }
+  }, [allExpanded, collapseAll, expandAll]);
+
   // Expose controls to the parent (sidebar header buttons).
   useEffect(() => {
-    onControlsReady?.({ expandAll, collapseAll, toggleSort, sorted });
-  }, [onControlsReady, expandAll, collapseAll, toggleSort, sorted]);
+    onControlsReady?.({
+      expandAll,
+      collapseAll,
+      toggleSort,
+      sorted,
+      allExpanded,
+      toggleExpandCollapse,
+    });
+  }, [
+    onControlsReady,
+    expandAll,
+    collapseAll,
+    toggleSort,
+    sorted,
+    allExpanded,
+    toggleExpandCollapse,
+  ]);
 
   // New folder: prompt for a name, create a placeholder note inside it so the
   // folder appears on disk (empty folders aren't tracked; a note must exist).
@@ -118,15 +149,6 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
         {/* Hidden buttons so the sidebar header can trigger actions. */}
         <button id="nexote-new-note-btn" type="button" className="hidden" onClick={() => void create()} />
         <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => void newFolder()} />
-        <button
-          type="button"
-          aria-label="New note"
-          title="New note"
-          onClick={() => void create()}
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
-        >
-          <FileText className="h-4 w-4" />
-        </button>
       </div>
     );
   }
@@ -137,33 +159,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
       <button id="nexote-new-note-btn" type="button" className="hidden" onClick={() => void create()} />
       <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => void newFolder()} />
 
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Files
-        </h2>
-        <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            aria-label="New note"
-            title="New note"
-            onClick={() => void create()}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Pen className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="New folder"
-            title="New folder"
-            onClick={() => void newFolder()}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <FolderPlus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-1 pb-2">
+      <div className="flex-1 overflow-y-auto px-1 pb-2 pt-1">
         <TreeChildren
           node={tree}
           depth={0}

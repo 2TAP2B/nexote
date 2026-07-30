@@ -38,6 +38,8 @@ function AppShell() {
     collapseAll: () => {},
     toggleSort: () => {},
     sorted: false,
+    allExpanded: true,
+    toggleExpandCollapse: () => {},
   });
 
   useSwipeSidebar({
@@ -163,14 +165,15 @@ function SidebarHeader({
         active={treeControls.sorted}
       />
       <ActionButton
-        label="Expand all"
-        icon={<ChevronsDownUp className="h-4 w-4 rotate-180" />}
-        onClick={treeControls.expandAll}
-      />
-      <ActionButton
-        label="Collapse all"
-        icon={<ChevronsDownUp className="h-4 w-4" />}
-        onClick={treeControls.collapseAll}
+        label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
+        icon={
+          treeControls.allExpanded ? (
+            <ChevronsDownUp className="h-4 w-4" />
+          ) : (
+            <ChevronsDownUp className="h-4 w-4 rotate-180" />
+          )
+        }
+        onClick={treeControls.toggleExpandCollapse}
       />
       <div className="flex-1" />
       <ActionButton
