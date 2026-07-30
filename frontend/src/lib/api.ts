@@ -17,7 +17,9 @@ export type Note = NoteMeta & {
 export type NoteInput = {
   title?: string;
   body?: string;
-  path?: string;
+  // path is omitted from the JSON when undefined (don't change). Set to a
+  // string to move the note to that folder; set to "" to move to root.
+  path?: string | null;
 };
 
 export type FolderMeta = {

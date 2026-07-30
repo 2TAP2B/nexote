@@ -35,6 +35,9 @@ type NotesContextValue = {
   closeTab: (id: string) => void;
   create: (input?: { title?: string; path?: string }) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
+  // moveNote moves a note to a new folder path ("" = root) by calling update
+  // with path set. The note's title/body are preserved.
+  moveNote: (id: string, path: string) => Promise<void>;
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
@@ -166,6 +169,31 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const moveNote = useCallback(
+    async (id: string, path: string) => {
+      try {
+        // Preserve the note's current title/body while changing the path.
+        const cached = notesById[id];
+        await api.update(id, {
+          title: cached?.title,
+          body: cached?.body,
+          path,
+        });
+        await refresh();
+        // Update cache with the new path.
+        if (cached) {
+          setNotesById((prev) => ({
+            ...prev,
+            [id]: { ...cached, path },
+          }));
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to move note");
+      }
+    },
+    [notesById, refresh],
+  );
+
   const openDaily = useCallback(async () => {
     try {
       const note = await api.daily();
@@ -263,6 +291,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       closeTab,
       create,
       createFolder,
+      moveNote,
       openDaily,
       remove,
       save,
@@ -285,6 +314,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       closeTab,
       create,
       createFolder,
+      moveNote,
       openDaily,
       remove,
       save,

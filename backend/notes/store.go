@@ -168,24 +168,39 @@ func (s *Store) DeleteFolder(folderPath string) error {
 	return nil
 }
 
-// UpdateInput is the body for updating a note.
+// UpdateInput is the body for updating a note. Path is optional (nil = don't
+// change); an empty string moves the note to the root.
 type UpdateInput struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
+	Title string  `json:"title"`
+	Body  string  `json:"body"`
+	Path  *string `json:"path,omitempty"`
 }
 
-// Update rewrites a note's title and body, bumping updatedAt. The id, path and
-// createdAt are preserved.
+// Update rewrites a note's title and body, bumping updatedAt. The id and
+// createdAt are preserved. If Path is non-nil, the note is moved to that folder
+// (empty string = root); the old file is deleted and a new one written.
 func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	doc, err := s.read(id)
 	if err != nil {
 		return Document{}, err
 	}
+	oldPath := doc.Meta.Path
+
 	if title := strings.TrimSpace(in.Title); title != "" {
 		doc.Meta.Title = title
 	}
+	if in.Path != nil {
+		doc.Meta.Path = sanitizePath(*in.Path)
+	}
 	doc.Body = in.Body
 	doc.Meta.UpdatedAt = time.Now().UTC()
+
+	// If the path changed, delete the old file first, then write the new one.
+	if doc.Meta.Path != oldPath {
+		if oldFile, err := s.resolvePath(id); err == nil {
+			_ = os.Remove(oldFile)
+		}
+	}
 	if err := s.write(doc); err != nil {
 		return Document{}, err
 	}
