@@ -2,10 +2,11 @@
 
 import { Crepe } from "@milkdown/crepe";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 
-import "@milkdown/crepe/theme/common/style.css";
-import "@milkdown/crepe/theme/frame.css";
+// Crepe theme CSS is imported in src/app/globals.css so the cascade order
+// relative to our .milkdown overrides is deterministic (keeps the editor in
+// sync with the app theme, including dark mode).
 
 type MilkdownEditorProps = {
   defaultValue: string;

@@ -1,3 +1,13 @@
+/*
+ * Import Crepe's theme CSS here (before our overrides) so the cascade is
+ * deterministic. Importing from the component made the order nondeterministic
+ * and the editor stayed light in dark mode. We pull in the light `frame`
+ * theme plus the base `common` styles; dark mode is handled by our own
+ * `.dark .milkdown` overrides below, which beat Crepe's `.milkdown` rule on
+ * specificity so the editor follows the app theme.
+ */
+@import "@milkdown/crepe/theme/common/style.css";
+@import "@milkdown/crepe/theme/frame.css";
 @import "tailwindcss";
 
 /*
@@ -62,10 +72,10 @@
 }
 
 /*
- * Map our palette onto Crepe's `frame` theme variables (defined on
- * .milkdown). This keeps the editor's toolbar, slash menu, selections and
- * surfaces in sync with the app shell, using the mauve accent for primary
- * / selected / hover states.
+ * Map our palette onto Crepe's `frame` theme variables. The light overrides
+ * use `.milkdown` (same specificity as Crepe's rule, but come after it in the
+ * cascade so they win). The dark overrides use `.dark .milkdown` (higher
+ * specificity) so they reliably win in dark mode.
  */
 .milkdown {
   --crepe-color-background: var(--background);
@@ -87,6 +97,30 @@
   --crepe-color-error: #ba1a1a;
 }
 
+.dark .milkdown {
+  --crepe-color-background: var(--background);
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: var(--muted);
+  --crepe-color-surface-low: var(--border);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--primary);
+  --crepe-color-secondary: var(--border);
+  --crepe-color-on-secondary: var(--foreground);
+  --crepe-color-inverse: var(--accent);
+  --crepe-color-on-inverse: var(--accent-foreground);
+  --crepe-color-hover: color-mix(in oklab, var(--muted) 70%, var(--primary) 12%);
+  --crepe-color-selected: color-mix(in oklab, var(--muted) 55%, var(--primary) 22%);
+  --crepe-color-inline-area: var(--border);
+  --crepe-color-inline-code: #f472b6; /* pink-400, brighter on dark */
+  --crepe-color-error: #f87171;
+  --crepe-shadow-1:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.4), 0px 1px 3px 1px rgba(0, 0, 0, 0.25);
+  --crepe-shadow-2:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.4), 0px 2px 6px 2px rgba(0, 0, 0, 0.25);
+}
+
 html,
 body {
   height: 100%;
@@ -99,4 +133,20 @@ body {
     "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Let the editor use the full width of its pane. Crepe's reset pads
+ * .ProseMirror heavily (60px 120px); we reduce that on narrow screens and keep
+ * a comfortable measure on wide ones.
+ */
+.milkdown .ProseMirror {
+  padding: 32px 24px;
+  max-width: none;
+}
+
+@media (min-width: 768px) {
+  .milkdown .ProseMirror {
+    padding: 48px 64px;
+  }
 }

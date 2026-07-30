@@ -70,12 +70,14 @@ func Decode(data []byte) (Document, error) {
 	if err != nil && err != io.EOF {
 		return doc, err
 	}
+	firstRaw := first
 	first = bytes.TrimRight(first, "\r\n")
 
-	// No frontmatter: treat the whole file as body.
+	// No frontmatter: treat the whole file as body. Reassemble using the raw
+	// first line (with its newline) so the body is byte-identical to the input.
 	if string(first) != frontmatterDelim {
 		var buf bytes.Buffer
-		buf.Write(first)
+		buf.Write(firstRaw)
 		if _, err := io.Copy(&buf, r); err != nil {
 			return doc, err
 		}

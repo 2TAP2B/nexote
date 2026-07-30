@@ -12,6 +12,8 @@ import {
 
 import { api, type Note, type NoteMeta } from "@/lib/api";
 
+type Draft = { title: string; body: string };
+
 type NotesContextValue = {
   notes: NoteMeta[];
   selectedId: string | null;
@@ -23,7 +25,14 @@ type NotesContextValue = {
   select: (id: string | null) => void;
   create: () => Promise<void>;
   remove: (id: string) => Promise<void>;
-  save: (id: string, input: { title: string; body: string }) => Promise<void>;
+  save: (id: string, input: Draft) => Promise<void>;
+  // forceSave persists the current draft (kept in sync by EditorPane) for the
+  // selected note immediately, bypassing the EditorPane debounce. Used by the
+  // Cmd/Ctrl+S shortcut.
+  forceSave: () => Promise<void>;
+  // setDraft is called by EditorPane on every title/body change so shortcuts
+  // can save the latest values without prop-drilling.
+  setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
 };
 
@@ -119,8 +128,17 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // the previous one to finish, keeping updates ordered.
   const inflight = useRef<Promise<void> | null>(null);
 
+  // Latest draft for the selected note, kept in sync by EditorPane. Kept in a
+  // ref (not state) so shortcut saves read the freshest value without
+  // re-rendering on every keystroke.
+  const draftRef = useRef<Draft>({ title: "", body: "" });
+
+  const setDraft = useCallback((draft: Draft) => {
+    draftRef.current = draft;
+  }, []);
+
   const save = useCallback(
-    async (id: string, input: { title: string; body: string }) => {
+    async (id: string, input: Draft) => {
       const prev = inflight.current ?? Promise.resolve();
       const run = prev.then(async () => {
         setSaving(true);
@@ -139,6 +157,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const forceSave = useCallback(async () => {
+    if (!selectedId) return;
+    await save(selectedId, draftRef.current);
+  }, [save, selectedId]);
+
   const value = useMemo<NotesContextValue>(
     () => ({
       notes,
@@ -152,6 +175,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       create,
       remove,
       save,
+      forceSave,
+      setDraft,
       refresh,
     }),
     [
@@ -166,6 +191,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       create,
       remove,
       save,
+      forceSave,
+      setDraft,
       refresh,
     ],
   );

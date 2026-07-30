@@ -50,6 +50,13 @@ Crepe `frame` theme via `.milkdown` overrides, so the editor and the app shell
 share one palette. A light/dark/system toggle lives in the sidebar
 (`next-themes`).
 
+v0.0.2 fixes dark-mode editor rendering: Crepe's theme CSS is imported in
+`globals.css` before the overrides, and dark overrides are scoped under
+`.dark .milkdown` (higher specificity) so the editor follows the app theme in
+both light and dark. The editor uses the full pane width with responsive
+padding, and the layout is mobile-responsive (sidebar slides in on small
+screens).
+
 ## Getting started
 
 Enter the devshell (requires [direnv](https://direnv.net) + Nix with flakes):
@@ -76,7 +83,7 @@ cd frontend && pnpm install
 
 ```bash
 # backend
-cd backend && go vet ./... && go build ./...
+cd backend && go vet ./... && go build ./... && go test ./...
 
 # frontend
 cd frontend && pnpm typecheck && pnpm build
@@ -94,6 +101,7 @@ nexote/
 └── frontend/                # Next.js + Milkdown
     └── src/
         ├── app/             # layout, page, globals.css
-        ├── components/      # MilkdownEditor, Sidebar, EditorPane, ThemeToggle, NotesProvider
+        ├── components/      # MilkdownEditor, Sidebar, EditorPane, ThemeToggle,
+        │                    # NotesProvider, DeleteConfirm, Shortcuts
         └── lib/             # api client, notes context
 ```

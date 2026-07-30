@@ -12,7 +12,7 @@ const MilkdownEditorWrapper = dynamic(
 );
 
 export default function EditorPane() {
-  const { selected, selectedId, save, saving } = useNotes();
+  const { selected, selectedId, save, saving, setDraft } = useNotes();
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -44,6 +44,12 @@ export default function EditorPane() {
     setBody(markdown);
   }, []);
 
+  // Keep the provider's draft ref in sync so the Cmd/Ctrl+S shortcut saves
+  // the latest values without waiting for the debounce.
+  useEffect(() => {
+    setDraft({ title, body });
+  }, [title, body, setDraft]);
+
   // Debounced autosave. Any change to title or body schedules a save 800ms
   // later; a subsequent change resets the timer.
   useEffect(() => {
@@ -66,27 +72,27 @@ export default function EditorPane() {
   }
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-3">
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-border px-4 py-3 md:px-6">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Untitled"
-          className="flex-1 bg-transparent text-lg font-semibold text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-foreground outline-none placeholder:text-muted-foreground md:text-lg"
         />
-        <span className="text-xs text-muted-foreground">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {saving ? "Saving…" : "Saved"}
         </span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto max-w-3xl">
-          <MilkdownEditorWrapper
-            key={selected.id}
-            defaultValue={selected.body}
-            onChange={handleEditorChange}
-          />
-        </div>
+      {/* Editor fills the available width; the inner max-width cap is removed
+          so long lines and wide tables use the full pane. */}
+      <div className="flex-1 overflow-y-auto">
+        <MilkdownEditorWrapper
+          key={selected.id}
+          defaultValue={selected.body}
+          onChange={handleEditorChange}
+        />
       </div>
     </main>
   );
