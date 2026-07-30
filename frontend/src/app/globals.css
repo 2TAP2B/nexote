@@ -32,6 +32,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-ring: var(--ring);
 
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -95,6 +99,11 @@
   --crepe-color-inline-area: var(--border);
   --crepe-color-inline-code: #be185d; /* rose-700, complements mauve */
   --crepe-color-error: #ba1a1a;
+
+  /* Fonts: Inter for UI/body, Lora for headings, JetBrains Mono for code. */
+  --crepe-font-default: var(--font-sans), system-ui, sans-serif;
+  --crepe-font-title: var(--font-serif), Georgia, serif;
+  --crepe-font-code: var(--font-mono), "Fira Code", monospace;
 }
 
 .dark .milkdown {
@@ -129,24 +138,35 @@ body {
 body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family:
-    "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 /*
- * Let the editor use the full width of its pane. Crepe's reset pads
- * .ProseMirror heavily (60px 120px); we reduce that on narrow screens and keep
- * a comfortable measure on wide ones.
+ * Editor sizing. Crepe's reset pads .ProseMirror 60px 120px and the block
+ * handle ("+" button) is absolutely positioned in that left gutter. We keep a
+ * generous left gutter so the handle never overlaps the sidebar, and cap the
+ * text measure so long lines stay readable. The editor is centered with
+ * auto margins; on very wide panes the cap keeps it comfortable.
  */
 .milkdown .ProseMirror {
-  padding: 32px 24px;
-  max-width: none;
+  padding: 32px 24px 32px 56px;
+  max-width: 72ch;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 @media (min-width: 768px) {
   .milkdown .ProseMirror {
-    padding: 48px 64px;
+    padding: 48px 48px 48px 72px;
   }
+}
+
+/* Keep the block handle inside the editor's left gutter, above the sidebar. */
+.milkdown .milkdown-block-handle {
+  z-index: 5;
+}
+.milkdown .milkdown-slash-menu {
+  z-index: 20;
 }

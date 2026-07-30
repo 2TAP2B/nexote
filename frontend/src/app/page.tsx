@@ -9,8 +9,9 @@ import { NotesProvider } from "@/lib/notes-context";
 
 export default function Page() {
   // On mobile the sidebar is an overlay toggled by a top-bar menu button; on
-  // md+ it is a static column. This state only affects small screens.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // md+ it is a static column that can also be folded to a narrow rail.
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <NotesProvider>
@@ -21,7 +22,7 @@ export default function Page() {
           <button
             type="button"
             aria-label="Toggle notes list"
-            onClick={() => setSidebarOpen((v) => !v)}
+            onClick={() => setMobileOpen((v) => !v)}
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-foreground"
           >
             ☰
@@ -30,16 +31,17 @@ export default function Page() {
         </header>
 
         <div className="relative flex min-h-0 flex-1">
-          {/* Sidebar: static on md+, slide-in overlay on mobile */}
           <Sidebar
-            mobileOpen={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
+            mobileOpen={mobileOpen}
+            onClose={() => setMobileOpen(false)}
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed((v) => !v)}
           />
-          {sidebarOpen && (
+          {mobileOpen && (
             <button
               type="button"
               aria-label="Close notes list"
-              onClick={() => setSidebarOpen(false)}
+              onClick={() => setMobileOpen(false)}
               className="absolute inset-0 z-10 bg-black/30 md:hidden"
             />
           )}
