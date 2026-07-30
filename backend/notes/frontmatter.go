@@ -4,13 +4,15 @@
 //	---
 //	id: <id>
 //	title: <title>
+//	path: <optional folder path, e.g. "Journal/2026">
 //	createdAt: <RFC3339>
 //	updatedAt: <RFC3339>
 //	---
 //	<markdown body>
 //
-// This matches the existing .notes-dev/*.md files so the store is
-// backward-compatible with the prior prototype.
+// The id is the filename (without .md); the path is the folder the file lives
+// in, relative to the store root. This keeps notes organized in a tree while
+// the id remains the stable handle for API operations.
 package notes
 
 import (
@@ -28,6 +30,7 @@ import (
 type Meta struct {
 	ID        string    `yaml:"id"`
 	Title     string    `yaml:"title"`
+	Path      string    `yaml:"path,omitempty"`
 	CreatedAt time.Time `yaml:"createdAt"`
 	UpdatedAt time.Time `yaml:"updatedAt"`
 }

@@ -13,7 +13,7 @@ const MilkdownEditorWrapper = dynamic(
 );
 
 export default function EditorPane() {
-  const { selected, selectedId, save, saving, setDraft } = useNotes();
+  const { activeNote, activeId, save, saving, setDraft } = useNotes();
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -23,19 +23,19 @@ export default function EditorPane() {
   // from a freshly loaded note (avoid clobbering on swap).
   const skipNextChange = useRef(false);
 
-  // When the selected note changes, reset local state from the server payload.
+  // When the active note changes, reset local state from the cached payload.
   useEffect(() => {
-    if (!selected) {
+    if (!activeNote) {
       setTitle("");
       setBody("");
       setLoadedKey(null);
       return;
     }
-    setTitle(selected.title);
-    setBody(selected.body);
-    setLoadedKey(selected.id);
+    setTitle(activeNote.title);
+    setBody(activeNote.body);
+    setLoadedKey(activeNote.id);
     skipNextChange.current = true;
-  }, [selected]);
+  }, [activeNote]);
 
   const handleEditorChange = useCallback((markdown: string) => {
     if (skipNextChange.current) {
@@ -54,17 +54,17 @@ export default function EditorPane() {
   // Debounced autosave. Any change to title or body schedules a save 800ms
   // later; a subsequent change resets the timer.
   useEffect(() => {
-    if (!selectedId || loadedKey !== selectedId) return;
+    if (!activeId || loadedKey !== activeId) return;
     // Don't save before the editor has been hydrated with the loaded note.
     if (skipNextChange.current) return;
 
     const t = setTimeout(() => {
-      void save(selectedId, { title, body });
+      void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);
-  }, [selectedId, loadedKey, title, body, save]);
+  }, [activeId, loadedKey, title, body, save]);
 
-  if (!selected) {
+  if (!activeNote) {
     return (
       <main className="flex flex-1 items-center justify-center bg-background p-6">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
@@ -108,8 +108,8 @@ export default function EditorPane() {
       <div className="flex-1 overflow-y-auto px-4 py-6 md:px-10 md:py-10">
         <div className="mx-auto w-full max-w-3xl">
           <MilkdownEditorWrapper
-            key={selected.id}
-            defaultValue={selected.body}
+            key={activeNote.id}
+            defaultValue={activeNote.body}
             onChange={handleEditorChange}
           />
         </div>

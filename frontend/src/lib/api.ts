@@ -5,6 +5,7 @@
 export type NoteMeta = {
   id: string;
   title: string;
+  path: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -16,6 +17,7 @@ export type Note = NoteMeta & {
 export type NoteInput = {
   title?: string;
   body?: string;
+  path?: string;
 };
 
 export class ApiError extends Error {
@@ -49,6 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   list: () => request<NoteMeta[]>("/api/notes"),
   get: (id: string) => request<Note>(`/api/notes/${id}`),
+  daily: () => request<Note>("/api/notes/daily"),
   create: (input: NoteInput) =>
     request<Note>("/api/notes", {
       method: "POST",

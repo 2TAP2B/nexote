@@ -28,6 +28,7 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/notes", h.list)
 	mux.HandleFunc("POST /api/notes", h.create)
+	mux.HandleFunc("GET /api/notes/daily", h.daily)
 	mux.HandleFunc("GET /api/notes/{id}", h.get)
 	mux.HandleFunc("PUT /api/notes/{id}", h.update)
 	mux.HandleFunc("DELETE /api/notes/{id}", h.delete)
@@ -71,6 +72,15 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, toPayload(doc))
+}
+
+func (h *Handler) daily(w http.ResponseWriter, r *http.Request) {
+	doc, err := h.Store.Daily()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +129,7 @@ func (h *Handler) writeStoreError(w http.ResponseWriter, err error) {
 type Payload struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
+	Path      string `json:"path"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
 	Body      string `json:"body"`
@@ -128,6 +139,7 @@ func toPayload(d notes.Document) Payload {
 	return Payload{
 		ID:        d.Meta.ID,
 		Title:     d.Meta.Title,
+		Path:      d.Meta.Path,
 		CreatedAt: d.Meta.CreatedAt.Format(timeRFC3339Millis),
 		UpdatedAt: d.Meta.UpdatedAt.Format(timeRFC3339Millis),
 		Body:      d.Body,

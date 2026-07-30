@@ -15,20 +15,27 @@ Nix flake devshell. Built on NixOS.
 - **v0.0.2** (tagged `v0.0.2`): dark-mode editor fix, full-width + responsive,
   search, keyboard shortcuts, delete confirmation, Go unit tests, foldable
   sidebar, nicer fonts (Inter/Lora/JetBrains Mono).
-- **v0.0.3** (in progress): lucide icons everywhere (no emojis), modern
+- **v0.0.3** (tagged `v0.0.3`): lucide icons everywhere (no emojis), modern
   rounded UI, responsive editor container with proper padding/margin, mobile
   swipe gestures to open/close the sidebar.
-  - Icons: `lucide-react` replaces all emoji/text glyphs (Menu, Plus, Search,
-    Trash2, FileText, PanelLeftClose/Open, Sun/Moon/Monitor, Check, Loader2,
-    AlertTriangle).
-  - Modern UI: rounded-xl/2xl shapes, subtle shadows, backdrop-blur on
-    sidebar/topbar/overlays, smoother hover transitions.
-  - Editor container: outer responsive padding (px-4/py-6 mobile, px-10/py-10
-    desktop) + max-w-3xl centered inner container; symmetric ProseMirror
-    padding so the block handle never overlaps the sidebar.
-  - Mobile swipe: `useSwipeSidebar` hook listens for horizontal touch gestures
-    — edge-swipe-right opens, swipe-left closes (vertical-dominant gestures
-    ignored to preserve scroll).
+- **v0.0.4** (in progress): Obsidian-style UI — ribbon + file tree + tabs +
+  command palette + daily journal, plus backend folder/path support.
+  - Backend: notes may live in nested folders; `Meta.Path` records the folder
+    (relative to the store root). `List` walks recursively; `Create` accepts a
+    `path`; `GET /api/notes/daily` opens-or-creates today's journal under
+    `Journal/`. Path sanitization rejects `..` and absolute paths.
+  - Ribbon: far-left icon strip (Files, Search, Daily, Command palette,
+    Settings) that switches the sidebar view.
+  - FileTree: collapsible tree built from note paths, with folder/note icons,
+    active highlighting, inline delete (with confirm).
+  - Tabs: open notes render as a tab bar above the editor; click to focus,
+    middle-click or X to close; the provider caches full notes by id so tab
+    switches are instant.
+  - Command palette: `Cmd/Ctrl+P` fuzzy-jump to any note by title.
+  - Daily journal: one-click (ribbon icon) opens today's `Journal/YYYY-MM-DD`
+    note, creating it with a seeded header if absent.
+  - Provider rewrite: `openTabs`/`activeId`/`notesById` replace the single
+    `selectedId`; `openTab`/`closeTab`/`openDaily` added.
 
 ## Architecture
 
@@ -53,12 +60,16 @@ nexote/
         │   └── globals.css  # Tailwind v4 theme tokens + .milkdown overrides
         ├── components/
         │   ├── MilkdownEditor.tsx  # Crepe via @milkdown/react, dynamic ssr:false
-        │   ├── NotesProvider.tsx   # context: list/load/create/save/delete + draft
-        │   ├── Sidebar.tsx         # note list + search + new + theme toggle + collapse
+        │   ├── NotesProvider.tsx   # context: tabs (openTabs/activeId/notesById), CRUD, daily
+        │   ├── Ribbon.tsx          # far-left icon strip (files/search/daily/command)
+        │   ├── FileTree.tsx        # collapsible tree from note paths + delete
+        │   ├── SearchView.tsx      # sidebar search view
+        │   ├── TabBar.tsx          # open notes as tabs
+        │   ├── CommandPalette.tsx  # Cmd/Ctrl+P fuzzy jump to note
         │   ├── EditorPane.tsx      # title input + editor, debounced autosave
         │   ├── ThemeToggle.tsx     # light/dark/system cycle (lucide icons)
         │   ├── DeleteConfirm.tsx   # accessible confirm dialog (lucide icons)
-        │   ├── Shortcuts.tsx       # Cmd/Ctrl+N, Cmd/Ctrl+S
+        │   ├── Shortcuts.tsx       # Cmd/Ctrl+N, S, P
         │   └── useSwipeSidebar.ts  # mobile swipe-to-open/close hook
         └── lib/
             ├── api.ts             # fetch wrapper, types (Note, NoteMeta, NoteInput)
@@ -73,6 +84,7 @@ Notes are files in `NEXOTE_NOTES_DIR` (default `.notes-dev/`), one per note:
 ---
 id: <id>
 title: <title>
+path: <optional folder, e.g. "Journal/2026">
 createdAt: <RFC3339>
 updatedAt: <RFC3339>
 ---
@@ -80,17 +92,20 @@ updatedAt: <RFC3339>
 ```
 
 - `id`: 12 random bytes, base64url, no padding (e.g. `b3xiI9Ya2mQh`).
+- `path`: folder relative to the store root; empty for root-level notes. The
+  file lives at `<dir>/<path>/<id>.md`.
 - Timestamps are UTC, serialized as RFC3339-with-millis in the API JSON.
 
 ## API (Go, `:8080`)
 
-| Method | Path              | Body                    | Returns          |
-| ------ | ----------------- | ----------------------- | ---------------- |
-| GET    | `/api/notes`      | —                       | `NoteMeta[]`     |
-| GET    | `/api/notes/{id}` | —                       | `Note`           |
-| POST   | `/api/notes`      | `{ "title"?: string }`  | `Note` (201)     |
-| PUT    | `/api/notes/{id}` | `{ "title"?, "body"? }` | `Note`           |
-| DELETE | `/api/notes/{id}` | —                       | 204              |
+| Method | Path              | Body                                  | Returns          |
+| ------ | ----------------- | ------------------------------------- | ---------------- |
+| GET    | `/api/notes`      | —                                     | `NoteMeta[]`     |
+| GET    | `/api/notes/daily`| —                                     | `Note`           |
+| GET    | `/api/notes/{id}` | —                                     | `Note`           |
+| POST   | `/api/notes`      | `{ "title"?, "path"? }`               | `Note` (201)     |
+| PUT    | `/api/notes/{id}` | `{ "title"?, "body"? }`               | `Note`           |
+| DELETE | `/api/notes/{id}` | —                                     | 204              |
 
 Errors: `{ "error": "<msg>" }` with appropriate status. `GET/PUT` on missing
 id → 404. CORS open (`*`) for dev. Next.js proxies `/api/*` → Go in dev so the

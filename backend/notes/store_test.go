@@ -179,3 +179,88 @@ func TestNewIDUniqueAndSafe(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateWithPath(t *testing.T) {
+	s := newTestStore(t)
+	doc, err := s.Create(CreateInput{Title: "Nested", Path: "Folder/Sub"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if doc.Meta.Path != "Folder/Sub" {
+		t.Fatalf("path = %q, want Folder/Sub", doc.Meta.Path)
+	}
+	// File lives in the nested folder.
+	p := filepath.Join(s.Dir, "Folder", "Sub", doc.Meta.ID+".md")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("file not in nested folder: %v", err)
+	}
+	// Get returns the path.
+	got, err := s.Get(doc.Meta.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Meta.Path != "Folder/Sub" {
+		t.Fatalf("Get path = %q, want Folder/Sub", got.Meta.Path)
+	}
+}
+
+func TestListRecursive(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.Create(CreateInput{Title: "Root"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(CreateInput{Title: "A", Path: "Folder"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(CreateInput{Title: "B", Path: "Folder/Sub"}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("len = %d, want 3", len(list))
+	}
+}
+
+func TestSanitizePath(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"  ", ""},
+		{"Folder", "Folder"},
+		{"Folder/Sub", "Folder/Sub"},
+		{"Folder\\Sub", "Folder/Sub"},
+		{"/absolute", ""},
+		{"../escape", ""},
+		{"Folder/../../../etc", ""},
+		{"./Folder", "Folder"},
+	}
+	for _, c := range cases {
+		if got := sanitizePath(c.in); got != c.want {
+			t.Errorf("sanitizePath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDailyCreatesAndReuses(t *testing.T) {
+	s := newTestStore(t)
+	d1, err := s.Daily()
+	if err != nil {
+		t.Fatalf("Daily: %v", err)
+	}
+	if d1.Meta.Path != "Journal" {
+		t.Fatalf("path = %q, want Journal", d1.Meta.Path)
+	}
+	if d1.Body == "" {
+		t.Fatal("daily body should be seeded")
+	}
+	// Second call returns the same note (not a new one).
+	d2, err := s.Daily()
+	if err != nil {
+		t.Fatalf("Daily 2: %v", err)
+	}
+	if d2.Meta.ID != d1.Meta.ID {
+		t.Fatalf("Daily created a second note: %q vs %q", d1.Meta.ID, d2.Meta.ID)
+	}
+}
