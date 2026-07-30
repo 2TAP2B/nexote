@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.*
+pnpm-workspace.yaml
+
+# next
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# go
+backend/nexote
+backend/coverage.out
+*.prof
+
+# nix
+result
+result-*
+.direnv/
+
+# notes data (dev default location)
+.notes-dev/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env
+.env
+.env*.local
+
+# os
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
