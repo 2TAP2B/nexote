@@ -1,15 +1,21 @@
 "use client";
 
-import { Menu } from "lucide-react";
+import {
+  ArrowDownAZ,
+  ChevronsDownUp,
+  FolderPlus,
+  Menu,
+  PanelLeftClose,
+  Pen,
+} from "lucide-react";
 import { useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
-import FileTree from "@/components/FileTree";
+import FileTree, { type TreeControls } from "@/components/FileTree";
 import Ribbon from "@/components/Ribbon";
 import Shortcuts from "@/components/Shortcuts";
 import TabBar from "@/components/TabBar";
-import ThemeToggle from "@/components/ThemeToggle";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { NotesProvider, useNotes } from "@/lib/notes-context";
 
@@ -21,13 +27,18 @@ export default function Page() {
   );
 }
 
-// AppShell lives inside NotesProvider so it can read openDaily from context
-// and pass it to the Ribbon without DOM hacks.
 function AppShell() {
   const { openDaily } = useNotes();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Shared tree controls so the sidebar header buttons can drive the tree.
+  const [treeControls, setTreeControls] = useState<TreeControls>({
+    expandAll: () => {},
+    collapseAll: () => {},
+    toggleSort: () => {},
+    sorted: false,
+  });
 
   useSwipeSidebar({
     open: mobileOpen,
@@ -53,7 +64,7 @@ function AppShell() {
         </header>
 
         <div className="relative flex min-h-0 flex-1">
-          {/* Ribbon (desktop only; on mobile the menu button suffices) */}
+          {/* Ribbon (desktop only) */}
           <div className="hidden md:flex">
             <Ribbon
               collapsed={collapsed}
@@ -63,8 +74,7 @@ function AppShell() {
             />
           </div>
 
-          {/* Sidebar: always the FileTree. Collapsible on desktop, overlay on
-              mobile. Collapsed state is driven from the Ribbon. */}
+          {/* Sidebar: FileTree + a header with action buttons. */}
           <aside
             className={[
               "flex h-full shrink-0 flex-col border-r border-border bg-muted/30 backdrop-blur transition-[width] duration-200",
@@ -74,11 +84,16 @@ function AppShell() {
               "md:static md:translate-x-0",
             ].join(" ")}
           >
-            <div className="flex items-center justify-between px-3 py-2">
-              <ThemeToggle />
-            </div>
+            <SidebarHeader
+              collapsed={collapsed}
+              onCollapseSidebar={() => setCollapsed(true)}
+              treeControls={treeControls}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
-              <FileTree collapsed={collapsed} />
+              <FileTree
+                collapsed={collapsed}
+                onControlsReady={setTreeControls}
+              />
             </div>
           </aside>
           {mobileOpen && (
@@ -103,5 +118,95 @@ function AppShell() {
         />
       </div>
     </>
+  );
+}
+
+// Sidebar header with the action button row: new note, new folder, sort A-Z,
+// expand all, collapse all, collapse sidebar. Hidden when collapsed (the
+// ribbon's collapse toggle expands it back).
+function SidebarHeader({
+  collapsed,
+  onCollapseSidebar,
+  treeControls,
+}: {
+  collapsed: boolean;
+  onCollapseSidebar: () => void;
+  treeControls: TreeControls;
+}) {
+  if (collapsed) return null;
+
+  return (
+    <div className="flex items-center gap-0.5 border-b border-border px-2 py-1.5">
+      <ActionButton
+        label="New note"
+        icon={<Pen className="h-4 w-4" />}
+        onClick={() => {
+          // new note — delegate to the tree's create via a synthetic event
+          document
+            .getElementById("nexote-new-note-btn")
+            ?.click();
+        }}
+      />
+      <ActionButton
+        label="New folder"
+        icon={<FolderPlus className="h-4 w-4" />}
+        onClick={() => {
+          document
+            .getElementById("nexote-new-folder-btn")
+            ?.click();
+        }}
+      />
+      <ActionButton
+        label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
+        icon={<ArrowDownAZ className="h-4 w-4" />}
+        onClick={treeControls.toggleSort}
+        active={treeControls.sorted}
+      />
+      <ActionButton
+        label="Expand all"
+        icon={<ChevronsDownUp className="h-4 w-4 rotate-180" />}
+        onClick={treeControls.expandAll}
+      />
+      <ActionButton
+        label="Collapse all"
+        icon={<ChevronsDownUp className="h-4 w-4" />}
+        onClick={treeControls.collapseAll}
+      />
+      <div className="flex-1" />
+      <ActionButton
+        label="Collapse sidebar"
+        icon={<PanelLeftClose className="h-4 w-4" />}
+        onClick={onCollapseSidebar}
+      />
+    </div>
+  );
+}
+
+function ActionButton({
+  label,
+  icon,
+  onClick,
+  active,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={[
+        "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+        active
+          ? "bg-primary/15 text-primary"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      ].join(" ")}
+    >
+      {icon}
+    </button>
   );
 }

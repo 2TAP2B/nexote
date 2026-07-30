@@ -1,7 +1,15 @@
 "use client";
 
-import { ChevronRight, FileText, Folder, FolderOpen, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ChevronRight,
+  FileText,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Pen,
+  Trash2,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
 
@@ -18,8 +26,6 @@ function emptyTree(): TreeNode {
   return { name: "", path: "", children: new Map(), notes: [] };
 }
 
-// Build a tree from note metadata. Root-level notes (path === "") go directly
-// under the root; notes with a path like "Journal/2026" nest into folders.
 function buildTree(notes: { id: string; title: string; path: string }[]): TreeNode {
   const root = emptyTree();
   for (const n of notes) {
@@ -42,19 +48,76 @@ function buildTree(notes: { id: string; title: string; path: string }[]): TreeNo
   return root;
 }
 
-type FileTreeProps = {
-  collapsed: boolean;
+// Collect every folder path in the tree (for expand/collapse all).
+function allFolderPaths(node: TreeNode, acc: string[] = []): string[] {
+  for (const child of node.children.values()) {
+    acc.push(child.path);
+    allFolderPaths(child, acc);
+  }
+  return acc;
+}
+
+export type TreeControls = {
+  expandAll: () => void;
+  collapseAll: () => void;
+  toggleSort: () => void;
+  sorted: boolean;
 };
 
-export default function FileTree({ collapsed }: FileTreeProps) {
+type FileTreeProps = {
+  collapsed: boolean;
+  onControlsReady?: (c: TreeControls) => void;
+};
+
+export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) {
   const { notes, activeId, openTab, create, remove } = useNotes();
   const tree = useMemo(() => buildTree(notes), [notes]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
+  // Open-state map keyed by folder path. Defaults to open.
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const [sorted, setSorted] = useState(false);
+
+  const isFolderOpen = useCallback(
+    (path: string) => openMap[path] ?? true,
+    [openMap],
+  );
+
+  const expandAll = useCallback(() => {
+    const paths = allFolderPaths(tree);
+    const next: Record<string, boolean> = {};
+    for (const p of paths) next[p] = true;
+    setOpenMap(next);
+  }, [tree]);
+
+  const collapseAll = useCallback(() => {
+    const paths = allFolderPaths(tree);
+    const next: Record<string, boolean> = {};
+    for (const p of paths) next[p] = false;
+    setOpenMap(next);
+  }, [tree]);
+
+  const toggleSort = useCallback(() => setSorted((v) => !v), []);
+
+  // Expose controls to the parent (sidebar header buttons).
+  useEffect(() => {
+    onControlsReady?.({ expandAll, collapseAll, toggleSort, sorted });
+  }, [onControlsReady, expandAll, collapseAll, toggleSort, sorted]);
+
+  // New folder: prompt for a name, create a placeholder note inside it so the
+  // folder appears on disk (empty folders aren't tracked; a note must exist).
+  const newFolder = useCallback(async () => {
+    const name = window.prompt("New folder name");
+    if (!name) return;
+    await create({ path: name });
+  }, [create]);
+
   if (collapsed) {
-    // Collapsed rail: just a "new note" icon button.
     return (
       <div className="flex flex-col items-center gap-2 py-2">
+        {/* Hidden buttons so the sidebar header can trigger actions. */}
+        <button id="nexote-new-note-btn" type="button" className="hidden" onClick={() => void create()} />
+        <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => void newFolder()} />
         <button
           type="button"
           aria-label="New note"
@@ -70,20 +133,36 @@ export default function FileTree({ collapsed }: FileTreeProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between px-3 py-2">
+      {/* Hidden trigger buttons for the sidebar header actions. */}
+      <button id="nexote-new-note-btn" type="button" className="hidden" onClick={() => void create()} />
+      <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => void newFolder()} />
+
+      <div className="flex items-center justify-between px-3 py-1.5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Files
         </h2>
-        <button
-          type="button"
-          aria-label="New note"
-          title="New note"
-          onClick={() => void create()}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <FileText className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            aria-label="New note"
+            title="New note"
+            onClick={() => void create()}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Pen className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="New folder"
+            title="New folder"
+            onClick={() => void newFolder()}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
+
       <div className="flex-1 overflow-y-auto px-1 pb-2">
         <TreeChildren
           node={tree}
@@ -91,6 +170,9 @@ export default function FileTree({ collapsed }: FileTreeProps) {
           activeId={activeId}
           onOpen={openTab}
           onDelete={setPendingDelete}
+          isFolderOpen={isFolderOpen}
+          setOpenMap={setOpenMap}
+          sorted={sorted}
         />
       </div>
       <DeleteConfirm
@@ -112,16 +194,28 @@ function TreeChildren({
   activeId,
   onOpen,
   onDelete,
+  isFolderOpen,
+  setOpenMap,
+  sorted,
 }: {
   node: TreeNode;
   depth: number;
   activeId: string | null;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  isFolderOpen: (path: string) => boolean;
+  setOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  sorted: boolean;
 }) {
+  const folders = [...node.children.values()];
+  const notes = [...node.notes];
+  if (sorted) {
+    folders.sort((a, b) => a.name.localeCompare(b.name));
+    notes.sort((a, b) => a.title.localeCompare(b.title));
+  }
   return (
-    <ul className={depth === 0 ? "" : ""}>
-      {[...node.children.values()].map((child) => (
+    <ul>
+      {folders.map((child) => (
         <FolderItem
           key={child.path}
           node={child}
@@ -129,9 +223,12 @@ function TreeChildren({
           activeId={activeId}
           onOpen={onOpen}
           onDelete={onDelete}
+          isFolderOpen={isFolderOpen}
+          setOpenMap={setOpenMap}
+          sorted={sorted}
         />
       ))}
-      {node.notes.map((n) => (
+      {notes.map((n) => (
         <NoteItem
           key={n.id}
           note={n}
@@ -151,19 +248,27 @@ function FolderItem({
   activeId,
   onOpen,
   onDelete,
+  isFolderOpen,
+  setOpenMap,
+  sorted,
 }: {
   node: TreeNode;
   depth: number;
   activeId: string | null;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  isFolderOpen: (path: string) => boolean;
+  setOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  sorted: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  const open = isFolderOpen(node.path);
   return (
     <li>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() =>
+          setOpenMap((prev) => ({ ...prev, [node.path]: !open }))
+        }
         className="flex w-full items-center gap-1 rounded-lg px-2 py-1 text-sm text-foreground/80 transition-colors hover:bg-muted"
         style={{ paddingLeft: 8 + depth * 12 }}
       >
@@ -187,6 +292,9 @@ function FolderItem({
           activeId={activeId}
           onOpen={onOpen}
           onDelete={onDelete}
+          isFolderOpen={isFolderOpen}
+          setOpenMap={setOpenMap}
+          sorted={sorted}
         />
       )}
     </li>

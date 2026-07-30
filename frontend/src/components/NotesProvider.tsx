@@ -32,7 +32,7 @@ type NotesContextValue = {
   // it. No-op if already open (just focuses).
   openTab: (id: string) => Promise<void>;
   closeTab: (id: string) => void;
-  create: () => Promise<void>;
+  create: (input?: { title?: string; path?: string }) => Promise<void>;
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
@@ -129,20 +129,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const create = useCallback(async () => {
-    setCreating(true);
-    try {
-      const note = await api.create({ title: "Untitled" });
-      await refresh();
-      setNotesById((prev) => ({ ...prev, [note.id]: note }));
-      setOpenTabs((prev) => [...prev, note.id]);
-      setActiveId(note.id);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create note");
-    } finally {
-      setCreating(false);
-    }
-  }, [refresh]);
+  const create = useCallback(
+    async (input?: { title?: string; path?: string }) => {
+      setCreating(true);
+      try {
+        const note = await api.create({
+          title: input?.title ?? "Untitled",
+          path: input?.path,
+        });
+        await refresh();
+        setNotesById((prev) => ({ ...prev, [note.id]: note }));
+        setOpenTabs((prev) => [...prev, note.id]);
+        setActiveId(note.id);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to create note");
+      } finally {
+        setCreating(false);
+      }
+    },
+    [refresh],
+  );
 
   const openDaily = useCallback(async () => {
     try {

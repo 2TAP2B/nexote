@@ -11,6 +11,8 @@ import {
   Terminal,
 } from "lucide-react";
 
+import ThemeToggle from "./ThemeToggle";
+
 type RibbonProps = {
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -20,7 +22,7 @@ type RibbonProps = {
 
 // Far-left vertical icon strip, Obsidian-style. The top icon collapses the
 // sidebar; below it are the sidebar action icons. Search opens the command
-// palette popup rather than switching a sidebar view.
+// palette popup. At the bottom sit the theme toggle and settings.
 export default function Ribbon({
   collapsed,
   onToggleCollapse,
@@ -70,6 +72,9 @@ export default function Ribbon({
       ))}
 
       <div className="flex-1" />
+
+      {/* Theme toggle at the bottom, above settings */}
+      <ThemeToggle />
 
       <button
         type="button"
