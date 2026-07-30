@@ -12,23 +12,23 @@ Nix flake devshell. Built on NixOS.
   - Neutral frame palette with mauve/purple accent; next-themes
     light/dark/system toggle.
   - Debounced autosave; sidebar list; title input.
-- **v0.0.2** (in progress): search, keyboard shortcuts, delete confirmation,
-  Go unit tests, plus fixes for dark-mode editor rendering, full-width editor,
-  and mobile responsive layout.
-  - Dark-mode editor fix: Crepe theme CSS imported in `globals.css` before
-    overrides; dark overrides scoped under `.dark .milkdown` (higher
-    specificity) so the editor follows the app theme reliably.
-  - Full-width editor: removed the `max-w-3xl` cap; `.ProseMirror` padding is
-    responsive (24px mobile, 64px desktop).
-  - Mobile responsive: sidebar is a slide-in overlay on `<md`, static column on
-    `md+`; mobile top bar with ☰ toggle; `100dvh` layout.
-  - Search: client-side title filter in the sidebar.
-  - Keyboard shortcuts: `Cmd/Ctrl+N` new note, `Cmd/Ctrl+S` force-save
-    (prevents the browser save dialog). Draft kept in a provider ref so the
-    shortcut saves the latest values instantly.
-  - Delete confirmation: accessible alert dialog with Esc/backdrop dismiss.
-  - Go unit tests: frontmatter encode/decode round-trip + edge cases, store
-    CRUD, id uniqueness/encoding.
+- **v0.0.2** (tagged `v0.0.2`): dark-mode editor fix, full-width + responsive,
+  search, keyboard shortcuts, delete confirmation, Go unit tests, foldable
+  sidebar, nicer fonts (Inter/Lora/JetBrains Mono).
+- **v0.0.3** (in progress): lucide icons everywhere (no emojis), modern
+  rounded UI, responsive editor container with proper padding/margin, mobile
+  swipe gestures to open/close the sidebar.
+  - Icons: `lucide-react` replaces all emoji/text glyphs (Menu, Plus, Search,
+    Trash2, FileText, PanelLeftClose/Open, Sun/Moon/Monitor, Check, Loader2,
+    AlertTriangle).
+  - Modern UI: rounded-xl/2xl shapes, subtle shadows, backdrop-blur on
+    sidebar/topbar/overlays, smoother hover transitions.
+  - Editor container: outer responsive padding (px-4/py-6 mobile, px-10/py-10
+    desktop) + max-w-3xl centered inner container; symmetric ProseMirror
+    padding so the block handle never overlaps the sidebar.
+  - Mobile swipe: `useSwipeSidebar` hook listens for horizontal touch gestures
+    — edge-swipe-right opens, swipe-left closes (vertical-dominant gestures
+    ignored to preserve scroll).
 
 ## Architecture
 
@@ -54,11 +54,12 @@ nexote/
         ├── components/
         │   ├── MilkdownEditor.tsx  # Crepe via @milkdown/react, dynamic ssr:false
         │   ├── NotesProvider.tsx   # context: list/load/create/save/delete + draft
-        │   ├── Sidebar.tsx         # note list + search + new + theme toggle
+        │   ├── Sidebar.tsx         # note list + search + new + theme toggle + collapse
         │   ├── EditorPane.tsx      # title input + editor, debounced autosave
-        │   ├── ThemeToggle.tsx     # light/dark/system cycle
-        │   ├── DeleteConfirm.tsx   # accessible confirm dialog
-        │   └── Shortcuts.tsx       # Cmd/Ctrl+N, Cmd/Ctrl+S
+        │   ├── ThemeToggle.tsx     # light/dark/system cycle (lucide icons)
+        │   ├── DeleteConfirm.tsx   # accessible confirm dialog (lucide icons)
+        │   ├── Shortcuts.tsx       # Cmd/Ctrl+N, Cmd/Ctrl+S
+        │   └── useSwipeSidebar.ts  # mobile swipe-to-open/close hook
         └── lib/
             ├── api.ts             # fetch wrapper, types (Note, NoteMeta, NoteInput)
             └── notes-context.ts   # re-export NotesProvider/useNotes + types

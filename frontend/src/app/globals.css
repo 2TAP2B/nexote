@@ -144,22 +144,19 @@ body {
 }
 
 /*
- * Editor sizing. Crepe's reset pads .ProseMirror 60px 120px and the block
- * handle ("+" button) is absolutely positioned in that left gutter. We keep a
- * generous left gutter so the handle never overlaps the sidebar, and cap the
- * text measure so long lines stay readable. The editor is centered with
- * auto margins; on very wide panes the cap keeps it comfortable.
+ * Editor sizing. The EditorPane wrapper provides the outer responsive
+ * padding/margin and a max-w-3xl container; here we only give .ProseMirror
+ * comfortable inner padding (symmetric) so the block handle ("+" button) sits
+ * in the left gutter without overlapping anything. The measure is capped by
+ * the wrapper, not here, so the editor fills its container responsively.
  */
 .milkdown .ProseMirror {
-  padding: 32px 24px 32px 56px;
-  max-width: 72ch;
-  margin-left: auto;
-  margin-right: auto;
+  padding: 24px 16px 24px 48px;
 }
 
 @media (min-width: 768px) {
   .milkdown .ProseMirror {
-    padding: 48px 48px 48px 72px;
+    padding: 32px 24px 32px 56px;
   }
 }
 

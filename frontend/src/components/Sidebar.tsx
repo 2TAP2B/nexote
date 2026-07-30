@@ -1,5 +1,6 @@
 "use client";
 
+import { FileText, PanelLeftClose, PanelLeftOpen, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
@@ -58,11 +59,11 @@ export default function Sidebar({
   return (
     <aside
       className={[
-        "flex h-full shrink-0 flex-col border-r border-border bg-muted/30 transition-[width] duration-200",
+        "flex h-full shrink-0 flex-col border-r border-border bg-muted/40 backdrop-blur transition-[width] duration-200",
         // width: collapsed rail on desktop, full on mobile
-        collapsed ? "md:w-14 w-64" : "w-64",
+        collapsed ? "md:w-16 w-64" : "w-64",
         // mobile: slide-in overlay; desktop: static column
-        "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-20 max-md:transition-transform max-md:duration-200",
+        "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200",
         mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         "md:static md:translate-x-0",
       ].join(" ")}
@@ -70,7 +71,7 @@ export default function Sidebar({
       <div
         className={[
           "flex items-center px-3 py-3",
-          collapsed ? "md:justify-center" : "justify-between",
+          collapsed ? "md:justify-center md:px-2" : "justify-between",
         ].join(" ")}
       >
         <h1
@@ -94,36 +95,46 @@ export default function Sidebar({
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={onToggleCollapse}
-            className="hidden h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:inline-flex"
+            className="hidden h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:inline-flex"
           >
-            {collapsed ? "›" : "‹"}
+            {collapsed ? (
+              <PanelLeftOpen className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
           </button>
         </div>
       </div>
 
-      <div className={collapsed ? "md:px-2 md:pb-2 px-3 pb-2" : "px-3 pb-2"}>
+      <div className={collapsed ? "md:px-2 md:pb-3 px-3 pb-3" : "px-3 pb-3"}>
         <button
           type="button"
           onClick={handleCreate}
           disabled={creating}
           title="New note"
           className={[
-            "rounded-md bg-primary text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50",
-            collapsed ? "md:h-9 md:w-9 md:p-0 w-full px-3 py-1.5" : "w-full px-3 py-1.5",
+            "inline-flex items-center justify-center gap-2 rounded-xl bg-primary font-medium text-primary-foreground shadow-sm transition-all hover:opacity-90 disabled:opacity-50",
+            collapsed
+              ? "md:h-10 md:w-10 md:p-0 w-full px-3 py-2"
+              : "w-full px-3 py-2",
           ].join(" ")}
         >
-          {collapsed ? "+" : creating ? "Creating…" : "New note"}
+          <Plus className="h-4 w-4 shrink-0" />
+          {!collapsed && <span className="text-sm">{creating ? "Creating…" : "New note"}</span>}
         </button>
       </div>
 
       {/* Search + list are hidden when collapsed on desktop. */}
-      <div className={collapsed ? "md:hidden px-3 pb-2" : "px-3 pb-2"}>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search notes…"
-          className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
-        />
+      <div className={collapsed ? "md:hidden px-3 pb-3" : "px-3 pb-3"}>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search notes…"
+            className="w-full rounded-xl border border-input bg-background py-2 pl-8 pr-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+          />
+        </div>
       </div>
 
       <nav
@@ -139,20 +150,26 @@ export default function Sidebar({
             {notes.length === 0 ? "No notes yet." : "No matches."}
           </p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="space-y-1">
             {filtered.map((note) => {
               const active = note.id === selectedId;
               return (
                 <li key={note.id}>
                   <div
                     className={[
-                      "group flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer",
+                      "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 cursor-pointer transition-colors",
                       active
                         ? "bg-primary/15 text-foreground"
                         : "text-foreground/80 hover:bg-muted",
                     ].join(" ")}
                     onClick={() => handleSelect(note.id)}
                   >
+                    <FileText
+                      className={[
+                        "h-4 w-4 shrink-0",
+                        active ? "text-primary" : "text-muted-foreground",
+                      ].join(" ")}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
                         {note.title || "Untitled"}
@@ -169,9 +186,9 @@ export default function Sidebar({
                         e.stopPropagation();
                         setPendingDelete(note.id);
                       }}
-                      className="invisible shrink-0 rounded px-1 text-muted-foreground hover:text-foreground group-hover:visible"
+                      className="invisible shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500 group-hover:visible"
                     >
-                      ✕
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </li>

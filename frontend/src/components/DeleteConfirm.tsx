@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 
 type DeleteConfirmProps = {
@@ -30,33 +31,43 @@ export default function DeleteConfirm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onClick={onCancel}
     >
       <div
         role="alertdialog"
         aria-modal="true"
         aria-label="Delete note"
-        className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg"
+        className="w-full max-w-sm rounded-2xl border border-border bg-background p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-semibold text-foreground">Delete note?</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          This cannot be undone.
-        </p>
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-500">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-foreground">
+              Delete note?
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This cannot be undone.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted"
+            className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={() => onConfirm(noteId)}
-            className="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700"
           >
+            <Trash2 className="h-4 w-4" />
             Delete
           </button>
         </div>
