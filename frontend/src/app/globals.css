@@ -135,16 +135,19 @@ body {
 /*
  * Editor: narrow centered column (720px) with generous top padding and
  * abundant bottom space for a "floating page" feel.
- * .milkdown stretches inside its flex parent, and scrolls its own content
- * so that mouse wheel events are captured directly (ProseMirror internal
- * wheel handling can conflict with ancestor scroll containers).
+ * Both .milkdown and .ProseMirror are flex children so scroll behavior
+ * is reliable regardless of ProseMirror's internal wheel handling.
  */
 .milkdown {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 .milkdown .ProseMirror {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 64px 64px 120px;
   max-width: 720px;
   margin: 0 auto;

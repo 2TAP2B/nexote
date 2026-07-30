@@ -130,7 +130,7 @@ export default function EditorPane() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-background">
+    <main className="flex min-w-0 flex-1 flex-col min-h-0 bg-background">
       {/* Title bar: nav arrows, breadcrumb, actions */}
       <div
         className="flex shrink-0 items-center px-4"
