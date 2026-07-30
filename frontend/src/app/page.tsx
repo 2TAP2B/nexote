@@ -15,7 +15,7 @@ import EditorPane from "@/components/EditorPane";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import Ribbon from "@/components/Ribbon";
 import Shortcuts from "@/components/Shortcuts";
-import TabBar from "@/components/TabBar";
+import TopBar from "@/components/TopBar";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { NotesProvider, useNotes } from "@/lib/notes-context";
 
@@ -50,68 +50,78 @@ function AppShell() {
   return (
     <>
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
-      <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background md:flex-row">
-        <header className="flex items-center gap-2 px-3 py-2 md:hidden" style={{ background: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
-          <button
-            type="button"
-            aria-label="Toggle notes list"
-            onClick={() => setMobileOpen((v) => !v)}
-            className="flex h-8 w-8 items-center justify-center text-foreground transition-colors hover:opacity-70"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="text-sm font-medium">Nexote</span>
-        </header>
+      <div className="flex h-[100dvh] w-full bg-background">
+        {/* Ribbon: vertical icon strip on the far left (desktop only) */}
+        <div className="hidden md:flex shrink-0">
+          <Ribbon
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed((v) => !v)}
+            onCommandPalette={() => setPaletteOpen(true)}
+            onDaily={() => void openDaily()}
+          />
+        </div>
 
-        <div className="relative flex min-h-0 flex-1">
-          {/* Ribbon */}
-          <div className="hidden md:flex">
-            <Ribbon
-              collapsed={collapsed}
-              onToggleCollapse={() => setCollapsed((v) => !v)}
-              onCommandPalette={() => setPaletteOpen(true)}
-              onDaily={() => void openDaily()}
-            />
-          </div>
-
-          {/* Sidebar: 300px, subtle surface, no visible border (color diff). */}
-          <aside
-            className={[
-              "flex h-full shrink-0 flex-col transition-[width] duration-200",
-              collapsed ? "md:w-12 w-[300px]" : "w-[300px]",
-              "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200",
-              mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
-              "md:static md:translate-x-0",
-            ].join(" ")}
-            style={{ background: "var(--muted)" }}
+        {/* Main vertical stack: top bar + sidebar/editor */}
+        <div className="flex flex-col min-w-0 flex-1">
+          {/* Mobile header */}
+          <header
+            className="flex items-center gap-2 px-3 md:hidden"
+            style={{ height: 40, background: "var(--topbar)", borderBottom: "1px solid var(--border)" }}
           >
-            <SidebarHeader
-              collapsed={collapsed}
-              onCollapseSidebar={() => setCollapsed(true)}
-              treeControls={treeControls}
-            />
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <FileTree
-                collapsed={collapsed}
-                onControlsReady={setTreeControls}
-              />
-            </div>
-          </aside>
-          {mobileOpen && (
             <button
               type="button"
-              aria-label="Close notes list"
-              onClick={() => setMobileOpen(false)}
-              className="absolute inset-0 z-20 md:hidden"
-              style={{ background: "rgba(0,0,0,0.4)" }}
-            />
-          )}
+              aria-label="Toggle notes list"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="flex h-7 w-7 items-center justify-center text-muted-foreground/70"
+            >
+              <Menu size={18} />
+            </button>
+            <span className="text-sm font-medium" style={{ opacity: 0.7 }}>Nexote</span>
+          </header>
 
-          {/* Main: tab bar + editor */}
-          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <TabBar onOpenPalette={() => setPaletteOpen(true)} />
-            <EditorPane />
-          </main>
+          {/* Desktop top bar (tabs only) */}
+          <div className="hidden md:flex shrink-0">
+            <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+          </div>
+
+          {/* Sidebar + editor */}
+          <div className="relative flex min-h-0 flex-1">
+            <aside
+              className={[
+                "flex h-full shrink-0 flex-col transition-[width] duration-200",
+                collapsed ? "md:w-12 w-[300px]" : "w-[300px]",
+                "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200",
+                mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
+                "md:static md:translate-x-0",
+              ].join(" ")}
+              style={{ background: "var(--sidebar)" }}
+            >
+              <SidebarHeader
+                collapsed={collapsed}
+                onCollapseSidebar={() => setCollapsed(true)}
+                treeControls={treeControls}
+              />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <FileTree
+                  collapsed={collapsed}
+                  onControlsReady={setTreeControls}
+                />
+              </div>
+            </aside>
+            {mobileOpen && (
+              <button
+                type="button"
+                aria-label="Close notes list"
+                onClick={() => setMobileOpen(false)}
+                className="absolute inset-0 z-20 md:hidden"
+                style={{ background: "rgba(0,0,0,0.4)" }}
+              />
+            )}
+
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+              <EditorPane />
+            </main>
+          </div>
         </div>
 
         <CommandPalette
@@ -123,7 +133,6 @@ function AppShell() {
   );
 }
 
-// Sidebar header: compact action buttons. Hidden when collapsed.
 function SidebarHeader({
   collapsed,
   onCollapseSidebar,
@@ -196,11 +205,13 @@ function ActionButton({
       onClick={onClick}
       className={[
         "flex h-7 w-7 items-center justify-center transition-colors",
-        active
-          ? "text-primary"
-          : "text-muted-foreground hover:text-foreground",
+        active ? "text-primary" : "text-muted-foreground hover:text-foreground",
       ].join(" ")}
-      style={active ? { background: "color-mix(in oklab, var(--primary) 12%, transparent)" } : undefined}
+      style={
+        active
+          ? { background: "color-mix(in oklab, var(--primary) 12%, transparent)" }
+          : undefined
+      }
     >
       {icon}
     </button>

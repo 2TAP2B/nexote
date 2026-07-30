@@ -35,23 +35,26 @@ export default function Ribbon({
     { icon: Bookmark, label: "Bookmarks", onClick: () => {} },
     { icon: Search, label: "Search (Ctrl+P)", onClick: onCommandPalette },
     { icon: CalendarDays, label: "Daily journal", onClick: onDaily },
-    { icon: Terminal, label: "Command palette (Ctrl+P)", onClick: onCommandPalette },
+    {
+      icon: Terminal,
+      label: "Command palette (Ctrl+P)",
+      onClick: onCommandPalette,
+    },
   ];
 
   return (
-    <div className="flex h-full w-10 shrink-0 flex-col items-center border-r border-border py-2" style={{ background: "var(--muted)" }}>
+    <div
+      className="flex h-full w-10 shrink-0 flex-col items-center pt-1"
+      style={{ background: "var(--sidebar)", borderRight: "1px solid var(--border)" }}
+    >
       <button
         type="button"
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         onClick={onToggleCollapse}
-        className="mb-1 flex h-8 w-8 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
+        className="flex h-9 w-9 items-center justify-center text-muted-foreground/85 transition-colors hover:text-foreground rounded-md hover:bg-white/5"
       >
-        {collapsed ? (
-          <ChevronRight className="h-4 w-4" />
-        ) : (
-          <ChevronLeft className="h-4 w-4" />
-        )}
+        {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
       </button>
 
       {items.map((it) => (
@@ -61,23 +64,25 @@ export default function Ribbon({
           aria-label={it.label}
           title={it.label}
           onClick={it.onClick}
-          className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground/85 transition-colors hover:text-foreground rounded-md hover:bg-white/5"
         >
-          <it.icon className="h-4 w-4" />
+          <it.icon size={18} />
         </button>
       ))}
 
       <div className="flex-1" />
 
-      <ThemeToggle />
-      <button
-        type="button"
-        aria-label="Settings"
-        title="Settings"
-        className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
-      >
-        <Settings className="h-4 w-4" />
-      </button>
+      <div className="flex flex-col items-center pb-2">
+        <ThemeToggle />
+        <button
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground/85 transition-colors hover:text-foreground rounded-md hover:bg-white/5"
+        >
+          <Settings size={18} />
+        </button>
+      </div>
     </div>
   );
 }
