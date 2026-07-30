@@ -79,12 +79,12 @@ export default function EditorPane() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
-      <div className="flex items-center gap-3 border-b border-border px-4 py-3 md:px-8">
+      <div className="flex items-center justify-center gap-3 border-b border-border px-4 py-3 md:px-8">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Untitled"
-          className="min-w-0 flex-1 bg-transparent text-base font-semibold text-foreground outline-none placeholder:text-muted-foreground md:text-lg"
+          className="w-full max-w-md bg-transparent text-center text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
         />
         <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {saving ? (

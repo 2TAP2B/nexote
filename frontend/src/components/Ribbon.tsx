@@ -1,64 +1,61 @@
 "use client";
 
 import {
+  Bookmark,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   Search,
   Settings,
   Terminal,
 } from "lucide-react";
 
-export type RibbonView = "files" | "search";
-
 type RibbonProps = {
-  view: RibbonView;
-  onViewChange: (v: RibbonView) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
   onCommandPalette: () => void;
   onDaily: () => void;
 };
 
-// Far-left vertical icon strip, Obsidian-style. Each icon switches the sidebar
-// view or triggers an action (command palette, daily journal, settings).
+// Far-left vertical icon strip, Obsidian-style. The top icon collapses the
+// sidebar; below it are the sidebar action icons. Search opens the command
+// palette popup rather than switching a sidebar view.
 export default function Ribbon({
-  view,
-  onViewChange,
+  collapsed,
+  onToggleCollapse,
   onCommandPalette,
   onDaily,
 }: RibbonProps) {
   const items: {
     icon: typeof FileText;
     label: string;
-    active: boolean;
     onClick: () => void;
   }[] = [
-    {
-      icon: FileText,
-      label: "Files",
-      active: view === "files",
-      onClick: () => onViewChange("files"),
-    },
-    {
-      icon: Search,
-      label: "Search",
-      active: view === "search",
-      onClick: () => onViewChange("search"),
-    },
-    {
-      icon: CalendarDays,
-      label: "Daily journal",
-      active: false,
-      onClick: onDaily,
-    },
-    {
-      icon: Terminal,
-      label: "Command palette (Ctrl+P)",
-      active: false,
-      onClick: onCommandPalette,
-    },
+    { icon: FileText, label: "Files", onClick: () => {} },
+    { icon: Bookmark, label: "Bookmarks", onClick: () => {} },
+    { icon: Search, label: "Search (Ctrl+P)", onClick: onCommandPalette },
+    { icon: CalendarDays, label: "Daily journal", onClick: onDaily },
+    { icon: Terminal, label: "Command palette (Ctrl+P)", onClick: onCommandPalette },
   ];
 
   return (
     <div className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-muted/50 py-2">
+      {/* Collapse toggle at the very top */}
+      <button
+        type="button"
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={onToggleCollapse}
+        className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        {collapsed ? (
+          <ChevronRight className="h-5 w-5" />
+        ) : (
+          <ChevronLeft className="h-5 w-5" />
+        )}
+      </button>
+
       {items.map((it) => (
         <button
           key={it.label}
@@ -66,12 +63,7 @@ export default function Ribbon({
           aria-label={it.label}
           title={it.label}
           onClick={it.onClick}
-          className={[
-            "flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
-            it.active
-              ? "bg-primary/15 text-primary"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          ].join(" ")}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <it.icon className="h-5 w-5" />
         </button>

@@ -1,13 +1,12 @@
 "use client";
 
-import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Menu } from "lucide-react";
 import { useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
 import FileTree from "@/components/FileTree";
-import Ribbon, { type RibbonView } from "@/components/Ribbon";
-import SearchView from "@/components/SearchView";
+import Ribbon from "@/components/Ribbon";
 import Shortcuts from "@/components/Shortcuts";
 import TabBar from "@/components/TabBar";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -26,7 +25,6 @@ export default function Page() {
 // and pass it to the Ribbon without DOM hacks.
 function AppShell() {
   const { openDaily } = useNotes();
-  const [view, setView] = useState<RibbonView>("files");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -58,15 +56,15 @@ function AppShell() {
           {/* Ribbon (desktop only; on mobile the menu button suffices) */}
           <div className="hidden md:flex">
             <Ribbon
-              view={view}
-              onViewChange={setView}
+              collapsed={collapsed}
+              onToggleCollapse={() => setCollapsed((v) => !v)}
               onCommandPalette={() => setPaletteOpen(true)}
               onDaily={() => void openDaily()}
             />
           </div>
 
-          {/* Sidebar: FileTree or SearchView. Collapsible on desktop, overlay
-              on mobile. */}
+          {/* Sidebar: always the FileTree. Collapsible on desktop, overlay on
+              mobile. Collapsed state is driven from the Ribbon. */}
           <aside
             className={[
               "flex h-full shrink-0 flex-col border-r border-border bg-muted/30 backdrop-blur transition-[width] duration-200",
@@ -76,18 +74,11 @@ function AppShell() {
               "md:static md:translate-x-0",
             ].join(" ")}
           >
-            <SidebarHeader
-              collapsed={collapsed}
-              onToggleCollapse={() => setCollapsed((v) => !v)}
-            />
+            <div className="flex items-center justify-between px-3 py-2">
+              <ThemeToggle />
+            </div>
             <div className="min-h-0 flex-1 overflow-hidden">
-              {collapsed ? (
-                <FileTree collapsed />
-              ) : view === "files" ? (
-                <FileTree collapsed={false} />
-              ) : (
-                <SearchView />
-              )}
+              <FileTree collapsed={collapsed} />
             </div>
           </aside>
           {mobileOpen && (
@@ -101,7 +92,7 @@ function AppShell() {
 
           {/* Main: tab bar + editor */}
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <TabBar />
+            <TabBar onOpenPalette={() => setPaletteOpen(true)} />
             <EditorPane />
           </main>
         </div>
@@ -112,38 +103,5 @@ function AppShell() {
         />
       </div>
     </>
-  );
-}
-
-// Sidebar header with the collapse toggle and theme toggle.
-function SidebarHeader({
-  collapsed,
-  onToggleCollapse,
-}: {
-  collapsed: boolean;
-  onToggleCollapse: () => void;
-}) {
-  return (
-    <div
-      className={[
-        "flex items-center px-3 py-2",
-        collapsed ? "md:justify-center md:px-2" : "justify-between",
-      ].join(" ")}
-    >
-      <ThemeToggle />
-      <button
-        type="button"
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        onClick={onToggleCollapse}
-        className="hidden h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:inline-flex"
-      >
-        {collapsed ? (
-          <PanelLeftOpen className="h-4 w-4" />
-        ) : (
-          <PanelLeftClose className="h-4 w-4" />
-        )}
-      </button>
-    </div>
   );
 }
