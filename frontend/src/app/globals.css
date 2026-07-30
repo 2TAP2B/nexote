@@ -66,25 +66,29 @@
   --ring: #a78bfa;
 }
 
-/* Crepe theme mapping */
+/* Crepe theme mapping — improved for visibility */
 .milkdown {
   --crepe-color-background: var(--background);
   --crepe-color-on-background: var(--foreground);
-  --crepe-color-surface: var(--muted);
-  --crepe-color-surface-low: var(--border);
-  --crepe-color-on-surface: var(--foreground);
-  --crepe-color-on-surface-variant: var(--muted-foreground);
-  --crepe-color-outline: var(--border);
-  --crepe-color-primary: var(--primary);
-  --crepe-color-secondary: var(--border);
-  --crepe-color-on-secondary: var(--foreground);
-  --crepe-color-inverse: var(--accent);
-  --crepe-color-on-inverse: var(--accent-foreground);
-  --crepe-color-hover: color-mix(in oklab, var(--muted) 80%, var(--primary) 6%);
-  --crepe-color-selected: color-mix(in oklab, var(--muted) 70%, var(--primary) 14%);
-  --crepe-color-inline-area: var(--border);
-  --crepe-color-inline-code: #be185d;
+  --crepe-color-surface: #f8f8f8;
+  --crepe-color-surface-low: #f0f0f0;
+  --crepe-color-on-surface: #1e1e1e;
+  --crepe-color-on-surface-variant: #6a6a6a;
+  --crepe-color-outline: #b0b0b0;
+  --crepe-color-primary: #7c3aed;
+  --crepe-color-secondary: #e5e5e5;
+  --crepe-color-on-secondary: #1e1e1e;
+  --crepe-color-inverse: #a78bfa;
+  --crepe-color-on-inverse: #ffffff;
+  --crepe-color-hover: #f2f0f7;
+  --crepe-color-selected: #e8e2f9;
+  --crepe-color-inline-area: #e5e5e5;
+  --crepe-color-inline-code: #c02670;
   --crepe-color-error: #ba1a1a;
+  --crepe-shadow-1:
+    0px 1px 3px 1px rgba(0, 0, 0, 0.10), 0px 1px 2px 0px rgba(0, 0, 0, 0.06);
+  --crepe-shadow-2:
+    0px 1px 3px 0px rgba(0, 0, 0, 0.10), 0px 2px 8px 0px rgba(0, 0, 0, 0.08);
 
   --crepe-font-default: var(--font-sans), system-ui, sans-serif;
   --crepe-font-title: var(--font-sans), system-ui, sans-serif;
@@ -94,25 +98,25 @@
 .dark .milkdown {
   --crepe-color-background: var(--background);
   --crepe-color-on-background: var(--foreground);
-  --crepe-color-surface: var(--muted);
-  --crepe-color-surface-low: var(--border);
-  --crepe-color-on-surface: var(--foreground);
-  --crepe-color-on-surface-variant: var(--muted-foreground);
-  --crepe-color-outline: var(--border);
-  --crepe-color-primary: var(--primary);
-  --crepe-color-secondary: var(--border);
-  --crepe-color-on-secondary: var(--foreground);
-  --crepe-color-inverse: var(--accent);
-  --crepe-color-on-inverse: var(--accent-foreground);
-  --crepe-color-hover: color-mix(in oklab, var(--muted) 80%, var(--primary) 10%);
-  --crepe-color-selected: color-mix(in oklab, var(--muted) 65%, var(--primary) 18%);
-  --crepe-color-inline-area: var(--border);
+  --crepe-color-surface: #252528;
+  --crepe-color-surface-low: #2a2a2e;
+  --crepe-color-on-surface: #e0e0e0;
+  --crepe-color-on-surface-variant: #8a8a8a;
+  --crepe-color-outline: #606060;
+  --crepe-color-primary: #a78bfa;
+  --crepe-color-secondary: #333338;
+  --crepe-color-on-secondary: #e0e0e0;
+  --crepe-color-inverse: #7c3aed;
+  --crepe-color-on-inverse: #ffffff;
+  --crepe-color-hover: #2c293e;
+  --crepe-color-selected: #38305a;
+  --crepe-color-inline-area: #333338;
   --crepe-color-inline-code: #f472b6;
   --crepe-color-error: #f87171;
   --crepe-shadow-1:
-    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
+    0px 1px 2px 0px rgba(0, 0, 0, 0.5), 0px 1px 3px 1px rgba(0, 0, 0, 0.3);
   --crepe-shadow-2:
-    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
+    0px 1px 2px 0px rgba(0, 0, 0, 0.5), 0px 2px 6px 2px rgba(0, 0, 0, 0.3);
 }
 
 html,
@@ -131,57 +135,142 @@ body {
 /*
  * Editor: narrow centered column (720px) with generous top padding and
  * abundant bottom space for a "floating page" feel.
+ * .milkdown stretches inside its flex parent, and scrolls its own content
+ * so that mouse wheel events are captured directly (ProseMirror internal
+ * wheel handling can conflict with ancestor scroll containers).
  */
+.milkdown {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .milkdown .ProseMirror {
-  padding: 80px 64px 120px;
+  padding: 64px 64px 120px;
   max-width: 720px;
   margin: 0 auto;
   font-size: 16px;
-  line-height: 1.7;
+  line-height: 1.75;
   font-weight: 400;
+  outline: none;
 }
 
 @media (max-width: 768px) {
   .milkdown .ProseMirror {
-    padding: 40px 20px 80px;
+    padding: 32px 20px 80px;
   }
 }
 
 .milkdown .ProseMirror h1 {
   font-size: 38px;
   font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   margin-bottom: 24px;
-  margin-top: 32px;
+  margin-top: 40px;
+}
+.milkdown .ProseMirror h1:first-child {
+  margin-top: 8px;
 }
 .milkdown .ProseMirror h2 {
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
   margin-bottom: 16px;
   margin-top: 32px;
 }
 .milkdown .ProseMirror h3 {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
-  margin-bottom: 16px;
-  margin-top: 24px;
+  line-height: 1.3;
+  margin-bottom: 12px;
+  margin-top: 28px;
 }
 .milkdown .ProseMirror h4,
 .milkdown .ProseMirror h5,
 .milkdown .ProseMirror h6 {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
-  margin-bottom: 16px;
+  line-height: 1.4;
+  margin-bottom: 12px;
   margin-top: 24px;
 }
 
 .milkdown .ProseMirror p {
   margin-bottom: 14px;
-  line-height: 1.7;
+  line-height: 1.75;
+}
+
+/* Inline code */
+.milkdown .ProseMirror code {
+  font-size: 0.85em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--crepe-color-hover);
+  color: var(--crepe-color-inline-code);
+}
+
+/* Blockquote */
+.milkdown .ProseMirror blockquote {
+  border-left: 3px solid var(--crepe-color-primary);
+  padding: 4px 0 4px 20px;
+  margin: 16px 0;
+  color: var(--crepe-color-on-surface-variant);
+  font-style: italic;
+}
+
+/* Code blocks (fenced) */
+.milkdown .ProseMirror pre {
+  border-radius: 8px;
+  margin: 20px 0;
+  padding: 16px 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--crepe-color-surface-low);
+}
+
+/* Horizontal rule */
+.milkdown .ProseMirror hr {
+  margin: 32px 0;
+  border: none;
+  border-top: 1px solid var(--crepe-color-outline);
+  opacity: 0.3;
+}
+
+/* List spacing */
+.milkdown .ProseMirror ul,
+.milkdown .ProseMirror ol {
+  padding-left: 24px;
+  margin: 8px 0 16px;
+}
+.milkdown .ProseMirror li {
+  margin-bottom: 4px;
+}
+
+/* Link styling */
+.milkdown .ProseMirror a {
+  color: var(--crepe-color-primary);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.milkdown .ProseMirror a:hover {
+  border-bottom-color: var(--crepe-color-primary);
 }
 
 .milkdown .milkdown-block-handle {
   z-index: 5;
 }
+.milkdown .milkdown-block-handle[data-show='true'] {
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.milkdown .milkdown-block-handle[data-show='true']:hover {
+  opacity: 1;
+}
 .milkdown .milkdown-slash-menu {
-  z-index: 20;
+  z-index: 30;
+}
+.milkdown .milkdown-toolbar {
+  z-index: 25;
 }

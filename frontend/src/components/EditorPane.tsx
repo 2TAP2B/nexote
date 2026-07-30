@@ -211,15 +211,13 @@ export default function EditorPane() {
         </div>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 overflow-y-auto">
-        <div>
-          <MilkdownEditorWrapper
-            key={`${activeNote.id}-${bodyKey}`}
-            defaultValue={activeNote.body}
-            onChange={handleEditorChange}
-          />
-        </div>
+      {/* Editor — .milkdown handles its own scrolling */}
+      <div className="min-h-0 flex-1 flex flex-col">
+        <MilkdownEditorWrapper
+          key={`${activeNote.id}-${bodyKey}`}
+          defaultValue={activeNote.body}
+          onChange={handleEditorChange}
+        />
       </div>
     </main>
   );
