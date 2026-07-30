@@ -435,31 +435,31 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
             },
           ]);
         }}
-        className={[
-          "flex w-full items-center gap-1 rounded-lg px-2 py-1 text-sm transition-colors",
-          isDragOver
-            ? "bg-primary/20 ring-1 ring-primary"
-            : "text-foreground/80 hover:bg-muted",
-        ].join(" ")}
-        style={{ paddingLeft: 8 + depth * 12 }}
-      >
-        <button
-          type="button"
-          onClick={() => setOpenMap((prev) => ({ ...prev, [node.path]: !open }))}
-          className="flex items-center gap-1 min-w-0 flex-1"
+          className={[
+            "flex w-full items-center gap-1 py-1 text-sm transition-colors",
+            isDragOver
+              ? "bg-primary/20"
+              : "text-foreground/80 hover:bg-muted",
+          ].join(" ")}
+          style={{ paddingLeft: 8 + depth * 12 }}
         >
-          <ChevronRight
-            className={[
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-              open ? "rotate-90" : "",
-            ].join(" ")}
-          />
-          {open ? (
-            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-          )}
-          <span className="truncate">{node.name}</span>
+          <button
+            type="button"
+            onClick={() => setOpenMap((prev) => ({ ...prev, [node.path]: !open }))}
+            className="flex items-center gap-1 min-w-0 flex-1"
+          >
+            <ChevronRight
+              className={[
+                "h-3.5 w-3.5 shrink-0 text-muted-foreground/75 transition-transform",
+                open ? "rotate-90" : "",
+              ].join(" ")}
+            />
+            {open ? (
+              <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground/75" />
+            ) : (
+              <Folder className="h-4 w-4 shrink-0 text-muted-foreground/75" />
+            )}
+            <span className="truncate font-medium">{node.name}</span>
         </button>
       </div>
       {open && (
@@ -525,17 +525,17 @@ function NoteItem(
           ]);
         }}
         className={[
-          "group flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors",
+          "group flex w-full items-center gap-1.5 py-1 text-sm transition-colors",
           active
-            ? "bg-primary/15 text-foreground"
+            ? "text-foreground"
             : "text-foreground/80 hover:bg-muted",
         ].join(" ")}
         style={{ paddingLeft: 24 + depth * 12 }}
       >
         <FileText
           className={[
-            "h-3.5 w-3.5 shrink-0",
-            active ? "text-primary" : "text-muted-foreground",
+            "h-4 w-4 shrink-0",
+            active ? "text-primary" : "text-muted-foreground/75",
           ].join(" ")}
         />
         {isRenaming ? (
@@ -579,9 +579,9 @@ function NoteItem(
             e.stopPropagation();
             onDelete(note.id);
           }}
-          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100"
+          className="shrink-0 p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="h-3 w-3" />
         </button>
       </div>
     </li>

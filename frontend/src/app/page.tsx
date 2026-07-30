@@ -32,7 +32,6 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  // Shared tree controls so the sidebar header buttons can drive the tree.
   const [treeControls, setTreeControls] = useState<TreeControls>({
     expandAll: () => {},
     collapseAll: () => {},
@@ -52,21 +51,20 @@ function AppShell() {
     <>
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
       <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-background md:flex-row">
-        {/* Mobile top bar */}
-        <header className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2 backdrop-blur md:hidden">
+        <header className="flex items-center gap-2 px-3 py-2 md:hidden" style={{ background: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
           <button
             type="button"
             aria-label="Toggle notes list"
             onClick={() => setMobileOpen((v) => !v)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border text-foreground transition-colors hover:bg-muted"
+            className="flex h-8 w-8 items-center justify-center text-foreground transition-colors hover:opacity-70"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="text-sm font-semibold">Nexote</span>
+          <span className="text-sm font-medium">Nexote</span>
         </header>
 
         <div className="relative flex min-h-0 flex-1">
-          {/* Ribbon (desktop only) */}
+          {/* Ribbon */}
           <div className="hidden md:flex">
             <Ribbon
               collapsed={collapsed}
@@ -76,15 +74,16 @@ function AppShell() {
             />
           </div>
 
-          {/* Sidebar: FileTree + a header with action buttons. */}
+          {/* Sidebar: 300px, subtle surface, no visible border (color diff). */}
           <aside
             className={[
-              "flex h-full shrink-0 flex-col border-r border-border bg-muted/30 backdrop-blur transition-[width] duration-200",
-              collapsed ? "md:w-14 w-64" : "w-64",
+              "flex h-full shrink-0 flex-col transition-[width] duration-200",
+              collapsed ? "md:w-12 w-[300px]" : "w-[300px]",
               "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200",
               mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
               "md:static md:translate-x-0",
             ].join(" ")}
+            style={{ background: "var(--muted)" }}
           >
             <SidebarHeader
               collapsed={collapsed}
@@ -103,7 +102,8 @@ function AppShell() {
               type="button"
               aria-label="Close notes list"
               onClick={() => setMobileOpen(false)}
-              className="absolute inset-0 z-20 bg-black/40 backdrop-blur-sm md:hidden"
+              className="absolute inset-0 z-20 md:hidden"
+              style={{ background: "rgba(0,0,0,0.4)" }}
             />
           )}
 
@@ -123,9 +123,7 @@ function AppShell() {
   );
 }
 
-// Sidebar header with the action button row: new note, new folder, sort A-Z,
-// expand all, collapse all, collapse sidebar. Hidden when collapsed (the
-// ribbon's collapse toggle expands it back).
+// Sidebar header: compact action buttons. Hidden when collapsed.
 function SidebarHeader({
   collapsed,
   onCollapseSidebar,
@@ -138,29 +136,23 @@ function SidebarHeader({
   if (collapsed) return null;
 
   return (
-    <div className="flex items-center gap-0.5 border-b border-border px-2 py-1.5">
+    <div
+      className="flex items-center gap-0.5 px-2 py-1.5"
+      style={{ borderBottom: "1px solid var(--border)" }}
+    >
       <ActionButton
         label="New note"
-        icon={<Pen className="h-4 w-4" />}
-        onClick={() => {
-          // new note — delegate to the tree's create via a synthetic event
-          document
-            .getElementById("nexote-new-note-btn")
-            ?.click();
-        }}
+        icon={<Pen className="h-3.5 w-3.5" />}
+        onClick={() => document.getElementById("nexote-new-note-btn")?.click()}
       />
       <ActionButton
         label="New folder"
-        icon={<FolderPlus className="h-4 w-4" />}
-        onClick={() => {
-          document
-            .getElementById("nexote-new-folder-btn")
-            ?.click();
-        }}
+        icon={<FolderPlus className="h-3.5 w-3.5" />}
+        onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
       />
       <ActionButton
         label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
-        icon={<ArrowDownAZ className="h-4 w-4" />}
+        icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
         onClick={treeControls.toggleSort}
         active={treeControls.sorted}
       />
@@ -168,9 +160,9 @@ function SidebarHeader({
         label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
         icon={
           treeControls.allExpanded ? (
-            <ChevronsDownUp className="h-4 w-4" />
+            <ChevronsDownUp className="h-3.5 w-3.5" />
           ) : (
-            <ChevronsDownUp className="h-4 w-4 rotate-180" />
+            <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
           )
         }
         onClick={treeControls.toggleExpandCollapse}
@@ -178,7 +170,7 @@ function SidebarHeader({
       <div className="flex-1" />
       <ActionButton
         label="Collapse sidebar"
-        icon={<PanelLeftClose className="h-4 w-4" />}
+        icon={<PanelLeftClose className="h-3.5 w-3.5" />}
         onClick={onCollapseSidebar}
       />
     </div>
@@ -203,11 +195,12 @@ function ActionButton({
       title={label}
       onClick={onClick}
       className={[
-        "flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
+        "flex h-7 w-7 items-center justify-center transition-colors",
         active
-          ? "bg-primary/15 text-primary"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          ? "text-primary"
+          : "text-muted-foreground hover:text-foreground",
       ].join(" ")}
+      style={active ? { background: "color-mix(in oklab, var(--primary) 12%, transparent)" } : undefined}
     >
       {icon}
     </button>

@@ -9,9 +9,9 @@ type TabBarProps = {
   onOpenPalette: () => void;
 };
 
-// A horizontal tab bar of open notes, Obsidian-style. Tabs are rounded
-// pills without strokes; the active tab uses the background color, inactive
-// tabs are muted. A trailing "+" button opens a small menu with actions.
+// Obsidian-style tab bar: tabs look like labels, not buttons. Active tab has
+// a subtle brighter background; inactive tabs are muted. Height 38px, no
+// thick borders. A trailing "+" opens a small menu.
 export default function TabBar({ onOpenPalette }: TabBarProps) {
   const { openTabs, activeId, notesById, openTab, closeTab, create, creating } =
     useNotes();
@@ -22,7 +22,6 @@ export default function TabBar({ onOpenPalette }: TabBarProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
 
-  // Close the "+" menu on outside click.
   useEffect(() => {
     if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -35,15 +34,16 @@ export default function TabBar({ onOpenPalette }: TabBarProps) {
   }, [menuOpen]);
 
   const openMenu = () => {
-    // Anchor the dropdown to the button via fixed coordinates so it escapes
-    // the parent overflow-x-auto clip.
     const r = plusRef.current?.getBoundingClientRect();
     if (r) setMenuPos({ top: r.bottom + 4, left: r.left });
     setMenuOpen((v) => !v);
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-muted/40 px-2 py-2">
+    <div
+      className="flex shrink-0 items-center gap-0 overflow-x-auto bg-muted px-0"
+      style={{ height: 38, borderBottom: "1px solid var(--border)" }}
+    >
       {openTabs.map((id) => {
         const note = notesById[id];
         const title = note?.title || "Untitled";
@@ -68,11 +68,12 @@ export default function TabBar({ onOpenPalette }: TabBarProps) {
               }
             }}
             className={[
-              "group flex max-w-[200px] min-w-[110px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
+              "group flex max-w-[220px] min-w-[80px] shrink-0 cursor-pointer items-center gap-1.5 px-3 text-[14px] font-medium transition-colors",
               active
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+                ? "bg-background text-foreground"
+                : "text-muted-foreground opacity-70 hover:opacity-100 hover:bg-background/40",
             ].join(" ")}
+            style={{ height: 38 }}
           >
             <span className="truncate">{title}</span>
             <button
@@ -83,18 +84,14 @@ export default function TabBar({ onOpenPalette }: TabBarProps) {
                 e.stopPropagation();
                 closeTab(id);
               }}
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-60"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3 w-3" />
             </button>
           </div>
         );
       })}
 
-      {/* "+" button lives directly after the last tab inside the scroll
-          flow, so it always follows the last tab. The dropdown menu is
-          position:fixed (anchored to the button on open) so it escapes the
-          overflow-x-auto clipping. */}
       <div ref={menuRef} className="relative shrink-0">
         <button
           ref={plusRef}
@@ -102,14 +99,14 @@ export default function TabBar({ onOpenPalette }: TabBarProps) {
           aria-label="New tab actions"
           title="New tab actions"
           onClick={openMenu}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-[38px] w-[38px] shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-background/40 hover:text-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>
         {menuOpen && menuPos && (
           <div
             style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
-            className="z-50 w-56 overflow-hidden rounded-xl border border-border bg-background py-1 shadow-lg"
+            className="z-50 w-56 overflow-hidden rounded-lg bg-background py-1 shadow-lg"
           >
             <MenuItem
               label="Create new note"

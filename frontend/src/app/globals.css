@@ -1,22 +1,11 @@
-/*
- * Import Crepe's theme CSS here (before our overrides) so the cascade is
- * deterministic. Importing from the component made the order nondeterministic
- * and the editor stayed light in dark mode. We pull in the light `frame`
- * theme plus the base `common` styles; dark mode is handled by our own
- * `.dark .milkdown` overrides below, which beat Crepe's `.milkdown` rule on
- * specificity so the editor follows the app theme.
- */
 @import "@milkdown/crepe/theme/common/style.css";
 @import "@milkdown/crepe/theme/frame.css";
 @import "tailwindcss";
 
 /*
- * Nexote theme tokens.
- *
- * Tailwind v4 exposes these as utilities (bg-background, text-foreground,
- * border-border, ...). The same variables feed Milkdown's Crepe `frame`
- * theme via the .milkdown overrides below, so the editor and the app shell
- * share one palette with a mauve/purple accent.
+ * Nexote theme tokens — Obsidian-inspired.
+ * Surfaces differ subtly by role (editor / sidebar / panels / active).
+ * Borders are nearly invisible — color differences carry the separation.
  */
 
 @theme {
@@ -36,51 +25,42 @@
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
 
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-lg: 8px;
+  --radius-md: 6px;
+  --radius-sm: 4px;
 }
 
 :root {
-  /* neutral frame surfaces */
   --background: #ffffff;
-  --foreground: #1c1c1c;
-  --muted: #f7f7f7;
-  --muted-foreground: #4d4d4d;
-  --border: #ededed;
-  --input: #ededed;
+  --foreground: #1e1e1e;
+  --muted: #f5f5f5;
+  --muted-foreground: #6a6a6a;
+  --border: rgba(0, 0, 0, 0.06);
+  --input: rgba(0, 0, 0, 0.06);
 
-  /* mauve / purple accent */
-  --primary: #7c3aed; /* violet-600 */
+  --primary: #7c3aed;
   --primary-foreground: #ffffff;
-  --accent: #a78bfa; /* violet-400 */
-  --accent-foreground: #1c1c1c;
+  --accent: #a78bfa;
+  --accent-foreground: #1e1e1e;
   --ring: #7c3aed;
-
-  --radius: 0.5rem;
 }
 
 .dark {
-  --background: #18181b; /* zinc-900 */
-  --foreground: #f4f4f5;
-  --muted: #27272a; /* zinc-800 */
-  --muted-foreground: #a1a1aa;
-  --border: #3f3f46; /* zinc-700 */
-  --input: #3f3f46;
+  --background: #1e1e21;
+  --foreground: #e0e0e0;
+  --muted: #232328;
+  --muted-foreground: #8a8a8a;
+  --border: rgba(255, 255, 255, 0.05);
+  --input: rgba(255, 255, 255, 0.05);
 
-  --primary: #a78bfa; /* violet-400, brighter on dark */
-  --primary-foreground: #18181b;
-  --accent: #c4b5fd; /* violet-300 */
-  --accent-foreground: #18181b;
+  --primary: #a78bfa;
+  --primary-foreground: #1e1e21;
+  --accent: #c4b5fd;
+  --accent-foreground: #1e1e21;
   --ring: #a78bfa;
 }
 
-/*
- * Map our palette onto Crepe's `frame` theme variables. The light overrides
- * use `.milkdown` (same specificity as Crepe's rule, but come after it in the
- * cascade so they win). The dark overrides use `.dark .milkdown` (higher
- * specificity) so they reliably win in dark mode.
- */
+/* Crepe theme mapping */
 .milkdown {
   --crepe-color-background: var(--background);
   --crepe-color-on-background: var(--foreground);
@@ -94,15 +74,14 @@
   --crepe-color-on-secondary: var(--foreground);
   --crepe-color-inverse: var(--accent);
   --crepe-color-on-inverse: var(--accent-foreground);
-  --crepe-color-hover: color-mix(in oklab, var(--muted) 70%, var(--primary) 8%);
-  --crepe-color-selected: color-mix(in oklab, var(--muted) 60%, var(--primary) 18%);
+  --crepe-color-hover: color-mix(in oklab, var(--muted) 80%, var(--primary) 6%);
+  --crepe-color-selected: color-mix(in oklab, var(--muted) 70%, var(--primary) 14%);
   --crepe-color-inline-area: var(--border);
-  --crepe-color-inline-code: #be185d; /* rose-700, complements mauve */
+  --crepe-color-inline-code: #be185d;
   --crepe-color-error: #ba1a1a;
 
-  /* Fonts: Inter for UI/body, Lora for headings, JetBrains Mono for code. */
   --crepe-font-default: var(--font-sans), system-ui, sans-serif;
-  --crepe-font-title: var(--font-serif), Georgia, serif;
+  --crepe-font-title: var(--font-sans), system-ui, sans-serif;
   --crepe-font-code: var(--font-mono), "Fira Code", monospace;
 }
 
@@ -119,15 +98,15 @@
   --crepe-color-on-secondary: var(--foreground);
   --crepe-color-inverse: var(--accent);
   --crepe-color-on-inverse: var(--accent-foreground);
-  --crepe-color-hover: color-mix(in oklab, var(--muted) 70%, var(--primary) 12%);
-  --crepe-color-selected: color-mix(in oklab, var(--muted) 55%, var(--primary) 22%);
+  --crepe-color-hover: color-mix(in oklab, var(--muted) 80%, var(--primary) 10%);
+  --crepe-color-selected: color-mix(in oklab, var(--muted) 65%, var(--primary) 18%);
   --crepe-color-inline-area: var(--border);
-  --crepe-color-inline-code: #f472b6; /* pink-400, brighter on dark */
+  --crepe-color-inline-code: #f472b6;
   --crepe-color-error: #f87171;
   --crepe-shadow-1:
-    0px 1px 2px 0px rgba(0, 0, 0, 0.4), 0px 1px 3px 1px rgba(0, 0, 0, 0.25);
+    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 1px 3px 1px rgba(0, 0, 0, 0.15);
   --crepe-shadow-2:
-    0px 1px 2px 0px rgba(0, 0, 0, 0.4), 0px 2px 6px 2px rgba(0, 0, 0, 0.25);
+    0px 1px 2px 0px rgba(0, 0, 0, 0.3), 0px 2px 6px 2px rgba(0, 0, 0, 0.15);
 }
 
 html,
@@ -144,23 +123,56 @@ body {
 }
 
 /*
- * Editor sizing. The EditorPane wrapper provides the outer responsive
- * padding/margin and a max-w-3xl container; here we only give .ProseMirror
- * comfortable inner padding (symmetric) so the block handle ("+" button) sits
- * in the left gutter without overlapping anything. The measure is capped by
- * the wrapper, not here, so the editor fills its container responsively.
+ * Editor: narrow centered column (720px) with generous top padding and
+ * abundant bottom space for a "floating page" feel.
  */
 .milkdown .ProseMirror {
-  padding: 24px 16px 24px 48px;
+  padding: 80px 64px 120px;
+  max-width: 720px;
+  margin: 0 auto;
+  font-size: 16px;
+  line-height: 1.7;
+  font-weight: 400;
 }
 
-@media (min-width: 768px) {
+@media (max-width: 768px) {
   .milkdown .ProseMirror {
-    padding: 32px 24px 32px 56px;
+    padding: 40px 20px 80px;
   }
 }
 
-/* Keep the block handle inside the editor's left gutter, above the sidebar. */
+.milkdown .ProseMirror h1 {
+  font-size: 38px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  margin-top: 32px;
+}
+.milkdown .ProseMirror h2 {
+  font-size: 30px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  margin-top: 32px;
+}
+.milkdown .ProseMirror h3 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  margin-top: 24px;
+}
+.milkdown .ProseMirror h4,
+.milkdown .ProseMirror h5,
+.milkdown .ProseMirror h6 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  margin-top: 24px;
+}
+
+.milkdown .ProseMirror p {
+  margin-bottom: 14px;
+  line-height: 1.7;
+}
+
 .milkdown .milkdown-block-handle {
   z-index: 5;
 }

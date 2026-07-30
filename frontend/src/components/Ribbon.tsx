@@ -20,9 +20,6 @@ type RibbonProps = {
   onDaily: () => void;
 };
 
-// Far-left vertical icon strip, Obsidian-style. The top icon collapses the
-// sidebar; below it are the sidebar action icons. Search opens the command
-// palette popup. At the bottom sit the theme toggle and settings.
 export default function Ribbon({
   collapsed,
   onToggleCollapse,
@@ -42,19 +39,18 @@ export default function Ribbon({
   ];
 
   return (
-    <div className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-muted/50 py-2">
-      {/* Collapse toggle at the very top */}
+    <div className="flex h-full w-10 shrink-0 flex-col items-center border-r border-border py-2" style={{ background: "var(--muted)" }}>
       <button
         type="button"
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         onClick={onToggleCollapse}
-        className="mb-1 flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="mb-1 flex h-8 w-8 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
       >
         {collapsed ? (
-          <ChevronRight className="h-5 w-5" />
+          <ChevronRight className="h-4 w-4" />
         ) : (
-          <ChevronLeft className="h-5 w-5" />
+          <ChevronLeft className="h-4 w-4" />
         )}
       </button>
 
@@ -65,24 +61,22 @@ export default function Ribbon({
           aria-label={it.label}
           title={it.label}
           onClick={it.onClick}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
         >
-          <it.icon className="h-5 w-5" />
+          <it.icon className="h-4 w-4" />
         </button>
       ))}
 
       <div className="flex-1" />
 
-      {/* Theme toggle at the bottom, above settings */}
       <ThemeToggle />
-
       <button
         type="button"
         aria-label="Settings"
         title="Settings"
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground"
       >
-        <Settings className="h-5 w-5" />
+        <Settings className="h-4 w-4" />
       </button>
     </div>
   );
