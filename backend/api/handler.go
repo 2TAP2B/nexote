@@ -28,6 +28,8 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/notes", h.list)
 	mux.HandleFunc("POST /api/notes", h.create)
+	mux.HandleFunc("POST /api/folders", h.createFolder)
+	mux.HandleFunc("DELETE /api/folders/{path...}", h.deleteFolder)
 	mux.HandleFunc("GET /api/notes/daily", h.daily)
 	mux.HandleFunc("GET /api/notes/{id}", h.get)
 	mux.HandleFunc("PUT /api/notes/{id}", h.update)
@@ -52,12 +54,12 @@ func (h *Handler) cors(next http.Handler) http.Handler {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	entries, err := h.Store.List()
+	result, err := h.Store.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, entries)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +74,30 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, toPayload(doc))
+}
+
+func (h *Handler) createFolder(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Path string `json:"path"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.Store.CreateFolder(in.Path); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"path": in.Path})
+}
+
+func (h *Handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
+	folderPath := r.PathValue("path")
+	if err := h.Store.DeleteFolder(folderPath); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) daily(w http.ResponseWriter, r *http.Request) {

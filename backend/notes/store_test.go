@@ -132,7 +132,8 @@ func TestList(t *testing.T) {
 	a, _ := s.Create(CreateInput{Title: "A"})
 	b, _ := s.Create(CreateInput{Title: "B"})
 
-	list, err := s.List()
+	result, err := s.List()
+	list := result.Notes
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -156,7 +157,8 @@ func TestListIgnoresNonMarkdown(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.Dir, "README.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	list, err := s.List()
+	result, err := s.List()
+	list := result.Notes
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -215,7 +217,8 @@ func TestListRecursive(t *testing.T) {
 	if _, err := s.Create(CreateInput{Title: "B", Path: "Folder/Sub"}); err != nil {
 		t.Fatal(err)
 	}
-	list, err := s.List()
+	result, err := s.List()
+	list := result.Notes
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

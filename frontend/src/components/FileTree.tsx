@@ -25,8 +25,26 @@ function emptyTree(): TreeNode {
   return { name: "", path: "", children: new Map(), notes: [] };
 }
 
-function buildTree(notes: { id: string; title: string; path: string }[]): TreeNode {
+function buildTree(
+  notes: { id: string; title: string; path: string }[],
+  folders: { path: string; name: string }[],
+): TreeNode {
   const root = emptyTree();
+  // Ensure every folder from the API exists in the tree, even if empty.
+  for (const f of folders) {
+    let node = root;
+    const segs = f.path.split("/");
+    let cur = "";
+    for (const seg of segs) {
+      cur = cur ? `${cur}/${seg}` : seg;
+      let child = node.children.get(seg);
+      if (!child) {
+        child = { name: seg, path: cur, children: new Map(), notes: [] };
+        node.children.set(seg, child);
+      }
+      node = child;
+    }
+  }
   for (const n of notes) {
     let node = root;
     if (n.path) {
@@ -74,8 +92,9 @@ type FileTreeProps = {
 };
 
 export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) {
-  const { notes, activeId, openTab, create, remove } = useNotes();
-  const tree = useMemo(() => buildTree(notes), [notes]);
+  const { notes, folders, activeId, openTab, create, createFolder, remove } =
+    useNotes();
+  const tree = useMemo(() => buildTree(notes, folders), [notes, folders]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   // Open-state map keyed by folder path. Defaults to open.
@@ -135,13 +154,12 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     toggleExpandCollapse,
   ]);
 
-  // New folder: prompt for a name, create a placeholder note inside it so the
-  // folder appears on disk (empty folders aren't tracked; a note must exist).
+  // New folder: prompt for a name, create an empty folder on disk.
   const newFolder = useCallback(async () => {
     const name = window.prompt("New folder name");
     if (!name) return;
-    await create({ path: name });
-  }, [create]);
+    await createFolder(name);
+  }, [createFolder]);
 
   if (collapsed) {
     return (

@@ -20,6 +20,16 @@ export type NoteInput = {
   path?: string;
 };
 
+export type FolderMeta = {
+  path: string;
+  name: string;
+};
+
+export type ListResult = {
+  notes: NoteMeta[];
+  folders: FolderMeta[];
+};
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -49,7 +59,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  list: () => request<NoteMeta[]>("/api/notes"),
+  list: () => request<ListResult>("/api/notes"),
   get: (id: string) => request<Note>(`/api/notes/${id}`),
   daily: () => request<Note>("/api/notes/daily"),
   create: (input: NoteInput) =>
@@ -64,4 +74,11 @@ export const api = {
     }),
   remove: (id: string) =>
     request<void>(`/api/notes/${id}`, { method: "DELETE" }),
+  createFolder: (path: string) =>
+    request<{ path: string }>("/api/folders", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
+  removeFolder: (path: string) =>
+    request<void>(`/api/folders/${path}`, { method: "DELETE" }),
 };

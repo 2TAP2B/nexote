@@ -10,12 +10,13 @@ import {
   useState,
 } from "react";
 
-import { api, type Note, type NoteMeta } from "@/lib/api";
+import { api, type FolderMeta, type Note, type NoteMeta } from "@/lib/api";
 
 type Draft = { title: string; body: string };
 
 type NotesContextValue = {
   notes: NoteMeta[];
+  folders: FolderMeta[];
   // Tabs: ordered list of open note ids, with the active one focused.
   openTabs: string[];
   activeId: string | null;
@@ -33,6 +34,7 @@ type NotesContextValue = {
   openTab: (id: string) => Promise<void>;
   closeTab: (id: string) => void;
   create: (input?: { title?: string; path?: string }) => Promise<void>;
+  createFolder: (path: string) => Promise<void>;
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
@@ -56,6 +58,7 @@ export function useNotes() {
 
 export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
+  const [folders, setFolders] = useState<FolderMeta[]>([]);
   const [openTabs, setOpenTabs] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   // Cache of full notes by id, so switching tabs is instant after first load.
@@ -67,10 +70,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const list = await api.list();
+      const result = await api.list();
       // newest updatedAt first
-      list.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      setNotes(list);
+      result.notes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      setNotes(result.notes);
+      setFolders(result.folders);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notes");
     }
@@ -145,6 +149,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : "Failed to create note");
       } finally {
         setCreating(false);
+      }
+    },
+    [refresh],
+  );
+
+  const createFolder = useCallback(
+    async (path: string) => {
+      try {
+        await api.createFolder(path);
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to create folder");
       }
     },
     [refresh],
@@ -234,6 +250,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<NotesContextValue>(
     () => ({
       notes,
+      folders,
       openTabs,
       activeId,
       activeNote,
@@ -245,6 +262,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openTab,
       closeTab,
       create,
+      createFolder,
       openDaily,
       remove,
       save,
@@ -254,6 +272,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       notes,
+      folders,
       openTabs,
       activeId,
       activeNote,
@@ -265,6 +284,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openTab,
       closeTab,
       create,
+      createFolder,
       openDaily,
       remove,
       save,
