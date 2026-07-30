@@ -15,6 +15,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
 
+function replaceOrAddH1(body: string, title: string): string {
+  const h1 = `# ${title}`;
+  if (/^# .+$/m.test(body)) {
+    return body.replace(/^# .+$/m, h1);
+  }
+  return body ? `${h1}\n\n${body}` : h1;
+}
+
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import DeleteConfirm from "./DeleteConfirm";
 import FolderCreateDialog from "./FolderCreateDialog";
@@ -103,6 +111,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     remove,
     notesById,
     refresh,
+    save,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders), [notes, folders]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -191,27 +200,17 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     [createFolder],
   );
 
-  // Rename a note by calling the update API with the new title and preserved
-  // body/path, then refresh.
+  // Rename a note by saving the new title, syncing with H1 in body.
   const handleRename = useCallback(
     async (id: string, newTitle: string) => {
       const cached = notesById[id];
       if (!cached) return;
-      try {
-        await fetch(`/api/notes/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: newTitle,
-            body: cached.body,
-          }),
-        });
-        await refresh();
-      } catch {
-        // ignore — refresh will show the old title
-      }
+      await save(id, {
+        title: newTitle,
+        body: replaceOrAddH1(cached.body, newTitle),
+      });
     },
-    [notesById, refresh],
+    [notesById, save],
   );
 
   // Move a note to a new path via the API, then refresh.

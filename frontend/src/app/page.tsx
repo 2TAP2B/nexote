@@ -2,11 +2,17 @@
 
 import {
   ArrowDownAZ,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight,
   ChevronsDownUp,
+  Folder,
   FolderPlus,
+  LayoutList,
   Menu,
   PanelLeftClose,
   Pen,
+  Search,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -50,23 +56,69 @@ function AppShell() {
   return (
     <>
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
-      <div className="flex h-[100dvh] w-full bg-background">
-        {/* Ribbon: vertical icon strip on the far left (desktop only) */}
-        <div className="hidden md:flex shrink-0">
-          <Ribbon
-            collapsed={collapsed}
-            onToggleCollapse={() => setCollapsed((v) => !v)}
-            onCommandPalette={() => setPaletteOpen(true)}
-            onDaily={() => void openDaily()}
-          />
+      <div className="flex h-[100dvh] w-full flex-col bg-background">
+        {/* Full-width top bar (desktop) — includes collapse toggle at far left */}
+        <div
+          className="hidden md:flex shrink-0"
+          style={{ height: 40, background: "var(--tab-active)", borderBottom: "1px solid var(--border)" }}
+        >
+          {/* Left section: collapse toggle + folder/search/bookmark above sidebar */}
+          <div
+            className={
+              "flex items-center gap-0.5 shrink-0 transition-[width] duration-200 " +
+              (collapsed ? "w-12 pl-0 justify-center" : "w-[300px] pl-3")
+            }
+          >
+            <button
+              type="button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setCollapsed((v) => !v)}
+              className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
+            >
+              {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            </button>
+            {!collapsed && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Folder"
+                  title="Folder"
+                  className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
+                >
+                  <Folder size={18} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Search"
+                  title="Search"
+                  onClick={() => setPaletteOpen(true)}
+                  className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
+                >
+                  <Search size={18} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Bookmarks"
+                  title="Bookmarks"
+                  className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
+                >
+                  <Bookmark size={18} />
+                </button>
+              </>
+            )}
+          </div>
+          <div className="flex-1 min-w-0 h-full">
+            <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+          </div>
         </div>
 
-        {/* Main vertical stack: top bar + sidebar/editor */}
-        <div className="flex flex-col min-w-0 flex-1">
+        {/* Below: Ribbon + sidebar + editor */}
+        <div className="relative flex flex-1 min-h-0">
           {/* Mobile header */}
           <header
-            className="flex items-center gap-2 px-3 md:hidden"
-            style={{ height: 40, background: "var(--topbar)", borderBottom: "1px solid var(--border)" }}
+            className="flex items-center gap-2 px-3 md:hidden absolute top-0 left-0 right-0 z-10"
+            style={{ height: 40, background: "var(--tab-active)", borderBottom: "1px solid var(--border)" }}
           >
             <button
               type="button"
@@ -79,49 +131,50 @@ function AppShell() {
             <span className="text-sm font-medium" style={{ opacity: 0.7 }}>Nexote</span>
           </header>
 
-          {/* Desktop top bar (tabs only) */}
+          {/* Ribbon: vertical icon strip (desktop only, below top bar) */}
           <div className="hidden md:flex shrink-0">
-            <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+            <Ribbon
+              onCommandPalette={() => setPaletteOpen(true)}
+              onDaily={() => void openDaily()}
+            />
           </div>
 
-          {/* Sidebar + editor */}
-          <div className="relative flex min-h-0 flex-1">
-            <aside
-              className={[
-                "flex h-full shrink-0 flex-col transition-[width] duration-200",
-                collapsed ? "md:w-12 w-[300px]" : "w-[300px]",
-                "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200",
-                mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
-                "md:static md:translate-x-0",
-              ].join(" ")}
-              style={{ background: "var(--sidebar)" }}
-            >
-              <SidebarHeader
+          {/* Sidebar */}
+          <aside
+            className={[
+              "flex h-full shrink-0 flex-col transition-[width] duration-200",
+              collapsed ? "md:w-0 w-[300px] overflow-hidden" : "w-[300px]",
+              "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:pt-10",
+              mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
+              "md:static md:translate-x-0 md:pt-0",
+            ].join(" ")}
+            style={{ background: "var(--sidebar)" }}
+          >
+            <SidebarHeader
+              collapsed={collapsed}
+              onCollapseSidebar={() => setCollapsed(true)}
+              treeControls={treeControls}
+            />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <FileTree
                 collapsed={collapsed}
-                onCollapseSidebar={() => setCollapsed(true)}
-                treeControls={treeControls}
+                onControlsReady={setTreeControls}
               />
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <FileTree
-                  collapsed={collapsed}
-                  onControlsReady={setTreeControls}
-                />
-              </div>
-            </aside>
-            {mobileOpen && (
-              <button
-                type="button"
-                aria-label="Close notes list"
-                onClick={() => setMobileOpen(false)}
-                className="absolute inset-0 z-20 md:hidden"
-                style={{ background: "rgba(0,0,0,0.4)" }}
-              />
-            )}
+            </div>
+          </aside>
+          {mobileOpen && (
+            <button
+              type="button"
+              aria-label="Close notes list"
+              onClick={() => setMobileOpen(false)}
+              className="absolute inset-0 z-20 md:hidden"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+            />
+          )}
 
-            <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-              <EditorPane />
-            </main>
-          </div>
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <EditorPane />
+          </main>
         </div>
 
         <CommandPalette
@@ -150,9 +203,9 @@ function SidebarHeader({
       style={{ borderBottom: "1px solid var(--border)" }}
     >
       <ActionButton
-        label="New note"
+        label="Edit"
         icon={<Pen className="h-3.5 w-3.5" />}
-        onClick={() => document.getElementById("nexote-new-note-btn")?.click()}
+        onClick={() => {}}
       />
       <ActionButton
         label="New folder"
@@ -164,6 +217,12 @@ function SidebarHeader({
         icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
         onClick={treeControls.toggleSort}
         active={treeControls.sorted}
+      />
+      <ActionButton
+        label="Card view"
+        icon={<LayoutList className="h-3.5 w-3.5" />}
+        onClick={() => {}}
+        active={false}
       />
       <ActionButton
         label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}

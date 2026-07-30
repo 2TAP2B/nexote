@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
@@ -9,15 +9,26 @@ type TopBarProps = {
   onOpenPalette: () => void;
 };
 
+function replaceOrAddH1(body: string, title: string): string {
+  const h1 = `# ${title}`;
+  if (/^# .+$/m.test(body)) {
+    return body.replace(/^# .+$/m, h1);
+  }
+  return body ? `${h1}\n\n${body}` : h1;
+}
+
 export default function TopBar({ onOpenPalette }: TopBarProps) {
-  const { openTabs, activeId, notesById, openTab, closeTab, create, creating } =
+  const { openTabs, activeId, notesById, openTab, closeTab, create, creating, save } =
     useNotes();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(
     null,
   );
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -35,89 +46,113 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
     setMenuOpen((v) => !v);
   };
 
+  const startRename = (id: string, currentTitle: string) => {
+    setRenamingId(id);
+    setTitleDraft(currentTitle);
+    requestAnimationFrame(() => renameRef.current?.focus());
+  };
+
+  const commitRename = () => {
+    if (!renamingId) return;
+    const t = titleDraft.trim() || "Untitled";
+    const note = notesById[renamingId];
+    if (t !== note?.title && note) {
+      void save(renamingId, { title: t, body: replaceOrAddH1(note.body, t) });
+    }
+    setRenamingId(null);
+  };
+
   return (
-    <div
-      className="flex shrink-0 items-stretch"
-      style={{
-        height: 40,
-        background: "var(--background)",
-        borderBottom: "1px solid var(--border)",
-      }}
-    >
+    <div className="flex shrink-0 items-stretch h-full">
       {/* Tabs */}
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto pl-2">
+      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
         {openTabs.map((id) => {
           const note = notesById[id];
           const title = note?.title || "Untitled";
           const active = id === activeId;
+          const isRenaming = renamingId === id;
           return (
             <div
               key={id}
               role="tab"
               tabIndex={0}
               aria-selected={active}
-              onClick={() => void openTab(id)}
+              onClick={() => { if (!isRenaming) void openTab(id); }}
               onMouseDown={(e) => {
                 if (e.button === 1) {
                   e.preventDefault();
                   closeTab(id);
                 }
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  void openTab(id);
-                }
-              }}
-              className="group flex shrink-0 cursor-pointer items-center px-4"
+              onDoubleClick={() => startRename(id, title)}
+              className="group flex shrink-0 cursor-pointer items-center px-3"
               style={{
                 minWidth: 100,
                 maxWidth: 220,
-                height: 36,
-                marginTop: 2,
-                marginBottom: 2,
+                height: 34,
+                marginTop: 3,
+                marginBottom: 3,
                 background: active ? "var(--background)" : "transparent",
                 borderRadius: 8,
-                marginLeft: 2,
+                marginLeft: 3,
               }}
             >
-              <span
-                className="truncate"
-                style={{
-                  fontSize: 13,
-                  fontWeight: active ? 500 : 400,
-                  opacity: active ? 1 : 0.7,
-                  color: "var(--foreground)",
-                }}
-              >
-                {title}
-              </span>
-              <button
-                type="button"
-                aria-label="Close tab"
-                title="Close tab"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeTab(id);
-                }}
-                className="ml-2 flex shrink-0 items-center justify-center transition-colors hover:opacity-100"
-                style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 4,
-                  opacity: active ? 0.5 : 0,
-                  color: "var(--foreground)",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background =
-                    "rgba(255,255,255,0.06)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background = "transparent")
-                }
-              >
-                <X size={12} />
-              </button>
+              {isRenaming ? (
+                <input
+                  ref={renameRef}
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") setRenamingId(null);
+                  }}
+                  onBlur={commitRename}
+                  onClick={(e) => e.stopPropagation()}
+                  className="min-w-0 flex-1 rounded border border-ring bg-background px-1 text-sm text-foreground outline-none"
+                />
+              ) : (
+                <span
+                  className="truncate"
+                  style={{
+                    fontSize: 13,
+                    fontWeight: active ? 500 : 400,
+                    opacity: active ? 1 : 0.55,
+                    color: "var(--foreground)",
+                  }}
+                >
+                  {title}
+                </span>
+              )}
+              {!isRenaming && (active || undefined) && (
+                <button
+                  type="button"
+                  aria-label="Close tab"
+                  title="Close tab"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeTab(id);
+                  }}
+                  className="ml-2 flex shrink-0 items-center justify-center"
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 4,
+                    opacity: 0.5,
+                    color: "var(--foreground)",
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.06)";
+                    e.currentTarget.style.opacity = "1";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.opacity = "0.5";
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
           );
         })}
@@ -130,22 +165,16 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
             aria-label="New tab actions"
             title="New tab actions"
             onClick={openMenu}
-            className="flex items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground"
-            style={{
-              width: 36,
-              height: 36,
-              marginTop: 2,
-              marginBottom: 2,
-            }}
+            className="flex items-center justify-center text-muted-foreground/45 transition-colors hover:text-foreground"
+            style={{ width: 34, height: 34, marginTop: 3, marginBottom: 3, borderRadius: 6 }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "rgba(255,255,255,0.05)";
-              e.currentTarget.style.borderRadius = "6px";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";
             }}
           >
-            <Plus size={16} />
+            <Plus size={15} />
           </button>
           {menuOpen && menuPos && (
             <div
@@ -154,7 +183,7 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
                 top: menuPos.top,
                 left: menuPos.left,
                 zIndex: 50,
-                background: "var(--topbar)",
+                background: "var(--tab-active)",
                 border: "1px solid var(--border)",
                 borderRadius: 8,
               }}
@@ -191,6 +220,28 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
               />
             </div>
           )}
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Tab list overflow menu */}
+        <div className="flex items-stretch">
+          <button
+            type="button"
+            aria-label="Tab list"
+            title="Tab list"
+            className="flex items-center justify-center text-muted-foreground/45 transition-colors hover:text-foreground"
+            style={{ width: 34, height: 34, marginTop: 3, marginBottom: 3, borderRadius: 6 }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <ChevronDown size={15} />
+          </button>
         </div>
       </div>
     </div>

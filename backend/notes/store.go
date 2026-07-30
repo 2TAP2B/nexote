@@ -130,7 +130,7 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 			CreatedAt: now,
 			UpdatedAt: now,
 		},
-		Body: "",
+		Body: fmt.Sprintf("# %s\n\n", title),
 	}
 	if err := s.write(doc); err != nil {
 		return Document{}, err
