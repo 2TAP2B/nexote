@@ -118,6 +118,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     openTab,
     create,
     copyNote,
+    moveNoteToVault,
     createFolder,
     removeFolder,
     moveNote,
@@ -131,6 +132,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     allVaultData,
     openNoteInVault,
     switchVault,
+    treeMode,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [drillPath, setDrillPath] = useState<string | null>(null);
@@ -166,6 +168,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
   // Drag state.
   const [dragNoteId, setDragNoteId] = useState<string | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const [dragOverVaultId, setDragOverVaultId] = useState<string | null>(null);
 
   const isFolderOpen = useCallback(
     (path: string) => openMap[path] ?? true,
@@ -232,6 +235,15 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     setFolderDialog({ open: true, parentPath });
   }, []);
 
+  // When a folder is drilled into, new notes/folders are created inside it.
+  const handleCreateHere = useCallback(() => {
+    void create(drillPath ? { path: drillPath } : undefined);
+  }, [create, drillPath]);
+
+  const handleNewFolderHere = useCallback(() => {
+    openFolderDialog(drillPath ?? undefined);
+  }, [openFolderDialog, drillPath]);
+
   const handleCreateFolder = useCallback(
     (fullPath: string) => {
       void createFolder(fullPath);
@@ -284,19 +296,32 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     [dragNoteId, moveNote],
   );
 
+  // Drop a dragged note into a different vault (moves it).
+  const handleVaultDrop = useCallback(
+    (dstVaultId: string) => {
+      if (dragNoteId && dragNoteId !== "") {
+        void moveNoteToVault(dragNoteId, dstVaultId);
+      }
+      setDragNoteId(null);
+      setDragOverPath(null);
+      setDragOverVaultId(null);
+    },
+    [dragNoteId, moveNoteToVault],
+  );
+
   if (collapsed) {
     return (
       <div className="flex flex-col items-center gap-2 py-2">
-        <button id="nexote-new-note-btn" type="button" className="hidden" onClick={() => void create()} />
-        <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => openFolderDialog()} />
+        <button id="nexote-new-note-btn" type="button" className="hidden" onClick={handleCreateHere} />
+        <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={handleNewFolderHere} />
       </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col">
-      <button id="nexote-new-note-btn" type="button" className="hidden" onClick={() => void create()} />
-      <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => openFolderDialog()} />
+      <button id="nexote-new-note-btn" type="button" className="hidden" onClick={handleCreateHere} />
+      <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={handleNewFolderHere} />
 
       <div className="flex-1 overflow-y-auto px-1 pb-2 pt-1">
         {showBookmarksOnly ? (
@@ -333,6 +358,35 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
             onBack={() => setDrillPath(null)}
             onDrillInto={setDrillPath}
           />
+        ) : treeMode === "simple" ? (
+          <div>
+            <TreeChildren
+              node={tree}
+              depth={0}
+              activeId={activeId}
+              onOpen={openTab}
+              onDelete={setPendingDelete}
+              onCopy={copyNote}
+              onBookmark={toggleBookmark}
+              bookmarks={bookmarks}
+              isFolderOpen={isFolderOpen}
+              setOpenMap={setOpenMap}
+              sorted={sorted}
+              onNoteDragStart={handleNoteDragStart}
+              onFolderDragOver={setDragOverPath}
+              onFolderDrop={handleFolderDrop}
+              dragOverPath={dragOverPath}
+              onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+              renaming={renaming}
+              setRenaming={setRenaming}
+              onRename={handleRename}
+              onMoveNote={handleMoveNote}
+              onDeleteFolder={handleDeleteFolder}
+              onNewNoteInFolder={(path) => void create({ path })}
+              onNewFolderInFolder={(path) => openFolderDialog(path)}
+              onDrillInto={setDrillPath}
+            />
+          </div>
         ) : (
           <>
             {/* Shortcuts section */}
@@ -410,6 +464,18 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
                       [vault.id]: !isExpanded,
                     }))
                   }
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (dragNoteId) setDragOverVaultId(vault.id);
+                  }}
+                  onDragLeave={() => {
+                    if (dragOverVaultId === vault.id) setDragOverVaultId(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handleVaultDrop(vault.id);
+                  }}
+                  dropActive={dragNoteId !== null && dragOverVaultId === vault.id}
                   icon={<Database className="h-3.5 w-3.5 shrink-0" style={{ opacity: isActiveVault ? 1 : 0.6 }} />}
                   bold={isActiveVault}
                 >
@@ -461,15 +527,15 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
 
       {/* Vault switcher + settings at the bottom */}
       <div
-        className="flex shrink-0 items-center gap-1 px-2 py-1.5"
-        style={{ borderTop: "1px solid var(--border)" }}
+        className="flex shrink-0 items-center gap-2"
+        style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderTop: "1px solid var(--border)" }}
       >
-        <Database size={12} className="shrink-0 text-muted-foreground/60" />
+        <Database size={12} className="shrink-0" style={{ color: "#6b6b70" }} />
         <select
           value={activeVault?.id ?? ""}
           onChange={(e) => switchVault(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none cursor-pointer"
-          style={{ appearance: "none" }}
+          className="min-w-0 flex-1 bg-transparent text-xs outline-none cursor-pointer"
+          style={{ appearance: "none", color: "#c8c8cc", fontSize: 13 }}
         >
           {vaults.map((v) => (
             <option key={v.id} value={v.id} style={{ background: "var(--background)" }}>
@@ -484,7 +550,8 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
           onClick={() =>
             window.dispatchEvent(new CustomEvent("nexote:open-settings"))
           }
-          className="flex h-6 w-6 items-center justify-center text-muted-foreground/60 hover:text-foreground rounded hover:bg-white/5"
+          className="flex h-6 w-6 items-center justify-center rounded hover:bg-white/5"
+          style={{ color: "#6b6b70" }}
         >
           <Settings2 size={12} />
         </button>
@@ -624,42 +691,47 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
           ]);
         }}
           className={[
-            "flex w-full items-center gap-1 py-1 text-sm transition-colors",
+            "group flex w-full items-center gap-2 transition-colors",
             isDragOver
               ? "bg-primary/20"
-              : "text-foreground/80 hover:bg-muted",
+              : "hover:bg-white/5",
           ].join(" ")}
-          style={{ paddingLeft: 8 + depth * 12 }}
+          style={{ height: 33, paddingLeft: 14 + depth * 14, paddingRight: 14, borderRadius: 5 }}
         >
           <button
             type="button"
-            onClick={() => setOpenMap((prev) => ({ ...prev, [node.path]: !open }))}
-            className="flex items-center gap-1 min-w-0 flex-1"
+            onClick={() => onDrillInto(node.path)}
+            className="flex items-center gap-2 min-w-0 flex-1"
+            style={{ height: 33 }}
           >
             <ChevronRight
               className={[
-                "h-3.5 w-3.5 shrink-0 text-muted-foreground/75 transition-transform",
+                "h-3 w-3 shrink-0 transition-transform",
                 open ? "rotate-90" : "",
               ].join(" ")}
+              style={{ color: "#6b6b70" }}
             />
             {open ? (
-              <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground/75" />
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />
             ) : (
-              <Folder className="h-4 w-4 shrink-0 text-muted-foreground/75" />
+              <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />
             )}
-            <span className="truncate font-medium">{node.name}</span>
+            <span className="truncate" style={{ fontSize: 13, fontWeight: 500, color: "#c8c8cc" }}>{node.name}</span>
           </button>
           <button
             type="button"
-            aria-label={`Open ${node.name} folder`}
-            title="Open folder"
+            aria-label={`Toggle ${node.name} folder`}
+            title="Expand / collapse"
             onClick={(e) => {
               e.stopPropagation();
-              onDrillInto(node.path);
+              setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
             }}
-            className="shrink-0 p-0.5 text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+            className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+            style={{ color: "#6b6b70" }}
           >
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight
+              className={["h-3.5 w-3.5 transition-transform", open ? "rotate-90" : ""].join(" ")}
+            />
           </button>
         </div>
       {open && (
@@ -747,18 +819,20 @@ function NoteItem(
           ]);
         }}
         className={[
-          "group flex w-full items-center gap-1.5 py-1 text-sm transition-colors",
-          active
-            ? "text-foreground"
-            : "text-foreground/80 hover:bg-muted",
+          "group flex w-full items-center gap-2 transition-colors",
+          active ? "" : "hover:bg-white/5",
         ].join(" ")}
-        style={{ paddingLeft: 24 + depth * 12 }}
+        style={{
+          height: 33,
+          paddingLeft: 30 + depth * 14,
+          paddingRight: 14,
+          borderRadius: 5,
+          background: active ? "var(--primary)" : undefined,
+        }}
       >
         <FileText
-          className={[
-            "h-4 w-4 shrink-0",
-            active ? "text-primary" : "text-muted-foreground/75",
-          ].join(" ")}
+          className="h-3.5 w-3.5 shrink-0"
+          style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
         />
         {isRenaming ? (
           <input
@@ -781,7 +855,13 @@ function NoteItem(
               }
               setRenaming(null);
             }}
-            className="min-w-0 flex-1 rounded border border-ring bg-background px-1 text-sm text-foreground outline-none"
+            className="min-w-0 flex-1 rounded border px-1 outline-none"
+            style={{
+              background: "var(--background)",
+              borderColor: "var(--ring)",
+              fontSize: 13,
+              color: "var(--foreground)",
+            }}
           />
         ) : (
           <button
@@ -789,6 +869,10 @@ function NoteItem(
             onClick={() => onOpen(note.id)}
             onDoubleClick={() => setRenaming({ id: note.id, value: note.title })}
             className="min-w-0 flex-1 truncate text-left"
+            style={{
+              fontSize: 13,
+              color: active ? "var(--primary-foreground)" : "#c8c8cc",
+            }}
           >
             {note.title || "Untitled"}
           </button>
@@ -801,7 +885,8 @@ function NoteItem(
             e.stopPropagation();
             onDelete(note.id);
           }}
-          className="shrink-0 p-0.5 text-muted-foreground/50 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+          className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+          style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
         >
           <Trash2 className="h-3 w-3" />
         </button>
@@ -1005,32 +1090,32 @@ function DrillView({
   return (
     <div>
       {/* Back arrow + breadcrumb */}
-      <div className="flex items-center gap-1 px-2 py-1.5 mb-1" style={{ borderBottom: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 mb-1" style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderBottom: "1px solid var(--border)" }}>
         <button
           type="button"
           aria-label="Back to tree"
           title="Back to tree"
           onClick={onBack}
-          className="flex h-6 w-6 items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-white/5"
+          className="flex h-6 w-6 items-center justify-center rounded hover:bg-white/5"
+          style={{ color: "#6b6b70" }}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 text-xs text-muted-foreground/80 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden" style={{ fontSize: 12 }}>
           {segments.map((seg, i) => {
             const fullPath = segments.slice(0, i + 1).join("/");
             const isLast = i === segments.length - 1;
             return (
               <span key={i} className="flex items-center gap-0.5 shrink-0">
-                {i > 0 && <span className="text-muted-foreground/40">/</span>}
+                {i > 0 && <span style={{ color: "#6b6b70" }}>/</span>}
                 <button
                   type="button"
                   onClick={() => !isLast && onDrillInto(fullPath)}
-                  className={[
-                    "truncate transition-colors",
-                    isLast
-                      ? "text-foreground font-medium"
-                      : "text-muted-foreground hover:text-foreground",
-                  ].join(" ")}
+                  className="truncate transition-colors"
+                  style={{
+                    color: isLast ? "#c8c8cc" : "#6b6b70",
+                    fontWeight: isLast ? 500 : 400,
+                  }}
                 >
                   {seg}
                 </button>
@@ -1045,18 +1130,19 @@ function DrillView({
         {subFolders.map((f) => (
           <li key={f.path}>
             <div
-              className="group flex w-full items-center gap-1 py-1 text-sm text-foreground/80 hover:bg-muted transition-colors"
-              style={{ paddingLeft: 12 }}
+              className="group flex w-full items-center gap-2 hover:bg-white/5 transition-colors"
+              style={{ height: 33, paddingLeft: 14, paddingRight: 14, borderRadius: 5 }}
             >
-              <Folder className="h-4 w-4 shrink-0 text-muted-foreground/75" />
+              <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />
               <button
                 type="button"
                 onClick={() => onDrillInto(f.path)}
-                className="min-w-0 flex-1 truncate text-left font-medium"
+                className="min-w-0 flex-1 truncate text-left"
+                style={{ fontSize: 13, fontWeight: 500, color: "#c8c8cc" }}
               >
                 {f.name}
               </button>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />
             </div>
           </li>
         ))}
@@ -1113,6 +1199,10 @@ function CollapsibleSection({
   icon,
   bold,
   children,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  dropActive,
 }: {
   title: string;
   count: number;
@@ -1121,27 +1211,54 @@ function CollapsibleSection({
   icon?: React.ReactNode;
   bold?: boolean;
   children: React.ReactNode;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: () => void;
+  onDrop?: (e: React.DragEvent) => void;
+  dropActive?: boolean;
 }) {
   return (
-    <div className="mb-0.5">
+    <div
+      className="mb-3 last:mb-0"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      style={dropActive ? { borderRadius: 5, background: "var(--primary)" } : undefined}
+    >
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-1 px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-        style={bold ? { color: "var(--foreground)" } : undefined}
+        className="flex w-full items-center gap-2 transition-colors hover:bg-white/5"
+        style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderRadius: 5 }}
       >
         <ChevronRight
           className={[
             "h-3 w-3 shrink-0 transition-transform",
             expanded ? "rotate-90" : "",
           ].join(" ")}
+          style={{ color: "#6b6b70" }}
         />
-        {icon}
-        <span className={bold ? "font-semibold" : "font-medium"}>{title}</span>
-        <span className="ml-auto text-muted-foreground/50">{count}</span>
+        {icon ?? (
+          <span className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />
+        )}
+        <span
+          style={{
+            fontSize: 13.5,
+            fontWeight: 500,
+            color: bold ? "#c8c8cc" : "#c8c8cc",
+          }}
+        >
+          {title}
+        </span>
+        {count > 0 && (
+          <span
+            className="ml-auto"
+            style={{ fontSize: 12, color: "#6b6b70" }}
+          >
+            {count}
+          </span>
+        )}
       </button>
       {expanded && <div className="mt-0.5">{children}</div>}
-      <div className="mt-1 mb-1 mx-2 border-t" style={{ borderColor: "var(--border)" }} />
     </div>
   );
 }
@@ -1164,31 +1281,39 @@ function RecentFilesList({
 
   return (
     <ul>
-      {recent.map((n) => (
-        <li key={n.id}>
-          <button
-            type="button"
-            onClick={() => onOpen(n.id)}
-            className={[
-              "flex w-full items-center gap-1.5 px-2 py-0.5 text-sm transition-colors",
-              n.id === activeId
-                ? "text-foreground"
-                : "text-foreground/70 hover:bg-muted",
-            ].join(" ")}
-            style={{ paddingLeft: 20 }}
-          >
-            <FileText
-              className={[
-                "h-3.5 w-3.5 shrink-0",
-                n.id === activeId
-                  ? "text-primary"
-                  : "text-muted-foreground/60",
-              ].join(" ")}
-            />
-            <span className="truncate">{n.title || "Untitled"}</span>
-          </button>
-        </li>
-      ))}
+      {recent.map((n) => {
+        const active = n.id === activeId;
+        return (
+          <li key={n.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(n.id)}
+              className="flex w-full items-center gap-2 transition-colors"
+              style={{
+                height: 33,
+                paddingLeft: 30,
+                paddingRight: 14,
+                borderRadius: 5,
+                background: active ? "var(--primary)" : undefined,
+              }}
+            >
+              <FileText
+                className="h-3.5 w-3.5 shrink-0"
+                style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
+              />
+              <span
+                className="truncate"
+                style={{
+                  fontSize: 13,
+                  color: active ? "var(--primary-foreground)" : "#c8c8cc",
+                }}
+              >
+                {n.title || "Untitled"}
+              </span>
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -1210,16 +1335,13 @@ function VaultNoteList({
   onDrillInto: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const recent = [...notes]
-    .sort((a, b) => {
-      // Use title as fallback if updatedAt not available
-      return a.title.localeCompare(b.title);
-    })
+  const sorted = [...notes]
+    .sort((a, b) => a.title.localeCompare(b.title))
     .slice(0, showAll ? 100 : 5);
 
   if (notes.length === 0 && folders.length === 0) {
     return (
-      <div className="px-3 py-1 text-xs text-muted-foreground/50">
+      <div className="px-3 py-1 text-xs" style={{ color: "#6b6b70", paddingLeft: 30 }}>
         Empty vault
       </div>
     );
@@ -1228,30 +1350,46 @@ function VaultNoteList({
   return (
     <div>
       <ul>
-        {recent.map((n) => (
-          <li key={n.id}>
-            <button
-              type="button"
-              onClick={() => onOpen(vaultId, n.id)}
-              className="flex w-full items-center gap-1.5 px-2 py-0.5 text-sm text-foreground/70 hover:bg-muted transition-colors"
-              style={{ paddingLeft: 20 }}
-            >
-              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-              <span className="truncate">{n.title || "Untitled"}</span>
-              {n.path && (
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground/40">
-                  {n.path.split("/")[0]}
+        {sorted.map((n) => {
+          const active = n.id === activeId;
+          return (
+            <li key={n.id}>
+              <button
+                type="button"
+                onClick={() => onOpen(vaultId, n.id)}
+                className="flex w-full items-center gap-2 transition-colors hover:bg-white/5"
+                style={{
+                  height: 33,
+                  paddingLeft: 30,
+                  paddingRight: 14,
+                  borderRadius: 5,
+                  background: active ? "var(--primary)" : undefined,
+                }}
+              >
+                <FileText
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
+                />
+                <span
+                  className="truncate"
+                  style={{
+                    fontSize: 13,
+                    color: active ? "var(--primary-foreground)" : "#c8c8cc",
+                  }}
+                >
+                  {n.title || "Untitled"}
                 </span>
-              )}
-            </button>
-          </li>
-        ))}
+              </button>
+            </li>
+          );
+        })}
       </ul>
       {notes.length > 5 && !showAll && (
         <button
           type="button"
           onClick={() => setShowAll(true)}
-          className="px-3 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+          className="hover:text-foreground"
+          style={{ fontSize: 12, color: "#6b6b70", paddingLeft: 30, paddingTop: 4 }}
         >
           Show all {notes.length}…
         </button>
@@ -1260,7 +1398,8 @@ function VaultNoteList({
         <button
           type="button"
           onClick={() => setShowAll(false)}
-          className="px-3 py-0.5 text-xs text-muted-foreground hover:text-foreground"
+          className="hover:text-foreground"
+          style={{ fontSize: 12, color: "#6b6b70", paddingLeft: 30, paddingTop: 4 }}
         >
           Show less
         </button>
@@ -1268,8 +1407,8 @@ function VaultNoteList({
       <button
         type="button"
         onClick={onDrillInto}
-        className="flex w-full items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
-        style={{ paddingLeft: 20 }}
+        className="flex w-full items-center gap-1.5 hover:text-foreground"
+        style={{ fontSize: 12, color: "#6b6b70", paddingLeft: 30, paddingTop: 4, paddingRight: 14, height: 28 }}
       >
         <ChevronRight className="h-3 w-3" />
         <span>Switch to this vault</span>

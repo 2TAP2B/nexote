@@ -94,7 +94,7 @@ function AppShell() {
           <div
             className={
               "flex items-center gap-0.5 shrink-0 transition-[width] duration-200 " +
-              (collapsed ? "w-12 pl-0 justify-center" : "w-[300px] pl-3")
+              (collapsed ? "w-12 pl-0 justify-center" : "w-[371px] pl-3")
             }
           >
             <button
@@ -185,7 +185,7 @@ function AppShell() {
           <aside
             className={[
               "flex h-full shrink-0 flex-col transition-[width] duration-200",
-              collapsed ? "md:w-0 w-[300px] overflow-hidden" : "w-[300px]",
+              collapsed ? "md:w-0 w-[371px] overflow-hidden" : "w-[371px]",
               "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:pt-10",
               mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
               "md:static md:translate-x-0 md:pt-0",

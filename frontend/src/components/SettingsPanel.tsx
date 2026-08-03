@@ -18,6 +18,8 @@ export default function SettingsPanel({ open, onClose }: Props) {
     createVault,
     renameVault,
     deleteVault,
+    treeMode,
+    setTreeMode,
   } = useNotes();
   const [newVaultName, setNewVaultName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -186,6 +188,54 @@ export default function SettingsPanel({ open, onClose }: Props) {
             >
               Add
             </button>
+          </div>
+        </div>
+
+        {/* Note tree mode */}
+        <div className="flex flex-col gap-2 border-t border-border p-4">
+          <div className="flex items-center gap-2">
+            <FolderPlus className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium text-foreground">Note tree</h2>
+          </div>
+          <div className="flex flex-col gap-2">
+            {(
+              [
+                {
+                  value: "advanced",
+                  label: "Advanced",
+                  desc: "Shortcuts, recent files, and all vaults",
+                },
+                {
+                  value: "simple",
+                  label: "Simple",
+                  desc: "Only the active vault's folders",
+                },
+              ] as const
+            ).map((opt) => (
+              <label
+                key={opt.value}
+                className={[
+                  "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition-colors",
+                  treeMode === opt.value
+                    ? "border-primary/40 bg-primary/10"
+                    : "border-border hover:bg-muted/50",
+                ].join(" ")}
+              >
+                <input
+                  type="radio"
+                  name="tree-mode"
+                  checked={treeMode === opt.value}
+                  onChange={() => setTreeMode(opt.value)}
+                  className="accent-[var(--primary)]"
+                />
+                <span className="flex flex-col">
+                  <span className="text-sm text-foreground">{opt.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {opt.desc}
+                  </span>
+                </span>
+              </label>
+            ))}
           </div>
         </div>
 

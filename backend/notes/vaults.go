@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // VaultMeta is the metadata for a registered vault.
@@ -216,6 +217,44 @@ func (r *VaultRegistry) Store(id string) (*Store, error) {
 		return nil, err
 	}
 	return NewStore(vault.Path)
+}
+
+// MoveNote moves a note from one vault to another. It reads the note from
+// the source vault, writes it to the target vault with a new ID (preserving
+// title, body, and path), then deletes the original.
+func (r *VaultRegistry) MoveNote(srcVaultId, noteId, dstVaultId string) (Document, error) {
+	srcStore, err := r.Store(srcVaultId)
+	if err != nil {
+		return Document{}, err
+	}
+	dstStore, err := r.Store(dstVaultId)
+	if err != nil {
+		return Document{}, err
+	}
+
+	doc, err := srcStore.Get(noteId)
+	if err != nil {
+		return Document{}, err
+	}
+
+	newDoc := Document{
+		Meta: doc.Meta,
+		Body: doc.Body,
+	}
+	newDoc.Meta.ID = NewID()
+	now := time.Now().UTC()
+	newDoc.Meta.CreatedAt = now
+	newDoc.Meta.UpdatedAt = now
+
+	if err := dstStore.write(newDoc); err != nil {
+		return Document{}, err
+	}
+
+	if err := srcStore.Delete(noteId); err != nil {
+		return Document{}, err
+	}
+
+	return newDoc, nil
 }
 
 // Bookmarks returns a bookmarks store for the given vault ID.

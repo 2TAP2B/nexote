@@ -39,6 +39,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/vaults/{vaultId}/notes", h.listNotes)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes", h.createNote)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/copy", h.copyNote)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/move", h.moveNote)
 	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/daily", h.dailyNote)
 	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/{id}", h.getNote)
 	mux.HandleFunc("PUT /api/vaults/{vaultId}/notes/{id}", h.updateNote)
@@ -189,6 +190,24 @@ func (h *Handler) copyNote(w http.ResponseWriter, r *http.Request) {
 	doc, err := store.Copy(in.ID)
 	if err != nil {
 		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toPayload(doc))
+}
+
+func (h *Handler) moveNote(w http.ResponseWriter, r *http.Request) {
+	srcVaultId := r.PathValue("vaultId")
+	var in struct {
+		ID         string `json:"id"`
+		DstVaultId string `json:"dstVaultId"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := h.Registry.MoveNote(srcVaultId, in.ID, in.DstVaultId)
+	if err != nil {
+		h.writeRegistryError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, toPayload(doc))

@@ -100,6 +100,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ id }),
     }),
+  move: (srcVaultId: string, id: string, dstVaultId: string) =>
+    request<Note>(`${vaultBase(srcVaultId)}/notes/move`, {
+      method: "POST",
+      body: JSON.stringify({ id, dstVaultId }),
+    }),
   update: (vaultId: string, id: string, input: NoteInput) =>
     request<Note>(`${vaultBase(vaultId)}/notes/${id}`, {
       method: "PUT",

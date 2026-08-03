@@ -40,6 +40,7 @@ type NotesContextValue = {
   closeTab: (id: string) => void;
   create: (input?: { title?: string; path?: string }) => Promise<void>;
   copyNote: (id: string) => Promise<void>;
+  moveNoteToVault: (noteId: string, dstVaultId: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   moveNote: (id: string, path: string) => Promise<void>;
@@ -53,6 +54,8 @@ type NotesContextValue = {
   // Multi-vault data for the advanced tree
   allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
+  treeMode: "simple" | "advanced";
+  setTreeMode: (mode: "simple" | "advanced") => void;
 };
 
 export const DASHBOARD_ID = "__dashboard__";
@@ -81,6 +84,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [allVaultData, setAllVaultData] = useState<
     Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>
   >({});
+  const [treeMode, setTreeModeState] = useState<"simple" | "advanced">("advanced");
+
+  useEffect(() => {
+    const stored = localStorage.getItem("nexote:tree-mode");
+    if (stored === "simple" || stored === "advanced") {
+      setTreeModeState(stored);
+    }
+  }, []);
+
+  const setTreeMode = useCallback((mode: "simple" | "advanced") => {
+    setTreeModeState(mode);
+    localStorage.setItem("nexote:tree-mode", mode);
+  }, []);
 
   const activeVault = useMemo(
     () => vaults.find((v) => v.id === activeVaultId) ?? null,
@@ -316,6 +332,35 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [activeVaultId, refresh],
   );
 
+  const moveNoteToVault = useCallback(
+    async (noteId: string, dstVaultId: string) => {
+      if (!activeVaultId || activeVaultId === dstVaultId) return;
+      try {
+        await api.move(activeVaultId, noteId, dstVaultId);
+        // Remove from open tabs if present
+        closeTab(noteId);
+        // Refresh both vaults' data
+        await refresh();
+        // Reload the destination vault's data in allVaultData
+        try {
+          const dstResult = await api.list(dstVaultId);
+          setAllVaultData((prev) => ({
+            ...prev,
+            [dstVaultId]: {
+              notes: dstResult.notes ?? [],
+              folders: dstResult.folders ?? [],
+            },
+          }));
+        } catch {
+          // ignore
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to move note");
+      }
+    },
+    [activeVaultId, closeTab, refresh],
+  );
+
   const toggleBookmark = useCallback(
     async (id: string) => {
       if (!activeVaultId) return;
@@ -495,6 +540,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       closeTab,
       create,
       copyNote,
+      moveNoteToVault,
       createFolder,
       removeFolder,
       moveNote,
@@ -507,6 +553,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       refresh,
       allVaultData,
       openNoteInVault,
+      treeMode,
+      setTreeMode,
     }),
     [
       vaults,
@@ -531,6 +579,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       closeTab,
       create,
       copyNote,
+      moveNoteToVault,
       createFolder,
       removeFolder,
       moveNote,
@@ -543,6 +592,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       refresh,
       allVaultData,
       openNoteInVault,
+      treeMode,
+      setTreeMode,
     ],
   );
 
