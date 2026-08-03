@@ -44,6 +44,7 @@ export default function EditorPane() {
   const skipNextChange = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const prevBodyRef = useRef("");
+  const ownSaveCountRef = useRef(0);
 
   useEffect(() => {
     if (!activeNote) {
@@ -56,6 +57,16 @@ export default function EditorPane() {
     const sameNote = activeNote.id === loadedKey;
     const bodyChanged = activeNote.body !== prevBodyRef.current;
     prevBodyRef.current = activeNote.body;
+
+    // If this update came from our own save, don't remount the editor or
+    // overwrite local body state — the user may have continued typing while
+    // the async save was in flight.
+    if (ownSaveCountRef.current > 0) {
+      ownSaveCountRef.current--;
+      setTitle(activeNote.title);
+      setLoadedKey(activeNote.id);
+      return;
+    }
 
     setTitle(activeNote.title);
     setBody(activeNote.body);
@@ -88,6 +99,8 @@ export default function EditorPane() {
     if (skipNextChange.current) return;
 
     const t = setTimeout(() => {
+      ownSaveCountRef.current++;
+      prevBodyRef.current = body;
       void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);

@@ -19,6 +19,7 @@ import { useState } from "react";
 import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
 import FileTree, { type TreeControls } from "@/components/FileTree";
+import MobileBottomBar from "@/components/MobileBottomBar";
 import Ribbon from "@/components/Ribbon";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
@@ -176,6 +177,8 @@ function AppShell() {
             <EditorPane />
           </main>
         </div>
+
+        <MobileBottomBar onOpenPalette={() => setPaletteOpen(true)} />
 
         <CommandPalette
           open={paletteOpen}

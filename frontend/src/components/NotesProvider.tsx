@@ -75,9 +75,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await api.list();
       // newest updatedAt first
-      result.notes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      setNotes(result.notes);
-      setFolders(result.folders);
+      result.notes?.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      setNotes(result.notes ?? []);
+      setFolders(result.folders ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notes");
     }

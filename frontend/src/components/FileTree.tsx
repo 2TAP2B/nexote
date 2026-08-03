@@ -113,7 +113,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     refresh,
     save,
   } = useNotes();
-  const tree = useMemo(() => buildTree(notes, folders), [notes, folders]);
+  const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [sorted, setSorted] = useState(false);

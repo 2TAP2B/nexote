@@ -147,6 +147,7 @@ body {
 .milkdown {
   flex: 1;
   min-height: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -154,9 +155,10 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 64px 64px 120px;
-  max-width: 720px;
+  width: 100%;
+  max-width: 960px;
   margin: 0 auto;
+  padding: 64px 64px 120px;
   font-size: 16px;
   line-height: 1.75;
   font-weight: 400;
@@ -165,8 +167,18 @@ body {
 
 @media (max-width: 768px) {
   .milkdown .ProseMirror {
-    padding: 32px 20px 80px;
+    max-width: 100%;
+    padding: 24px 16px 96px;
   }
+}
+
+/* Hide scrollbar for tab overflow areas (MobileBottomBar) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .milkdown .ProseMirror h1 {

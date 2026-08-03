@@ -55,7 +55,7 @@ type ListResult struct {
 // directories on disk, so empty folders persist after the last note is deleted.
 func (s *Store) List() (ListResult, error) {
 	var notes []Entry
-	var folders []FolderEntry
+	var folders []FolderEntry = []FolderEntry{}
 
 	err := filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
