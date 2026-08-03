@@ -106,6 +106,31 @@ func (s *Store) Get(id string) (Document, error) {
 	return s.read(id)
 }
 
+// Copy duplicates a note: reads the source note, generates a new ID, and
+// writes it as a new file in the same folder. The title gets " (copy)"
+// appended if it doesn't already end with that.
+func (s *Store) Copy(id string) (Document, error) {
+	doc, err := s.read(id)
+	if err != nil {
+		return Document{}, err
+	}
+	newDoc := Document{
+		Meta: doc.Meta,
+		Body: doc.Body,
+	}
+	newDoc.Meta.ID = NewID()
+	if !strings.HasSuffix(newDoc.Meta.Title, " (copy)") {
+		newDoc.Meta.Title = newDoc.Meta.Title + " (copy)"
+	}
+	now := time.Now().UTC()
+	newDoc.Meta.CreatedAt = now
+	newDoc.Meta.UpdatedAt = now
+	if err := s.write(newDoc); err != nil {
+		return Document{}, err
+	}
+	return newDoc, nil
+}
+
 // CreateInput is the optional body for creating a note.
 type CreateInput struct {
 	Title string `json:"title"`

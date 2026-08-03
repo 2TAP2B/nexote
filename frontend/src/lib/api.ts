@@ -69,6 +69,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  copy: (id: string) =>
+    request<Note>("/api/notes/copy", {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    }),
   update: (id: string, input: NoteInput) =>
     request<Note>(`/api/notes/${id}`, {
       method: "PUT",
@@ -83,4 +88,13 @@ export const api = {
     }),
   removeFolder: (path: string) =>
     request<void>(`/api/folders/${path}`, { method: "DELETE" }),
+  listBookmarks: () =>
+    request<{ bookmarks: string[] }>("/api/bookmarks"),
+  addBookmark: (id: string) =>
+    request<void>("/api/bookmarks", {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    }),
+  removeBookmark: (id: string) =>
+    request<void>(`/api/bookmarks/${id}`, { method: "DELETE" }),
 };

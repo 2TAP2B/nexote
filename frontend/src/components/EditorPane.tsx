@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
+  Bookmark,
+  BookmarkCheck,
   Ellipsis,
   FileText,
   Loader2,
@@ -35,7 +37,7 @@ function replaceOrAddH1(body: string, title: string): string {
 }
 
 export default function EditorPane() {
-  const { activeNote, activeId, save, saving, setDraft, isDashboardActive } =
+  const { activeNote, activeId, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark } =
     useNotes();
 
   const [title, setTitle] = useState("");
@@ -205,7 +207,7 @@ export default function EditorPane() {
           )}
         </div>
 
-        {/* Right: reading view + 3-dot menu */}
+        {/* Right: save status, bookmark, reading view + 3-dot menu */}
         <div className="flex items-center gap-1">
           <span className="text-xs text-muted-foreground/40">
             {saving ? (
@@ -214,6 +216,25 @@ export default function EditorPane() {
               "Saved"
             )}
           </span>
+          <button
+            type="button"
+            aria-label={bookmarks.has(activeNote.id) ? "Remove bookmark" : "Bookmark note"}
+            title={bookmarks.has(activeNote.id) ? "Remove bookmark" : "Bookmark note"}
+            onClick={() => void toggleBookmark(activeNote.id)}
+            className="flex h-7 w-7 items-center justify-center transition-colors rounded hover:bg-white/5"
+            style={{
+              color: bookmarks.has(activeNote.id)
+                ? "var(--primary)"
+                : "var(--muted-foreground)",
+              opacity: bookmarks.has(activeNote.id) ? 1 : 0.5,
+            }}
+          >
+            {bookmarks.has(activeNote.id) ? (
+              <BookmarkCheck size={15} fill="currentColor" />
+            ) : (
+              <Bookmark size={15} />
+            )}
+          </button>
           <button
             type="button"
             aria-label="Reading view"

@@ -27,7 +27,8 @@ func main() {
 		log.Fatalf("init notes store: %v", err)
 	}
 
-	h := api.New(store)
+	bookmarks := notes.NewBookmarks(dir)
+	h := api.New(store, bookmarks)
 	addr := ":" + port
 	log.Printf("nexote backend listening on http://localhost%s (notes dir: %s)", addr, dir)
 	if err := http.ListenAndServe(addr, h.Routes()); err != nil {

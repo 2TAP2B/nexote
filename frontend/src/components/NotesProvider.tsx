@@ -17,6 +17,8 @@ type Draft = { title: string; body: string };
 type NotesContextValue = {
   notes: NoteMeta[];
   folders: FolderMeta[];
+  // Set of bookmarked note IDs.
+  bookmarks: Set<string>;
   // Tabs: ordered list of open note ids, with the active one focused.
   // The dashboard tab (DASHBOARD_ID) is always at index 0 and pinned.
   openTabs: string[];
@@ -37,6 +39,7 @@ type NotesContextValue = {
   openTab: (id: string) => Promise<void>;
   closeTab: (id: string) => void;
   create: (input?: { title?: string; path?: string }) => Promise<void>;
+  copyNote: (id: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   // moveNote moves a note to a new folder path ("" = root) by calling update
   // with path set. The note's title/body are preserved.
@@ -44,6 +47,7 @@ type NotesContextValue = {
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
+  toggleBookmark: (id: string) => Promise<void>;
   // forceSave persists the current draft (kept in sync by EditorPane) for the
   // active note immediately, bypassing the EditorPane debounce. Used by the
   // Cmd/Ctrl+S shortcut.
@@ -67,6 +71,7 @@ export function useNotes() {
 export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
   // Dashboard tab is always pinned at index 0.
   const [openTabs, setOpenTabs] = useState<string[]>([DASHBOARD_ID]);
   const [activeId, setActiveId] = useState<string | null>(DASHBOARD_ID);
@@ -84,6 +89,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       result.notes?.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       setNotes(result.notes ?? []);
       setFolders(result.folders ?? []);
+      const bm = await api.listBookmarks();
+      setBookmarks(new Set(bm.bookmarks ?? []));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notes");
     }
@@ -181,6 +188,46 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [refresh],
+  );
+
+  const copyNote = useCallback(
+    async (id: string) => {
+      try {
+        const note = await api.copy(id);
+        await refresh();
+        setNotesById((prev) => ({ ...prev, [note.id]: note }));
+        setOpenTabs((prev) =>
+          prev[0] === DASHBOARD_ID
+            ? [prev[0], note.id, ...prev.slice(1)]
+            : [...prev, note.id],
+        );
+        setActiveId(note.id);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to copy note");
+      }
+    },
+    [refresh],
+  );
+
+  const toggleBookmark = useCallback(
+    async (id: string) => {
+      const isBookmarked = bookmarks.has(id);
+      setBookmarks((prev) => {
+        const next = new Set(prev);
+        if (isBookmarked) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      try {
+        if (isBookmarked) await api.removeBookmark(id);
+        else await api.addBookmark(id);
+      } catch (e) {
+        // Revert on failure
+        setBookmarks(bookmarks);
+        setError(e instanceof Error ? e.message : "Failed to toggle bookmark");
+      }
+    },
+    [bookmarks],
   );
 
   const createFolder = useCallback(
@@ -310,6 +357,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     () => ({
       notes,
       folders,
+      bookmarks,
       openTabs,
       activeId,
       activeNote,
@@ -322,11 +370,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openTab,
       closeTab,
       create,
+      copyNote,
       createFolder,
       moveNote,
       openDaily,
       remove,
       save,
+      toggleBookmark,
       forceSave,
       setDraft,
       refresh,
@@ -334,6 +384,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [
       notes,
       folders,
+      bookmarks,
       openTabs,
       activeId,
       activeNote,
@@ -346,11 +397,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openTab,
       closeTab,
       create,
+      copyNote,
       createFolder,
       moveNote,
       openDaily,
       remove,
       save,
+      toggleBookmark,
       forceSave,
       setDraft,
       refresh,

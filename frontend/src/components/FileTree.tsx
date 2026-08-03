@@ -1,7 +1,10 @@
 "use client";
 
 import {
+  Bookmark,
+  BookmarkCheck,
   ChevronRight,
+  Copy,
   Edit3,
   FileText,
   FilePlus,
@@ -9,6 +12,7 @@ import {
   FolderInput,
   FolderOpen,
   FolderPlus,
+  SquareArrowOutUpRight,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -103,17 +107,21 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
   const {
     notes,
     folders,
+    bookmarks,
     activeId,
     openTab,
     create,
+    copyNote,
     createFolder,
     moveNote,
     remove,
     notesById,
     refresh,
     save,
+    toggleBookmark,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
+  const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [sorted, setSorted] = useState(false);
@@ -161,6 +169,19 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
   }, [tree]);
 
   const toggleSort = useCallback(() => setSorted((v) => !v), []);
+
+  // Listen for the "toggle bookmarks view" event from the sidebar header icon.
+  useEffect(() => {
+    const onToggleBookmarks = () =>
+      setShowBookmarksOnly((v) => !v);
+    const onShowFileTree = () => setShowBookmarksOnly(false);
+    window.addEventListener("nexote:toggle-bookmarks", onToggleBookmarks);
+    window.addEventListener("nexote:show-filetree", onShowFileTree);
+    return () => {
+      window.removeEventListener("nexote:toggle-bookmarks", onToggleBookmarks);
+      window.removeEventListener("nexote:show-filetree", onShowFileTree);
+    };
+  }, []);
 
   const folderPaths = useMemo(() => allFolderPaths(tree), [tree]);
   const allExpanded = folderPaths.every((p) => openMap[p] ?? true);
@@ -282,28 +303,48 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
       <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={() => openFolderDialog()} />
 
       <div className="flex-1 overflow-y-auto px-1 pb-2 pt-1">
-        <TreeChildren
-          node={tree}
-          depth={0}
-          activeId={activeId}
-          onOpen={openTab}
-          onDelete={setPendingDelete}
-          isFolderOpen={isFolderOpen}
-          setOpenMap={setOpenMap}
-          sorted={sorted}
-          onNoteDragStart={handleNoteDragStart}
-          onFolderDragOver={setDragOverPath}
-          onFolderDrop={handleFolderDrop}
-          dragOverPath={dragOverPath}
-          onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-          renaming={renaming}
-          setRenaming={setRenaming}
-          onRename={handleRename}
-          onMoveNote={handleMoveNote}
-          onDeleteFolder={handleDeleteFolder}
-          onNewNoteInFolder={(path) => void create({ path })}
-          onNewFolderInFolder={(path) => openFolderDialog(path)}
-        />
+        {showBookmarksOnly ? (
+          <BookmarksList
+            notes={notes.filter((n) => bookmarks.has(n.id))}
+            activeId={activeId}
+            onOpen={openTab}
+            onDelete={setPendingDelete}
+            onCopy={copyNote}
+            onBookmark={toggleBookmark}
+            bookmarks={bookmarks}
+            onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+            renaming={renaming}
+            setRenaming={setRenaming}
+            onRename={handleRename}
+            onMoveNote={handleMoveNote}
+          />
+        ) : (
+          <TreeChildren
+            node={tree}
+            depth={0}
+            activeId={activeId}
+            onOpen={openTab}
+            onDelete={setPendingDelete}
+            onCopy={copyNote}
+            onBookmark={toggleBookmark}
+            bookmarks={bookmarks}
+            isFolderOpen={isFolderOpen}
+            setOpenMap={setOpenMap}
+            sorted={sorted}
+            onNoteDragStart={handleNoteDragStart}
+            onFolderDragOver={setDragOverPath}
+            onFolderDrop={handleFolderDrop}
+            dragOverPath={dragOverPath}
+            onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+            renaming={renaming}
+            setRenaming={setRenaming}
+            onRename={handleRename}
+            onMoveNote={handleMoveNote}
+            onDeleteFolder={handleDeleteFolder}
+            onNewNoteInFolder={(path) => void create({ path })}
+            onNewFolderInFolder={(path) => openFolderDialog(path)}
+          />
+        )}
       </div>
 
       <DeleteConfirm
@@ -340,6 +381,9 @@ type TreeChildProps = {
   activeId: string | null;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
+  onCopy: (id: string) => void;
+  onBookmark: (id: string) => void;
+  bookmarks: Set<string>;
   isFolderOpen: (path: string) => boolean;
   setOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   sorted: boolean;
@@ -485,6 +529,9 @@ function NoteItem(
     active,
     onOpen,
     onDelete,
+    onCopy,
+    onBookmark,
+    bookmarks,
     onNoteDragStart,
     onContextMenu,
     renaming,
@@ -494,6 +541,7 @@ function NoteItem(
   } = props;
 
   const isRenaming = renaming?.id === note.id;
+  const isBookmarked = bookmarks.has(note.id);
 
   return (
     <li>
@@ -505,16 +553,34 @@ function NoteItem(
           e.stopPropagation();
           onContextMenu(e.clientX, e.clientY, [
             {
-              label: "Rename",
-              icon: <Edit3 className="h-4 w-4" />,
-              onClick: () => setRenaming({ id: note.id, value: note.title }),
+              label: "Open in new tab",
+              icon: <SquareArrowOutUpRight className="h-4 w-4" />,
+              onClick: () => onOpen(note.id),
+            },
+            { label: "", onClick: () => {}, separator: true },
+            {
+              label: "Make a copy",
+              icon: <Copy className="h-4 w-4" />,
+              onClick: () => onCopy(note.id),
             },
             {
               label: "Move to root",
               icon: <FolderInput className="h-4 w-4" />,
               onClick: () => onMoveNote(note.id, ""),
             },
+            {
+              label: isBookmarked ? "Remove bookmark" : "Bookmark",
+              icon: isBookmarked
+                ? <BookmarkCheck className="h-4 w-4" />
+                : <Bookmark className="h-4 w-4" />,
+              onClick: () => onBookmark(note.id),
+            },
             { label: "", onClick: () => {}, separator: true },
+            {
+              label: "Rename",
+              icon: <Edit3 className="h-4 w-4" />,
+              onClick: () => setRenaming({ id: note.id, value: note.title }),
+            },
             {
               label: "Delete",
               icon: <Trash2 className="h-4 w-4" />,
@@ -584,5 +650,76 @@ function NoteItem(
         </button>
       </div>
     </li>
+  );
+}
+
+function BookmarksList({
+  notes,
+  activeId,
+  onOpen,
+  onDelete,
+  onCopy,
+  onBookmark,
+  bookmarks,
+  onContextMenu,
+  renaming,
+  setRenaming,
+  onRename,
+  onMoveNote,
+}: {
+  notes: { id: string; title: string; path: string }[];
+  activeId: string | null;
+  onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+  onCopy: (id: string) => void;
+  onBookmark: (id: string) => void;
+  bookmarks: Set<string>;
+  onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
+  renaming: { id: string; value: string } | null;
+  setRenaming: (r: { id: string; value: string } | null) => void;
+  onRename: (id: string, title: string) => void;
+  onMoveNote: (id: string, path: string) => void;
+}) {
+  const sorted = [...notes].sort((a, b) =>
+    a.title.localeCompare(b.title),
+  );
+
+  return (
+    <ul>
+      {sorted.length === 0 && (
+        <li className="px-3 py-2 text-xs text-muted-foreground/50">
+          No bookmarked notes yet.
+        </li>
+      )}
+      {sorted.map((n) => (
+        <NoteItem
+          key={n.id}
+          note={n}
+          depth={0}
+          active={n.id === activeId}
+          activeId={activeId}
+          onOpen={onOpen}
+          onDelete={onDelete}
+          onCopy={onCopy}
+          onBookmark={onBookmark}
+          bookmarks={bookmarks}
+          onNoteDragStart={() => {}}
+          onContextMenu={onContextMenu}
+          renaming={renaming}
+          setRenaming={setRenaming}
+          onRename={onRename}
+          onMoveNote={onMoveNote}
+          isFolderOpen={() => false}
+          setOpenMap={() => {}}
+          sorted={false}
+          onFolderDragOver={() => {}}
+          onFolderDrop={() => {}}
+          dragOverPath={null}
+          onDeleteFolder={() => {}}
+          onNewNoteInFolder={() => {}}
+          onNewFolderInFolder={() => {}}
+        />
+      ))}
+    </ul>
   );
 }

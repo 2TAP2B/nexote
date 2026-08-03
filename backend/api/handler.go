@@ -14,12 +14,13 @@ import (
 
 // Handler holds the dependencies shared across all routes.
 type Handler struct {
-	Store *notes.Store
+	Store     *notes.Store
+	Bookmarks *notes.Bookmarks
 }
 
-// New creates a Handler backed by the given store.
-func New(s *notes.Store) *Handler {
-	return &Handler{Store: s}
+// New creates a Handler backed by the given store and bookmarks.
+func New(s *notes.Store, b *notes.Bookmarks) *Handler {
+	return &Handler{Store: s, Bookmarks: b}
 }
 
 // Routes returns an http.Handler serving the /api/* REST surface with CORS
@@ -28,12 +29,16 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/notes", h.list)
 	mux.HandleFunc("POST /api/notes", h.create)
+	mux.HandleFunc("POST /api/notes/copy", h.copyNote)
 	mux.HandleFunc("POST /api/folders", h.createFolder)
 	mux.HandleFunc("DELETE /api/folders/{path...}", h.deleteFolder)
 	mux.HandleFunc("GET /api/notes/daily", h.daily)
 	mux.HandleFunc("GET /api/notes/{id}", h.get)
 	mux.HandleFunc("PUT /api/notes/{id}", h.update)
 	mux.HandleFunc("DELETE /api/notes/{id}", h.delete)
+	mux.HandleFunc("GET /api/bookmarks", h.listBookmarks)
+	mux.HandleFunc("POST /api/bookmarks", h.addBookmark)
+	mux.HandleFunc("DELETE /api/bookmarks/{id}", h.removeBookmark)
 
 	return h.cors(mux)
 }
@@ -137,6 +142,57 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.Store.Delete(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	// Also remove from bookmarks if present.
+	_ = h.Bookmarks.Remove(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) copyNote(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ID string `json:"id"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := h.Store.Copy(in.ID)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toPayload(doc))
+}
+
+func (h *Handler) listBookmarks(w http.ResponseWriter, r *http.Request) {
+	ids, err := h.Bookmarks.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"bookmarks": ids})
+}
+
+func (h *Handler) addBookmark(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ID string `json:"id"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := h.Bookmarks.Add(in.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) removeBookmark(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.Bookmarks.Remove(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

@@ -103,8 +103,13 @@ function AppShell() {
               <>
                 <button
                   type="button"
-                  aria-label="Folder"
-                  title="Folder"
+                  aria-label="File tree"
+                  title="File tree"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("nexote:show-filetree"),
+                    )
+                  }
                   className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
                 >
                   <Folder size={18} />
@@ -122,6 +127,11 @@ function AppShell() {
                   type="button"
                   aria-label="Bookmarks"
                   title="Bookmarks"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("nexote:toggle-bookmarks"),
+                    )
+                  }
                   className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
                 >
                   <Bookmark size={18} />
