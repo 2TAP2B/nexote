@@ -18,10 +18,13 @@ type NotesContextValue = {
   notes: NoteMeta[];
   folders: FolderMeta[];
   // Tabs: ordered list of open note ids, with the active one focused.
+  // The dashboard tab (DASHBOARD_ID) is always at index 0 and pinned.
   openTabs: string[];
   activeId: string | null;
   // The full note for the active tab (null if none/while loading).
   activeNote: Note | null;
+  // Whether the active tab is the dashboard (pseudo-tab).
+  isDashboardActive: boolean;
   // Cache of full notes by id, so the tab bar can render titles without an
   // extra fetch.
   notesById: Record<string, Note>;
@@ -51,6 +54,8 @@ type NotesContextValue = {
   refresh: () => Promise<void>;
 };
 
+export const DASHBOARD_ID = "__dashboard__";
+
 const NotesContext = createContext<NotesContextValue | null>(null);
 
 export function useNotes() {
@@ -62,8 +67,9 @@ export function useNotes() {
 export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
-  const [openTabs, setOpenTabs] = useState<string[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // Dashboard tab is always pinned at index 0.
+  const [openTabs, setOpenTabs] = useState<string[]>([DASHBOARD_ID]);
+  const [activeId, setActiveId] = useState<string | null>(DASHBOARD_ID);
   // Cache of full notes by id, so switching tabs is instant after first load.
   const [notesById, setNotesById] = useState<Record<string, Note>>({});
   const [loading, setLoading] = useState(true);
@@ -94,13 +100,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const openTab = useCallback(
     async (id: string) => {
+      // Dashboard tab: just focus, never fetch.
+      if (id === DASHBOARD_ID) {
+        setActiveId(DASHBOARD_ID);
+        return;
+      }
       // Focus if already open.
       if (openTabs.includes(id)) {
         setActiveId(id);
         return;
       }
       setActiveId(id);
-      setOpenTabs((prev) => [...prev, id]);
+      // Insert after the dashboard tab (if present at index 0).
+      setOpenTabs((prev) =>
+        prev[0] === DASHBOARD_ID
+          ? [prev[0], id, ...prev.slice(1)]
+          : [...prev, id],
+      );
       // Load full body if not cached.
       if (!notesById[id]) {
         try {
@@ -116,13 +132,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const closeTab = useCallback(
     (id: string) => {
+      // Never close the dashboard tab.
+      if (id === DASHBOARD_ID) return;
       setOpenTabs((prev) => {
         const next = prev.filter((t) => t !== id);
-        // If we closed the active tab, focus a neighbor.
+        // If we closed the active tab, focus a neighbor (prefer dashboard,
+        // then the tab that takes its position).
         setActiveId((cur) => {
           if (cur !== id) return cur;
           const idx = prev.indexOf(id);
-          return next[idx] ?? next[idx - 1] ?? next[next.length - 1] ?? null;
+          return next[idx] ?? next[idx - 1] ?? next[0] ?? null;
         });
         return next;
       });
@@ -146,8 +165,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         });
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
-        setOpenTabs((prev) => [...prev, note.id]);
+        // Insert after the dashboard tab (if present at index 0).
+        setOpenTabs((prev) =>
+          prev[0] === DASHBOARD_ID
+            ? [prev[0], note.id, ...prev.slice(1)]
+            : [...prev, note.id],
+        );
         setActiveId(note.id);
+        // Signal the editor to auto-focus the title for inline renaming.
+        window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create note");
       } finally {
@@ -200,7 +226,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       await refresh();
       setNotesById((prev) => ({ ...prev, [note.id]: note }));
       if (!openTabs.includes(note.id)) {
-        setOpenTabs((prev) => [...prev, note.id]);
+        setOpenTabs((prev) =>
+          prev[0] === DASHBOARD_ID
+            ? [prev[0], note.id, ...prev.slice(1)]
+            : [...prev, note.id],
+        );
       }
       setActiveId(note.id);
     } catch (e) {
@@ -273,7 +303,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await save(activeId, draftRef.current);
   }, [save, activeId]);
 
-  const activeNote = activeId ? (notesById[activeId] ?? null) : null;
+  const activeNote = activeId && activeId !== DASHBOARD_ID ? (notesById[activeId] ?? null) : null;
+  const isDashboardActive = activeId === DASHBOARD_ID;
 
   const value = useMemo<NotesContextValue>(
     () => ({
@@ -282,6 +313,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openTabs,
       activeId,
       activeNote,
+      isDashboardActive,
       notesById,
       loading,
       error,
@@ -305,6 +337,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openTabs,
       activeId,
       activeNote,
+      isDashboardActive,
       notesById,
       loading,
       error,

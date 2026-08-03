@@ -1,9 +1,9 @@
 "use client";
 
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, LayoutDashboard } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { useNotes } from "@/lib/notes-context";
+import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
 type Props = {
   onOpenPalette: () => void;
@@ -74,14 +74,16 @@ export default function MobileBottomBar({ onOpenPalette }: Props) {
           </div>
         )}
         {openTabs.map((id) => {
+          const isDashboard = id === DASHBOARD_ID;
           const note = notesById[id];
+          const title = isDashboard ? "Dashboard" : note?.title || "Untitled";
           const active = id === activeId;
           return (
             <button
               key={id}
               type="button"
               onClick={() => void openTab(id)}
-              className="flex shrink-0 items-center px-2.5 text-xs truncate"
+              className="flex shrink-0 items-center justify-center text-xs"
               style={{
                 height: 34,
                 marginTop: 5,
@@ -89,19 +91,27 @@ export default function MobileBottomBar({ onOpenPalette }: Props) {
                 background: active ? "var(--background)" : "transparent",
                 borderRadius: 6,
                 marginLeft: 4,
-                minWidth: 60,
+                minWidth: isDashboard ? 40 : 60,
                 maxWidth: 130,
+                padding: isDashboard ? 0 : undefined,
               }}
             >
-              <span
-                className="truncate"
-                style={{
-                  fontWeight: active ? 500 : 400,
-                  opacity: active ? 1 : 0.55,
-                }}
-              >
-                {note?.title || "Untitled"}
-              </span>
+              {isDashboard ? (
+                <LayoutDashboard
+                  size={14}
+                  style={{ opacity: active ? 1 : 0.55 }}
+                />
+              ) : (
+                <span
+                  className="truncate"
+                  style={{
+                    fontWeight: active ? 500 : 400,
+                    opacity: active ? 1 : 0.55,
+                  }}
+                >
+                  {note?.title || "Untitled"}
+                </span>
+              )}
             </button>
           );
         })}

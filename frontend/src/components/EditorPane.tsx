@@ -12,11 +12,14 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
+import WelcomeDashboard from "@/components/WelcomeDashboard";
+import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
 
-const MilkdownEditorWrapper = dynamic(
-  () => import("@/components/MilkdownEditor"),
-  { ssr: false },
-);
+const MilkdownEditorWrapper = dynamic<
+  React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
+    ref?: React.Ref<MilkdownEditorHandle>;
+  }
+>(() => import("@/components/MilkdownEditor"), { ssr: false });
 
 function extractH1(body: string): string | null {
   const m = body.match(/^# (.+)$/m);
@@ -32,7 +35,8 @@ function replaceOrAddH1(body: string, title: string): string {
 }
 
 export default function EditorPane() {
-  const { activeNote, activeId, save, saving, setDraft } = useNotes();
+  const { activeNote, activeId, save, saving, setDraft, isDashboardActive } =
+    useNotes();
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -43,6 +47,7 @@ export default function EditorPane() {
 
   const skipNextChange = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<MilkdownEditorHandle>(null);
   const prevBodyRef = useRef("");
   const ownSaveCountRef = useRef(0);
 
@@ -112,6 +117,22 @@ export default function EditorPane() {
     requestAnimationFrame(() => titleInputRef.current?.focus());
   };
 
+  // When a new note is created, focus the editor and select the H1 text so
+  // the user can immediately rename it by typing, or press Enter to move
+  // past it and start writing the body.
+  useEffect(() => {
+    const onRenameNew = () => {
+      // The editor may need a moment to mount after the new note is set.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          editorRef.current?.selectHeading();
+        });
+      });
+    };
+    window.addEventListener("nexote:rename-new-note", onRenameNew);
+    return () => window.removeEventListener("nexote:rename-new-note", onRenameNew);
+  }, []);
+
   const commitTitle = async () => {
     if (!editingTitle) return;
     const t = titleDraft.trim() || "Untitled";
@@ -126,20 +147,8 @@ export default function EditorPane() {
     setEditingTitle(false);
   };
 
-  if (!activeNote) {
-    return (
-      <main className="flex flex-1 items-center justify-center bg-background p-6">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-2xl"
-            style={{ background: "var(--muted)" }}
-          >
-            <FileText className="h-6 w-6" />
-          </div>
-          <p className="text-sm">Select a note or create a new one.</p>
-        </div>
-      </main>
-    );
+  if (isDashboardActive || !activeNote) {
+    return <WelcomeDashboard />;
   }
 
   return (
@@ -227,6 +236,7 @@ export default function EditorPane() {
       {/* Editor — .milkdown handles its own scrolling */}
       <div className="min-h-0 flex-1 flex flex-col">
         <MilkdownEditorWrapper
+          ref={editorRef}
           key={`${activeNote.id}-${bodyKey}`}
           defaultValue={activeNote.body}
           onChange={handleEditorChange}

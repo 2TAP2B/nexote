@@ -6,15 +6,15 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
+  FilePlus,
   Folder,
   FolderPlus,
   LayoutList,
   Menu,
   PanelLeftClose,
-  Pen,
   Search,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
@@ -24,7 +24,7 @@ import Ribbon from "@/components/Ribbon";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
-import { NotesProvider, useNotes } from "@/lib/notes-context";
+import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
 
 export default function Page() {
   return (
@@ -35,7 +35,7 @@ export default function Page() {
 }
 
 function AppShell() {
-  const { openDaily } = useNotes();
+  const { openDaily, create, openTab } = useNotes();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -53,6 +53,26 @@ function AppShell() {
     onOpen: () => setMobileOpen(true),
     onClose: () => setMobileOpen(false),
   });
+
+  // Listen for the "toggle sidebar" event dispatched by keyboard shortcuts
+  // (Ctrl/Cmd+B or Ctrl/Cmd+\). On desktop it collapses/expands; on mobile it
+  // opens/closes the drawer.
+  useEffect(() => {
+    const onToggle = () => {
+      if (window.matchMedia("(max-width: 767px)").matches) {
+        setMobileOpen((v) => !v);
+      } else {
+        setCollapsed((v) => !v);
+      }
+    };
+    const onOpenPalette = () => setPaletteOpen(true);
+    window.addEventListener("nexote:toggle-sidebar", onToggle);
+    window.addEventListener("nexote:open-palette", onOpenPalette);
+    return () => {
+      window.removeEventListener("nexote:toggle-sidebar", onToggle);
+      window.removeEventListener("nexote:open-palette", onOpenPalette);
+    };
+  }, []);
 
   return (
     <>
@@ -110,7 +130,10 @@ function AppShell() {
             )}
           </div>
           <div className="flex-1 min-w-0 h-full">
-            <TopBar onOpenPalette={() => setPaletteOpen(true)} />
+            <TopBar
+              onOpenPalette={() => setPaletteOpen(true)}
+              onOpenDashboard={() => void openTab(DASHBOARD_ID)}
+            />
           </div>
         </div>
 
@@ -154,6 +177,7 @@ function AppShell() {
             <SidebarHeader
               collapsed={collapsed}
               onCollapseSidebar={() => setCollapsed(true)}
+              onNewNote={() => void create()}
               treeControls={treeControls}
             />
             <div className="min-h-0 flex-1 overflow-hidden">
@@ -192,10 +216,12 @@ function AppShell() {
 function SidebarHeader({
   collapsed,
   onCollapseSidebar,
+  onNewNote,
   treeControls,
 }: {
   collapsed: boolean;
   onCollapseSidebar: () => void;
+  onNewNote: () => void;
   treeControls: TreeControls;
 }) {
   if (collapsed) return null;
@@ -206,9 +232,9 @@ function SidebarHeader({
       style={{ borderBottom: "1px solid var(--border)" }}
     >
       <ActionButton
-        label="Edit"
-        icon={<Pen className="h-3.5 w-3.5" />}
-        onClick={() => {}}
+        label="New note"
+        icon={<FilePlus className="h-3.5 w-3.5" />}
+        onClick={onNewNote}
       />
       <ActionButton
         label="New folder"

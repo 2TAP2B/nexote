@@ -1,12 +1,13 @@
 "use client";
 
-import { ChevronDown, Plus, X } from "lucide-react";
+import { ChevronDown, LayoutDashboard, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { useNotes } from "@/lib/notes-context";
+import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 
 type TopBarProps = {
   onOpenPalette: () => void;
+  onOpenDashboard: () => void;
 };
 
 function replaceOrAddH1(body: string, title: string): string {
@@ -17,7 +18,7 @@ function replaceOrAddH1(body: string, title: string): string {
   return body ? `${h1}\n\n${body}` : h1;
 }
 
-export default function TopBar({ onOpenPalette }: TopBarProps) {
+export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) {
   const { openTabs, activeId, notesById, openTab, closeTab, create, creating, save } =
     useNotes();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -67,8 +68,9 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
       {/* Tabs */}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
         {openTabs.map((id) => {
+          const isDashboard = id === DASHBOARD_ID;
           const note = notesById[id];
-          const title = note?.title || "Untitled";
+          const title = isDashboard ? "Dashboard" : note?.title || "Untitled";
           const active = id === activeId;
           const isRenaming = renamingId === id;
           return (
@@ -79,15 +81,15 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
               aria-selected={active}
               onClick={() => { if (!isRenaming) void openTab(id); }}
               onMouseDown={(e) => {
-                if (e.button === 1) {
+                if (e.button === 1 && !isDashboard) {
                   e.preventDefault();
                   closeTab(id);
                 }
               }}
-              onDoubleClick={() => startRename(id, title)}
+              onDoubleClick={() => !isDashboard && startRename(id, title)}
               className="group flex shrink-0 cursor-pointer items-center px-3"
               style={{
-                minWidth: 100,
+                minWidth: isDashboard ? 40 : 100,
                 maxWidth: 220,
                 height: 34,
                 marginTop: 3,
@@ -110,6 +112,12 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
                   onClick={(e) => e.stopPropagation()}
                   className="min-w-0 flex-1 rounded border border-ring bg-background px-1 text-sm text-foreground outline-none"
                 />
+              ) : isDashboard ? (
+                <LayoutDashboard
+                  size={15}
+                  className="shrink-0"
+                  style={{ opacity: active ? 1 : 0.55 }}
+                />
               ) : (
                 <span
                   className="truncate"
@@ -123,7 +131,7 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
                   {title}
                 </span>
               )}
-              {!isRenaming && (active || undefined) && (
+              {!isRenaming && active && !isDashboard && (
                 <button
                   type="button"
                   aria-label="Close tab"
@@ -191,7 +199,7 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
             >
               <MenuItem
                 label="Create new note"
-                shortcut="Ctrl+N"
+                shortcut="Ctrl+Shift+N"
                 disabled={creating}
                 onClick={() => {
                   setMenuOpen(false);
@@ -206,12 +214,20 @@ export default function TopBar({ onOpenPalette }: TopBarProps) {
                   onOpenPalette();
                 }}
               />
+              <MenuItem
+                label="Open dashboard"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenDashboard();
+                }}
+              />
               <div
                 className="my-1"
                 style={{ borderTop: "1px solid var(--border)" }}
               />
               <MenuItem
                 label="Close tab"
+                shortcut="Ctrl+W"
                 disabled={activeId === null}
                 onClick={() => {
                   setMenuOpen(false);
