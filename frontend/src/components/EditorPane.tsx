@@ -37,7 +37,7 @@ function replaceOrAddH1(body: string, title: string): string {
 }
 
 export default function EditorPane() {
-  const { activeNote, activeId, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark } =
+  const { activeNote, activeId, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings } =
     useNotes();
 
   const [title, setTitle] = useState("");
@@ -104,6 +104,7 @@ export default function EditorPane() {
   useEffect(() => {
     if (!activeId || loadedKey !== activeId) return;
     if (skipNextChange.current) return;
+    if (!settings.autosave) return;
 
     const t = setTimeout(() => {
       ownSaveCountRef.current++;
@@ -111,7 +112,7 @@ export default function EditorPane() {
       void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);
-  }, [activeId, loadedKey, title, body, save]);
+  }, [activeId, loadedKey, title, body, save, settings.autosave]);
 
   const startEditingTitle = () => {
     setTitleDraft(title);
@@ -255,7 +256,10 @@ export default function EditorPane() {
       </div>
 
       {/* Editor — .milkdown handles its own scrolling */}
-      <div className="min-h-0 flex-1 flex flex-col">
+      <div
+        className="min-h-0 flex-1 flex flex-col"
+        style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
+      >
         <MilkdownEditorWrapper
           ref={editorRef}
           key={`${activeNote.id}-${bodyKey}`}

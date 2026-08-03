@@ -14,6 +14,18 @@ import { api, type FolderMeta, type Note, type NoteMeta, type VaultMeta } from "
 
 type Draft = { title: string; body: string };
 
+export type AppSettings = {
+  autosave: boolean;
+  defaultTitle: string;
+  editorFontSize: number;
+};
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  autosave: true,
+  defaultTitle: "Untitled",
+  editorFontSize: 16,
+};
+
 type NotesContextValue = {
   // Vaults
   vaults: VaultMeta[];
@@ -56,6 +68,8 @@ type NotesContextValue = {
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
   treeMode: "simple" | "advanced";
   setTreeMode: (mode: "simple" | "advanced") => void;
+  settings: AppSettings;
+  updateSettings: (patch: Partial<AppSettings>) => void;
 };
 
 export const DASHBOARD_ID = "__dashboard__";
@@ -91,6 +105,32 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     if (stored === "simple" || stored === "advanced") {
       setTreeModeState(stored);
     }
+  }, []);
+
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("nexote:settings");
+      if (stored) {
+        const parsed = JSON.parse(stored) as Partial<AppSettings>;
+        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+      }
+    } catch {
+      // ignore malformed settings
+    }
+  }, []);
+
+  const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem("nexote:settings", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   }, []);
 
   const setTreeMode = useCallback((mode: "simple" | "advanced") => {
@@ -291,7 +331,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setCreating(true);
       try {
         const note = await api.create(activeVaultId, {
-          title: input?.title ?? "Untitled",
+          title: input?.title ?? settings.defaultTitle,
           path: input?.path,
         });
         await refresh();
@@ -309,7 +349,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, refresh],
+    [activeVaultId, refresh, settings.defaultTitle],
   );
 
   const copyNote = useCallback(
@@ -555,6 +595,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openNoteInVault,
       treeMode,
       setTreeMode,
+      settings,
+      updateSettings,
     }),
     [
       vaults,
@@ -594,6 +636,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openNoteInVault,
       treeMode,
       setTreeMode,
+      settings,
+      updateSettings,
     ],
   );
 

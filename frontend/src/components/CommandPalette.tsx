@@ -12,6 +12,7 @@ import {
   Sun,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
@@ -36,6 +37,7 @@ type Item =
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { notes, openTab, create, openDaily, vaults, switchVault, activeVault } = useNotes();
+  const { theme, setTheme } = useTheme();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -110,12 +112,14 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         label: "Toggle theme",
         icon: <Sun className="h-4 w-4 shrink-0 text-muted-foreground" />,
         run: () => {
-          const isDark = document.documentElement.classList.contains("dark");
-          document.documentElement.classList.toggle("dark", !isDark);
+          const current = theme ?? "system";
+          if (current === "light") setTheme("dark");
+          else if (current === "dark") setTheme("system");
+          else setTheme("light");
         },
       },
     ],
-    [create, openDaily, openTab],
+    [create, openDaily, openTab, theme, setTheme],
   );
 
   const items = useMemo(() => {
