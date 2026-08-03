@@ -7,24 +7,24 @@ import (
 	"sort"
 )
 
-// Bookmarks is a persisted set of note IDs that the user has starred.
-// Stored as a simple JSON file in the notes directory.
-type Bookmarks struct {
-	dir string
+// idList is a persisted, order-preserving set of note IDs stored as a JSON
+// file. It backs both Bookmarks and Shortcuts.
+type idList struct {
+	dir  string
+	file string
 }
 
-// NewBookmarks creates a Bookmarks store rooted at the given notes directory.
-func NewBookmarks(dir string) *Bookmarks {
-	return &Bookmarks{dir: dir}
+func newIDList(dir, file string) *idList {
+	return &idList{dir: dir, file: file}
 }
 
-func (b *Bookmarks) path() string {
-	return filepath.Join(b.dir, ".bookmarks.json")
+func (l *idList) path() string {
+	return filepath.Join(l.dir, l.file)
 }
 
-// List returns the bookmarked note IDs in the order they were added.
-func (b *Bookmarks) List() ([]string, error) {
-	data, err := os.ReadFile(b.path())
+// List returns the IDs in the order they were added.
+func (l *idList) List() ([]string, error) {
+	data, err := os.ReadFile(l.path())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
@@ -38,9 +38,9 @@ func (b *Bookmarks) List() ([]string, error) {
 	return ids, nil
 }
 
-// Add bookmarks a note ID. No-op if already present.
-func (b *Bookmarks) Add(id string) error {
-	ids, err := b.List()
+// Add inserts an ID. No-op if already present.
+func (l *idList) Add(id string) error {
+	ids, err := l.List()
 	if err != nil {
 		return err
 	}
@@ -50,12 +50,12 @@ func (b *Bookmarks) Add(id string) error {
 		}
 	}
 	ids = append(ids, id)
-	return b.write(ids)
+	return l.write(ids)
 }
 
-// Remove removes a bookmark. No-op if not present.
-func (b *Bookmarks) Remove(id string) error {
-	ids, err := b.List()
+// Remove deletes an ID. No-op if not present.
+func (l *idList) Remove(id string) error {
+	ids, err := l.List()
 	if err != nil {
 		return err
 	}
@@ -65,12 +65,12 @@ func (b *Bookmarks) Remove(id string) error {
 			filtered = append(filtered, existing)
 		}
 	}
-	return b.write(filtered)
+	return l.write(filtered)
 }
 
-// IsBookmarked returns true if the given note ID is bookmarked.
-func (b *Bookmarks) IsBookmarked(id string) bool {
-	ids, err := b.List()
+// Contains reports whether the given ID is in the list.
+func (l *idList) Contains(id string) bool {
+	ids, err := l.List()
 	if err != nil {
 		return false
 	}
@@ -82,9 +82,9 @@ func (b *Bookmarks) IsBookmarked(id string) bool {
 	return false
 }
 
-// SortedIDs returns bookmarked IDs sorted for stable comparison.
-func (b *Bookmarks) SortedIDs() ([]string, error) {
-	ids, err := b.List()
+// Sorted returns the IDs sorted for stable comparison.
+func (l *idList) Sorted() ([]string, error) {
+	ids, err := l.List()
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (b *Bookmarks) SortedIDs() ([]string, error) {
 	return sorted, nil
 }
 
-func (b *Bookmarks) write(ids []string) error {
+func (l *idList) write(ids []string) error {
 	if ids == nil {
 		ids = []string{}
 	}
@@ -102,5 +102,21 @@ func (b *Bookmarks) write(ids []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(b.path(), data, 0o644)
+	return os.WriteFile(l.path(), data, 0o644)
+}
+
+// Bookmarks is a persisted set of note IDs the user has bookmarked.
+type Bookmarks struct{ *idList }
+
+// NewBookmarks creates a Bookmarks store rooted at the given notes directory.
+func NewBookmarks(dir string) *Bookmarks {
+	return &Bookmarks{newIDList(dir, ".bookmarks.json")}
+}
+
+// Shortcuts is a persisted set of note IDs pinned to the top of the tree.
+type Shortcuts struct{ *idList }
+
+// NewShortcuts creates a Shortcuts store rooted at the given notes directory.
+func NewShortcuts(dir string) *Shortcuts {
+	return &Shortcuts{newIDList(dir, ".shortcuts.json")}
 }

@@ -16,12 +16,19 @@ import {
   FolderInput,
   FolderOpen,
   FolderPlus,
+  GraduationCap,
+  Heart,
+  Home,
+  Music,
+  Pin,
   Settings2,
+  Shield,
   SquareArrowOutUpRight,
   Star,
   Trash2,
+  Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
 
@@ -31,6 +38,26 @@ function replaceOrAddH1(body: string, title: string): string {
     return body.replace(/^# .+$/m, h1);
   }
   return body ? `${h1}\n\n${body}` : h1;
+}
+
+const iconMap: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+  Database,
+  Folder,
+  Star,
+  Bookmark,
+  FileText,
+  Settings: Settings2,
+  GraduationCap,
+  Heart,
+  Home,
+  Music,
+  Shield,
+  Zap,
+};
+
+function getVaultIcon(iconName?: string) {
+  if (!iconName) return Database;
+  return iconMap[iconName] ?? Database;
 }
 
 import ContextMenu, { type MenuItem } from "./ContextMenu";
@@ -102,6 +129,8 @@ export type TreeControls = {
   sorted: boolean;
   allExpanded: boolean;
   toggleExpandCollapse: () => void;
+  allSectionsExpanded: boolean;
+  toggleSectionsCollapse: () => void;
 };
 
 type FileTreeProps = {
@@ -114,6 +143,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     notes,
     folders,
     bookmarks,
+    shortcuts,
     activeId,
     openTab,
     create,
@@ -127,14 +157,23 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     refresh,
     save,
     toggleBookmark,
+    toggleShortcut,
     vaults,
     activeVault,
     allVaultData,
     openNoteInVault,
     switchVault,
+    renameVault,
+    setVaultIcon,
     treeMode,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
+  // Recent excludes notes already pinned as shortcuts, so a note doesn't
+  // appear in both the Shortcuts and Recent sections.
+  const recentNotes = useMemo(
+    () => notes.filter((n) => !shortcuts.has(n.id)),
+    [notes, shortcuts],
+  );
   const [drillPath, setDrillPath] = useState<string | null>(null);
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -145,6 +184,33 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
   const [shortcutsExpanded, setShortcutsExpanded] = useState(true);
   const [recentExpanded, setRecentExpanded] = useState(true);
   const [vaultExpandedMap, setVaultExpandedMap] = useState<Record<string, boolean>>({});
+
+  // Tracks which section a note was opened from, so the active highlight
+  // only appears in the section the user actually clicked (not in every
+  // section that happens to list the note).
+  const [activeSource, setActiveSource] = useState<string | null>(null);
+  const sectionOpenRef = useRef(false);
+
+  // Clear activeSource when activeId changes from outside a section open
+  // (e.g. command palette, daily note, tab click), so stale source tags
+  // don't cause false highlights.
+  useEffect(() => {
+    if (sectionOpenRef.current) {
+      sectionOpenRef.current = false;
+      return;
+    }
+    setActiveSource(null);
+  }, [activeId]);
+
+  // Open a note and record which section it was opened from.
+  const openFromSection = useCallback(
+    (section: string, id: string) => {
+      sectionOpenRef.current = true;
+      setActiveSource(section);
+      openTab(id);
+    },
+    [openTab],
+  );
 
   // Context menu state.
   const [ctxMenu, setCtxMenu] = useState<{
@@ -158,6 +224,14 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     open: boolean;
     parentPath?: string;
   }>({ open: false });
+
+  // Vault icon picker state
+  const [vaultIconPicker, setVaultIconPicker] = useState<{
+    vaultId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const vaultIconPickerRef = useRef<HTMLDivElement>(null);
 
   // Inline rename state.
   const [renaming, setRenaming] = useState<{
@@ -212,6 +286,98 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     else expandAll();
   }, [allExpanded, collapseAll, expandAll]);
 
+  // Section collapse state: Shortcuts, Recent, and all vault sections.
+  const allSectionsExpanded =
+    shortcutsExpanded &&
+    recentExpanded &&
+    vaults.every((v) => vaultExpandedMap[v.id] ?? true);
+
+  const setAllSections = useCallback(
+    (expanded: boolean) => {
+      setShortcutsExpanded(expanded);
+      setRecentExpanded(expanded);
+      setVaultExpandedMap(
+        Object.fromEntries(vaults.map((v) => [v.id, expanded])),
+      );
+    },
+    [vaults],
+  );
+
+  const toggleSectionsCollapse = useCallback(() => {
+    setAllSections(!allSectionsExpanded);
+  }, [allSectionsExpanded, setAllSections]);
+
+  // Vault icon options for the picker
+  const vaultIconOptions = useMemo(() => {
+    return [
+      { name: "Database", icon: Database },
+      { name: "Folder", icon: Folder },
+      { name: "Star", icon: Star },
+      { name: "Bookmark", icon: Bookmark },
+      { name: "FileText", icon: FileText },
+      { name: "Settings", icon: Settings2 },
+      { name: "GraduationCap", icon: GraduationCap },
+      { name: "Heart", icon: Heart },
+      { name: "Home", icon: Home },
+      { name: "Music", icon: Music },
+      { name: "Shield", icon: Shield },
+      { name: "Zap", icon: Zap },
+    ];
+  }, []);
+
+  // Vault context menu handler
+  const handleVaultContextMenu = useCallback(
+    (e: React.MouseEvent, vaultId: string, vaultName: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setCtxMenu({
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          {
+            label: "Rename vault",
+            icon: <Edit3 size={14} />,
+            onClick: () => {
+              setRenaming({ id: `vault:${vaultId}`, value: vaultName });
+            },
+          },
+          {
+            label: "Pick icon",
+            icon: <Settings2 size={14} />,
+            onClick: () => {
+              setVaultIconPicker({ vaultId, x: e.clientX, y: e.clientY });
+            },
+          },
+        ],
+      });
+    },
+    [],
+  );
+
+  // Close icon picker on outside mousedown (not click — the opening
+  // click has already fired by the time the popover renders, so a
+  // "click" listener would close it immediately).
+  useEffect(() => {
+    if (!vaultIconPicker) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        vaultIconPickerRef.current &&
+        !vaultIconPickerRef.current.contains(e.target as Node)
+      ) {
+        setVaultIconPicker(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setVaultIconPicker(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [vaultIconPicker]);
+
   useEffect(() => {
     onControlsReady?.({
       expandAll,
@@ -220,6 +386,8 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
       sorted,
       allExpanded,
       toggleExpandCollapse,
+      allSectionsExpanded,
+      toggleSectionsCollapse,
     });
   }, [
     onControlsReady,
@@ -229,6 +397,8 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     sorted,
     allExpanded,
     toggleExpandCollapse,
+    allSectionsExpanded,
+    toggleSectionsCollapse,
   ]);
 
   const openFolderDialog = useCallback((parentPath?: string) => {
@@ -254,6 +424,12 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
   // Rename a note by saving the new title, syncing with H1 in body.
   const handleRename = useCallback(
     async (id: string, newTitle: string) => {
+      // Handle vault rename
+      if (id.startsWith("vault:")) {
+        const vaultId = id.slice(6);
+        await renameVault(vaultId, newTitle);
+        return;
+      }
       const cached = notesById[id];
       if (!cached) return;
       await save(id, {
@@ -261,7 +437,7 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
         body: replaceOrAddH1(cached.body, newTitle),
       });
     },
-    [notesById, save],
+    [notesById, save, renameVault],
   );
 
   // Move a note to a new path via context, then refresh.
@@ -328,11 +504,14 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
           <BookmarksList
             notes={notes.filter((n) => bookmarks.has(n.id))}
             activeId={activeId}
-            onOpen={openTab}
+            activeSource={activeSource}
+            onOpen={(id) => openFromSection("bookmarks", id)}
             onDelete={setPendingDelete}
             onCopy={copyNote}
             onBookmark={toggleBookmark}
+            onShortcut={toggleShortcut}
             bookmarks={bookmarks}
+            shortcuts={shortcuts}
             onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
             renaming={renaming}
             setRenaming={setRenaming}
@@ -345,11 +524,14 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
             notes={notes}
             folders={folders ?? []}
             activeId={activeId}
-            onOpen={openTab}
+            activeSource={activeSource}
+            onOpen={(id) => openFromSection("drill", id)}
             onDelete={setPendingDelete}
             onCopy={copyNote}
             onBookmark={toggleBookmark}
+            onShortcut={toggleShortcut}
             bookmarks={bookmarks}
+            shortcuts={shortcuts}
             onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
             renaming={renaming}
             setRenaming={setRenaming}
@@ -364,11 +546,15 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
               node={tree}
               depth={0}
               activeId={activeId}
-              onOpen={openTab}
+              activeSource={activeSource}
+              sectionTag="simple"
+              onOpen={(id) => openFromSection("simple", id)}
               onDelete={setPendingDelete}
               onCopy={copyNote}
               onBookmark={toggleBookmark}
+              onShortcut={toggleShortcut}
               bookmarks={bookmarks}
+              shortcuts={shortcuts}
               isFolderOpen={isFolderOpen}
               setOpenMap={setOpenMap}
               sorted={sorted}
@@ -389,30 +575,33 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
           </div>
         ) : (
           <>
-            {/* Shortcuts section */}
-            {bookmarks.size > 0 && (
+            {/* Shortcuts section — pinned on top of the tree */}
+            {shortcuts.size > 0 && (
               <CollapsibleSection
                 title="Shortcuts"
-                count={bookmarks.size}
+                count={shortcuts.size}
                 expanded={shortcutsExpanded}
                 onToggle={() => setShortcutsExpanded((v) => !v)}
+                icon={<Pin className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />}
               >
                 <ul>
                   {notes
-                    .filter((n) => bookmarks.has(n.id))
+                    .filter((n) => shortcuts.has(n.id))
                     .sort((a, b) => a.title.localeCompare(b.title))
                     .map((n) => (
                       <NoteItem
                         key={n.id}
                         note={n}
                         depth={0}
-                        active={n.id === activeId}
+                        active={n.id === activeId && activeSource === "shortcuts"}
                         activeId={activeId}
-                        onOpen={openTab}
+                        onOpen={(id) => openFromSection("shortcuts", id)}
                         onDelete={setPendingDelete}
                         onCopy={copyNote}
                         onBookmark={toggleBookmark}
+                        onShortcut={toggleShortcut}
                         bookmarks={bookmarks}
+                        shortcuts={shortcuts}
                         onNoteDragStart={handleNoteDragStart}
                         onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
                         renaming={renaming}
@@ -438,11 +627,28 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
             {/* Recent files section */}
             <CollapsibleSection
               title="Recent"
-              count={Math.min(10, notes.length)}
+              count={Math.min(10, recentNotes.length)}
               expanded={recentExpanded}
               onToggle={() => setRecentExpanded((v) => !v)}
+              icon={<Clock className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />}
             >
-              <RecentFilesList notes={notes} activeId={activeId} onOpen={openTab} />
+              <RecentFilesList
+                notes={recentNotes}
+                activeId={activeId}
+                activeSource={activeSource}
+                onOpen={(id) => openFromSection("recent", id)}
+                onDelete={setPendingDelete}
+                onCopy={copyNote}
+                onBookmark={toggleBookmark}
+                onShortcut={toggleShortcut}
+                bookmarks={bookmarks}
+                shortcuts={shortcuts}
+                onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                renaming={renaming}
+                setRenaming={setRenaming}
+                onRename={handleRename}
+                onMoveNote={handleMoveNote}
+              />
             </CollapsibleSection>
 
             {/* Vault sections */}
@@ -476,19 +682,39 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
                     handleVaultDrop(vault.id);
                   }}
                   dropActive={dragNoteId !== null && dragOverVaultId === vault.id}
-                  icon={<Database className="h-3.5 w-3.5 shrink-0" style={{ opacity: isActiveVault ? 1 : 0.6 }} />}
+                  icon={(() => {
+                    const VaultIcon = getVaultIcon(vault.icon);
+                    return <VaultIcon className="h-3.5 w-3.5 shrink-0" style={{ opacity: isActiveVault ? 1 : 0.6 }} />;
+                  })()}
                   bold={isActiveVault}
+                  onContextMenu={(e) => handleVaultContextMenu(e, vault.id, vault.name)}
+                  editing={renaming?.id === `vault:${vault.id}`}
+                  editValue={renaming?.id === `vault:${vault.id}` ? renaming.value : undefined}
+                  onEditChange={(v) =>
+                    setRenaming({ id: `vault:${vault.id}`, value: v })
+                  }
+                  onEditCommit={() => {
+                    if (renaming) {
+                      void handleRename(`vault:${vault.id}`, renaming.value.trim() || vault.name);
+                    }
+                    setRenaming(null);
+                  }}
+                  onEditCancel={() => setRenaming(null)}
                 >
                   {isActiveVault ? (
                     <TreeChildren
                       node={vaultTree}
                       depth={0}
                       activeId={activeId}
-                      onOpen={openTab}
+                      activeSource={activeSource}
+                      sectionTag={`vault:${vault.id}`}
+                      onOpen={(id) => openFromSection(`vault:${vault.id}`, id)}
                       onDelete={setPendingDelete}
                       onCopy={copyNote}
                       onBookmark={toggleBookmark}
+                      onShortcut={toggleShortcut}
                       bookmarks={bookmarks}
+                      shortcuts={shortcuts}
                       isFolderOpen={isFolderOpen}
                       setOpenMap={setOpenMap}
                       sorted={sorted}
@@ -512,7 +738,12 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
                       notes={vaultData.notes}
                       folders={vaultData.folders}
                       activeId={activeId}
-                      onOpen={openNoteInVault}
+                      activeSource={activeSource}
+                      onOpen={(id) => {
+                        sectionOpenRef.current = true;
+                        setActiveSource(`vault:${vault.id}`);
+                        openNoteInVault(vault.id, id);
+                      }}
                       onDrillInto={() => {
                         switchVault(vault.id);
                       }}
@@ -582,6 +813,35 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
           onClose={() => setCtxMenu(null)}
         />
       )}
+
+      {/* Vault icon picker popover */}
+      {vaultIconPicker && (
+        <div
+          ref={vaultIconPickerRef}
+          className="fixed z-50 rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
+          style={{ left: vaultIconPicker.x, top: vaultIconPicker.y }}
+        >
+          <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
+            Pick vault icon
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {vaultIconOptions.map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded hover:bg-white/10"
+                title={name}
+                onClick={() => {
+                  setVaultIcon(vaultIconPicker.vaultId, name);
+                  setVaultIconPicker(null);
+                }}
+              >
+                <Icon className="h-4 w-4" style={{ color: "#c8c8cc" }} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -589,11 +849,15 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
 type TreeChildProps = {
   depth: number;
   activeId: string | null;
+  activeSource?: string | null;
+  sectionTag?: string;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onBookmark: (id: string) => void;
   bookmarks: Set<string>;
+  onShortcut: (id: string) => void;
+  shortcuts: Set<string>;
   isFolderOpen: (path: string) => boolean;
   setOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   sorted: boolean;
@@ -627,7 +891,16 @@ function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
         <FolderItem key={child.path} {...childProps} node={child} depth={depth} />
       ))}
       {notes.map((n) => (
-        <NoteItem key={n.id} {...childProps} note={n} depth={depth} active={n.id === rest.activeId} />
+        <NoteItem
+          key={n.id}
+          {...childProps}
+          note={n}
+          depth={depth}
+          active={
+            n.id === rest.activeId &&
+            (rest.sectionTag === undefined || rest.activeSource === rest.sectionTag)
+          }
+        />
       ))}
     </ul>
   );
@@ -761,6 +1034,8 @@ function NoteItem(
     onCopy,
     onBookmark,
     bookmarks,
+    onShortcut,
+    shortcuts,
     onNoteDragStart,
     onContextMenu,
     renaming,
@@ -771,6 +1046,7 @@ function NoteItem(
 
   const isRenaming = renaming?.id === note.id;
   const isBookmarked = bookmarks.has(note.id);
+  const isShortcut = shortcuts.has(note.id);
 
   return (
     <li>
@@ -798,10 +1074,15 @@ function NoteItem(
               onClick: () => onMoveNote(note.id, ""),
             },
             {
-              label: isBookmarked ? "Remove from shortcuts" : "Add to shortcuts",
-              icon: isBookmarked
+              label: isShortcut ? "Remove shortcut" : "Add shortcut",
+              icon: isShortcut
                 ? <BookmarkCheck className="h-4 w-4" />
                 : <Star className="h-4 w-4" />,
+              onClick: () => onShortcut(note.id),
+            },
+            {
+              label: isBookmarked ? "Remove from bookmarks" : "Add to bookmarks",
+              icon: <Bookmark className="h-4 w-4" />,
               onClick: () => onBookmark(note.id),
             },
             { label: "", onClick: () => {}, separator: true },
@@ -898,11 +1179,14 @@ function NoteItem(
 function BookmarksList({
   notes,
   activeId,
+  activeSource,
   onOpen,
   onDelete,
   onCopy,
   onBookmark,
+  onShortcut,
   bookmarks,
+  shortcuts,
   onContextMenu,
   renaming,
   setRenaming,
@@ -911,11 +1195,14 @@ function BookmarksList({
 }: {
   notes: { id: string; title: string; path: string }[];
   activeId: string | null;
+  activeSource: string | null;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onBookmark: (id: string) => void;
+  onShortcut: (id: string) => void;
   bookmarks: Set<string>;
+  shortcuts: Set<string>;
   onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
   renaming: { id: string; value: string } | null;
   setRenaming: (r: { id: string; value: string } | null) => void;
@@ -938,13 +1225,15 @@ function BookmarksList({
           key={n.id}
           note={n}
           depth={0}
-          active={n.id === activeId}
+          active={n.id === activeId && activeSource === "bookmarks"}
           activeId={activeId}
           onOpen={onOpen}
           onDelete={onDelete}
           onCopy={onCopy}
           onBookmark={onBookmark}
+          onShortcut={onShortcut}
           bookmarks={bookmarks}
+          shortcuts={shortcuts}
           onNoteDragStart={() => {}}
           onContextMenu={onContextMenu}
           renaming={renaming}
@@ -1043,11 +1332,14 @@ function DrillView({
   notes,
   folders,
   activeId,
+  activeSource,
   onOpen,
   onDelete,
   onCopy,
   onBookmark,
+  onShortcut,
   bookmarks,
+  shortcuts,
   onContextMenu,
   renaming,
   setRenaming,
@@ -1060,11 +1352,14 @@ function DrillView({
   notes: { id: string; title: string; path: string }[];
   folders: { path: string; name: string }[];
   activeId: string | null;
+  activeSource: string | null;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onBookmark: (id: string) => void;
+  onShortcut: (id: string) => void;
   bookmarks: Set<string>;
+  shortcuts: Set<string>;
   onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
   renaming: { id: string; value: string } | null;
   setRenaming: (r: { id: string; value: string } | null) => void;
@@ -1155,13 +1450,15 @@ function DrillView({
             key={n.id}
             note={n}
             depth={0}
-            active={n.id === activeId}
+            active={n.id === activeId && activeSource === "drill"}
             activeId={activeId}
             onOpen={onOpen}
             onDelete={onDelete}
             onCopy={onCopy}
             onBookmark={onBookmark}
+            onShortcut={onShortcut}
             bookmarks={bookmarks}
+            shortcuts={shortcuts}
             onNoteDragStart={() => {}}
             onContextMenu={onContextMenu}
             renaming={renaming}
@@ -1203,6 +1500,12 @@ function CollapsibleSection({
   onDragLeave,
   onDrop,
   dropActive,
+  onContextMenu,
+  editing,
+  editValue,
+  onEditChange,
+  onEditCommit,
+  onEditCancel,
 }: {
   title: string;
   count: number;
@@ -1215,6 +1518,12 @@ function CollapsibleSection({
   onDragLeave?: () => void;
   onDrop?: (e: React.DragEvent) => void;
   dropActive?: boolean;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  editing?: boolean;
+  editValue?: string;
+  onEditChange?: (value: string) => void;
+  onEditCommit?: () => void;
+  onEditCancel?: () => void;
 }) {
   return (
     <div
@@ -1224,11 +1533,10 @@ function CollapsibleSection({
       onDrop={onDrop}
       style={dropActive ? { borderRadius: 5, background: "var(--primary)" } : undefined}
     >
-      <button
-        type="button"
-        onClick={onToggle}
+      <div
         className="flex w-full items-center gap-2 transition-colors hover:bg-white/5"
         style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderRadius: 5 }}
+        onContextMenu={onContextMenu}
       >
         <ChevronRight
           className={[
@@ -1240,24 +1548,54 @@ function CollapsibleSection({
         {icon ?? (
           <span className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />
         )}
-        <span
-          style={{
-            fontSize: 13.5,
-            fontWeight: 500,
-            color: bold ? "#c8c8cc" : "#c8c8cc",
-          }}
-        >
-          {title}
-        </span>
-        {count > 0 && (
-          <span
-            className="ml-auto"
-            style={{ fontSize: 12, color: "#6b6b70" }}
+        {editing ? (
+          <input
+            value={editValue ?? ""}
+            autoFocus
+            onChange={(e) => onEditChange?.(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEditCommit?.();
+              }
+              if (e.key === "Escape") onEditCancel?.();
+            }}
+            onBlur={() => onEditCommit?.()}
+            className="min-w-0 flex-1 rounded border px-1 outline-none"
+            style={{
+              background: "var(--background)",
+              borderColor: "var(--ring)",
+              fontSize: 13.5,
+              color: "var(--foreground)",
+              height: 24,
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex min-w-0 flex-1 items-center"
           >
-            {count}
-          </span>
+            <span
+              style={{
+                fontSize: 13.5,
+                fontWeight: 500,
+                color: "#c8c8cc",
+              }}
+            >
+              {title}
+            </span>
+            {count > 0 && (
+              <span
+                className="ml-auto"
+                style={{ fontSize: 12, color: "#6b6b70" }}
+              >
+                {count}
+              </span>
+            )}
+          </button>
         )}
-      </button>
+      </div>
       {expanded && <div className="mt-0.5">{children}</div>}
     </div>
   );
@@ -1267,11 +1605,35 @@ function CollapsibleSection({
 function RecentFilesList({
   notes,
   activeId,
+  activeSource,
   onOpen,
+  onDelete,
+  onCopy,
+  onBookmark,
+  onShortcut,
+  bookmarks,
+  shortcuts,
+  onContextMenu,
+  renaming,
+  setRenaming,
+  onRename,
+  onMoveNote,
 }: {
-  notes: { id: string; title: string; updatedAt: string }[];
+  notes: { id: string; title: string; path: string; updatedAt: string }[];
   activeId: string | null;
+  activeSource: string | null;
   onOpen: (id: string) => void;
+  onDelete: (id: string) => void;
+  onCopy: (id: string) => void;
+  onBookmark: (id: string) => void;
+  onShortcut: (id: string) => void;
+  bookmarks: Set<string>;
+  shortcuts: Set<string>;
+  onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
+  renaming: { id: string; value: string } | null;
+  setRenaming: (r: { id: string; value: string } | null) => void;
+  onRename: (id: string, title: string) => void;
+  onMoveNote: (id: string, path: string) => void;
 }) {
   const recent = [...notes]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -1281,39 +1643,38 @@ function RecentFilesList({
 
   return (
     <ul>
-      {recent.map((n) => {
-        const active = n.id === activeId;
-        return (
-          <li key={n.id}>
-            <button
-              type="button"
-              onClick={() => onOpen(n.id)}
-              className="flex w-full items-center gap-2 transition-colors"
-              style={{
-                height: 33,
-                paddingLeft: 30,
-                paddingRight: 14,
-                borderRadius: 5,
-                background: active ? "var(--primary)" : undefined,
-              }}
-            >
-              <FileText
-                className="h-3.5 w-3.5 shrink-0"
-                style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
-              />
-              <span
-                className="truncate"
-                style={{
-                  fontSize: 13,
-                  color: active ? "var(--primary-foreground)" : "#c8c8cc",
-                }}
-              >
-                {n.title || "Untitled"}
-              </span>
-            </button>
-          </li>
-        );
-      })}
+      {recent.map((n) => (
+        <NoteItem
+          key={n.id}
+          note={n}
+          depth={0}
+          active={n.id === activeId && activeSource === "recent"}
+          activeId={activeId}
+          onOpen={onOpen}
+          onDelete={onDelete}
+          onCopy={onCopy}
+          onBookmark={onBookmark}
+          onShortcut={onShortcut}
+          bookmarks={bookmarks}
+          shortcuts={shortcuts}
+          onNoteDragStart={() => {}}
+          onContextMenu={onContextMenu}
+          renaming={renaming}
+          setRenaming={setRenaming}
+          onRename={onRename}
+          onMoveNote={onMoveNote}
+          isFolderOpen={() => false}
+          setOpenMap={() => {}}
+          sorted={false}
+          onFolderDragOver={() => {}}
+          onFolderDrop={() => {}}
+          dragOverPath={null}
+          onDeleteFolder={() => {}}
+          onNewNoteInFolder={() => {}}
+          onNewFolderInFolder={() => {}}
+          onDrillInto={() => {}}
+        />
+      ))}
     </ul>
   );
 }
@@ -1324,6 +1685,7 @@ function VaultNoteList({
   notes,
   folders,
   activeId,
+  activeSource,
   onOpen,
   onDrillInto,
 }: {
@@ -1331,6 +1693,7 @@ function VaultNoteList({
   notes: { id: string; title: string; path: string }[];
   folders: { path: string; name: string }[];
   activeId: string | null;
+  activeSource: string | null;
   onOpen: (vaultId: string, noteId: string) => void;
   onDrillInto: () => void;
 }) {
@@ -1351,7 +1714,7 @@ function VaultNoteList({
     <div>
       <ul>
         {sorted.map((n) => {
-          const active = n.id === activeId;
+          const active = n.id === activeId && activeSource === `vault:${vaultId}`;
           return (
             <li key={n.id}>
               <button

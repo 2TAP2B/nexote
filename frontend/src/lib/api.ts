@@ -33,6 +33,7 @@ export type ListResult = {
 export type VaultMeta = {
   id: string;
   name: string;
+  icon?: string;
   path: string;
 };
 
@@ -70,15 +71,20 @@ export const api = {
   // --- Vaults ---
   listVaults: () =>
     request<{ vaults: VaultMeta[] }>("/api/vaults"),
-  createVault: (name: string) =>
+  createVault: (name: string, icon?: string) =>
     request<VaultMeta>("/api/vaults", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, icon }),
     }),
   renameVault: (id: string, name: string) =>
     request<VaultMeta>(`/api/vaults/${id}`, {
       method: "PUT",
       body: JSON.stringify({ name }),
+    }),
+  setVaultIcon: (id: string, icon: string) =>
+    request<VaultMeta>(`/api/vaults/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ icon }),
     }),
   deleteVault: (id: string) =>
     request<void>(`/api/vaults/${id}`, { method: "DELETE" }),
@@ -136,6 +142,19 @@ export const api = {
     }),
   removeBookmark: (vaultId: string, id: string) =>
     request<void>(`${vaultBase(vaultId)}/bookmarks/${id}`, {
+      method: "DELETE",
+    }),
+
+  // --- Shortcuts (vault-scoped) ---
+  listShortcuts: (vaultId: string) =>
+    request<{ shortcuts: string[] }>(`${vaultBase(vaultId)}/shortcuts`),
+  addShortcut: (vaultId: string, id: string) =>
+    request<void>(`${vaultBase(vaultId)}/shortcuts`, {
+      method: "POST",
+      body: JSON.stringify({ id }),
+    }),
+  removeShortcut: (vaultId: string, id: string) =>
+    request<void>(`${vaultBase(vaultId)}/shortcuts/${id}`, {
       method: "DELETE",
     }),
 };

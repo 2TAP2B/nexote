@@ -33,6 +33,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/vaults", h.listVaults)
 	mux.HandleFunc("POST /api/vaults", h.createVault)
 	mux.HandleFunc("PUT /api/vaults/{id}", h.renameVault)
+	mux.HandleFunc("PATCH /api/vaults/{id}", h.setVaultIcon)
 	mux.HandleFunc("DELETE /api/vaults/{id}", h.deleteVault)
 
 	// Vault-scoped note routes
@@ -53,6 +54,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/vaults/{vaultId}/bookmarks", h.listBookmarks)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/bookmarks", h.addBookmark)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/bookmarks/{id}", h.removeBookmark)
+
+	// Vault-scoped shortcut routes
+	mux.HandleFunc("GET /api/vaults/{vaultId}/shortcuts", h.listShortcuts)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/shortcuts", h.addShortcut)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/shortcuts/{id}", h.removeShortcut)
 
 	return h.cors(mux)
 }
@@ -100,17 +106,35 @@ func (h *Handler) listVaults(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createVault(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name string `json:"name"`
+		Icon string `json:"icon"`
 	}
 	if err := decodeBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	vault, err := h.Registry.Create(in.Name)
+	vault, err := h.Registry.Create(in.Name, in.Icon)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, vault)
+}
+
+func (h *Handler) setVaultIcon(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var in struct {
+		Icon string `json:"icon"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	vault, err := h.Registry.SetIcon(id, in.Icon)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, vault)
 }
 
 func (h *Handler) renameVault(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +298,9 @@ func (h *Handler) deleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = bookmarks.Remove(id)
+	if shortcuts, err := h.Registry.Shortcuts(r.PathValue("vaultId")); err == nil {
+		_ = shortcuts.Remove(id)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -357,6 +384,56 @@ func (h *Handler) removeBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if err := bookmarks.Remove(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Shortcuts ---
+
+func (h *Handler) listShortcuts(w http.ResponseWriter, r *http.Request) {
+	shortcuts, err := h.Registry.Shortcuts(r.PathValue("vaultId"))
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	ids, err := shortcuts.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"shortcuts": ids})
+}
+
+func (h *Handler) addShortcut(w http.ResponseWriter, r *http.Request) {
+	shortcuts, err := h.Registry.Shortcuts(r.PathValue("vaultId"))
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	var in struct {
+		ID string `json:"id"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := shortcuts.Add(in.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) removeShortcut(w http.ResponseWriter, r *http.Request) {
+	shortcuts, err := h.Registry.Shortcuts(r.PathValue("vaultId"))
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	if err := shortcuts.Remove(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

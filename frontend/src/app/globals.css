@@ -151,6 +151,16 @@ body {
   display: flex;
   flex-direction: column;
 }
+/* The React wrapper div rendered by <Milkdown/> — it sits between our
+ * flex container and the .milkdown div created by Milkdown core, so it
+ * must also participate in the flex chain or the editor can't scroll. */
+[data-milkdown-root] {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
 .milkdown .ProseMirror {
   flex: 1;
   min-height: 0;

@@ -11,9 +11,10 @@ import (
 
 // VaultMeta is the metadata for a registered vault.
 type VaultMeta struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Path string `json:"path"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Icon   string `json:"icon,omitempty"`
+	Path   string `json:"path"`
 }
 
 // VaultRegistry manages the list of vaults. Each vault is a subdirectory
@@ -55,7 +56,7 @@ func (r *VaultRegistry) ensureDefault() error {
 	if len(vaults) > 0 {
 		return nil
 	}
-	_, err = r.Create("Default")
+	_, err = r.Create("Default", "")
 	return err
 }
 
@@ -79,7 +80,7 @@ func (r *VaultRegistry) List() ([]VaultMeta, error) {
 
 // Create registers a new vault with the given name. The vault directory is
 // created under the vaults root. Returns the vault metadata.
-func (r *VaultRegistry) Create(name string) (VaultMeta, error) {
+func (r *VaultRegistry) Create(name, icon string) (VaultMeta, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -109,6 +110,7 @@ func (r *VaultRegistry) Create(name string) (VaultMeta, error) {
 	vault := VaultMeta{
 		ID:   id,
 		Name: name,
+		Icon: icon,
 		Path: vaultPath,
 	}
 	vaults = append(vaults, vault)
@@ -116,6 +118,34 @@ func (r *VaultRegistry) Create(name string) (VaultMeta, error) {
 		return VaultMeta{}, err
 	}
 	return vault, nil
+}
+
+// SetIcon changes a vault's icon without touching its directory.
+func (r *VaultRegistry) SetIcon(id, icon string) (VaultMeta, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	vaults, err := r.read()
+	if err != nil {
+		return VaultMeta{}, err
+	}
+
+	var idx int = -1
+	for i, v := range vaults {
+		if v.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return VaultMeta{}, ErrNotFound
+	}
+
+	vaults[idx].Icon = icon
+	if err := r.write(vaults); err != nil {
+		return VaultMeta{}, err
+	}
+	return vaults[idx], nil
 }
 
 // Rename changes a vault's name. The directory is renamed on disk.
@@ -264,6 +294,15 @@ func (r *VaultRegistry) Bookmarks(id string) (*Bookmarks, error) {
 		return nil, err
 	}
 	return NewBookmarks(vault.Path), nil
+}
+
+// Shortcuts returns a shortcuts store for the given vault ID.
+func (r *VaultRegistry) Shortcuts(id string) (*Shortcuts, error) {
+	vault, err := r.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return NewShortcuts(vault.Path), nil
 }
 
 func (r *VaultRegistry) read() ([]VaultMeta, error) {

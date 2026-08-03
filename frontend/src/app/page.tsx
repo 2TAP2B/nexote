@@ -15,8 +15,9 @@ import {
   PanelLeftClose,
   Search,
   Settings,
+  SquareStack,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
@@ -43,6 +44,7 @@ function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
   const [treeControls, setTreeControls] = useState<TreeControls>({
     expandAll: () => {},
     collapseAll: () => {},
@@ -50,6 +52,8 @@ function AppShell() {
     sorted: false,
     allExpanded: true,
     toggleExpandCollapse: () => {},
+    allSectionsExpanded: true,
+    toggleSectionsCollapse: () => {},
   });
 
   useSwipeSidebar({
@@ -81,6 +85,38 @@ function AppShell() {
     };
   }, []);
 
+  // Persist + hydrate sidebar width (drag-to-resize). SSR-safe via effect.
+  useEffect(() => {
+    const saved = localStorage.getItem("nexote:sidebar-width");
+    if (saved) {
+      const w = parseInt(saved, 10);
+      if (!Number.isNaN(w)) setSidebarWidth(Math.min(Math.max(w, 220), 560));
+    }
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("nexote:sidebar-width", String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(Math.max(startW + (ev.clientX - startX), 220), 560);
+      setSidebarWidth(w);
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [sidebarWidth]);
+
   return (
     <>
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
@@ -94,8 +130,9 @@ function AppShell() {
           <div
             className={
               "flex items-center gap-0.5 shrink-0 transition-[width] duration-200 " +
-              (collapsed ? "w-12 pl-0 justify-center" : "w-[371px] pl-3")
+              (collapsed ? "w-12 pl-0 justify-center" : "pl-3")
             }
+            style={collapsed ? undefined : { width: sidebarWidth }}
           >
             <button
               type="button"
@@ -185,12 +222,15 @@ function AppShell() {
           <aside
             className={[
               "flex h-full shrink-0 flex-col transition-[width] duration-200",
-              collapsed ? "md:w-0 w-[371px] overflow-hidden" : "w-[371px]",
+              collapsed ? "md:w-0 overflow-hidden" : "",
               "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:pt-10",
               mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
               "md:static md:translate-x-0 md:pt-0",
             ].join(" ")}
-            style={{ background: "var(--sidebar)" }}
+            style={{
+              background: "var(--sidebar)",
+              ...(collapsed ? {} : { width: sidebarWidth }),
+            }}
           >
             <SidebarHeader
               collapsed={collapsed}
@@ -205,6 +245,19 @@ function AppShell() {
               />
             </div>
           </aside>
+          {!collapsed && (
+            <div
+              onMouseDown={startResize}
+              className="hidden md:flex shrink-0 cursor-col-resize items-center justify-center"
+              style={{ width: 5, background: "transparent", zIndex: 5 }}
+              title="Drag to resize"
+            >
+              <div
+                className="h-full w-px"
+                style={{ background: "var(--border)" }}
+              />
+            </div>
+          )}
           {mobileOpen && (
             <button
               type="button"
@@ -285,6 +338,16 @@ function SidebarHeader({
             )
           }
           onClick={treeControls.toggleExpandCollapse}
+        />
+        <ActionButton
+          label={
+            treeControls.allSectionsExpanded
+              ? "Collapse all sections"
+              : "Expand all sections"
+          }
+          icon={<SquareStack className="h-3.5 w-3.5" />}
+          onClick={treeControls.toggleSectionsCollapse}
+          active={false}
         />
         <div className="flex-1" />
         <ActionButton

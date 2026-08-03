@@ -31,13 +31,15 @@ type NotesContextValue = {
   vaults: VaultMeta[];
   activeVault: VaultMeta | null;
   switchVault: (id: string) => void;
-  createVault: (name: string) => Promise<void>;
+  createVault: (name: string, icon?: string) => Promise<void>;
   renameVault: (id: string, name: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
+  setVaultIcon: (id: string, icon: string) => Promise<void>;
 
   notes: NoteMeta[];
   folders: FolderMeta[];
   bookmarks: Set<string>;
+  shortcuts: Set<string>;
   openTabs: string[];
   activeId: string | null;
   activeNote: Note | null;
@@ -60,6 +62,7 @@ type NotesContextValue = {
   remove: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
   toggleBookmark: (id: string) => Promise<void>;
+  toggleShortcut: (id: string) => Promise<void>;
   forceSave: () => Promise<void>;
   setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
@@ -88,6 +91,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [shortcuts, setShortcuts] = useState<Set<string>>(new Set());
   const [openTabs, setOpenTabs] = useState<string[]>([DASHBOARD_ID]);
   const [activeId, setActiveId] = useState<string | null>(DASHBOARD_ID);
   const [notesById, setNotesById] = useState<Record<string, Note>>({});
@@ -180,14 +184,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     setNotes([]);
     setFolders([]);
     setBookmarks(new Set());
+    setShortcuts(new Set());
     setNotesById({});
     setOpenTabs([DASHBOARD_ID]);
     setActiveId(DASHBOARD_ID);
   }, []);
 
-  const createVault = useCallback(async (name: string) => {
+  const createVault = useCallback(async (name: string, icon?: string) => {
     try {
-      const vault = await api.createVault(name);
+      const vault = await api.createVault(name, icon);
       setVaults((prev) => [...prev, vault]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create vault");
@@ -221,6 +226,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [activeVaultId, switchVault],
   );
 
+  const setVaultIcon = useCallback(async (id: string, icon: string) => {
+    try {
+      const vault = await api.setVaultIcon(id, icon);
+      setVaults((prev) => prev.map((v) => (v.id === id ? vault : v)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to set vault icon");
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!activeVaultId) return;
     try {
@@ -230,6 +244,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setFolders(result.folders ?? []);
       const bm = await api.listBookmarks(activeVaultId);
       setBookmarks(new Set(bm.bookmarks ?? []));
+      const sc = await api.listShortcuts(activeVaultId);
+      setShortcuts(new Set(sc.shortcuts ?? []));
       // Also update all-vault data for the active vault
       setAllVaultData((prev) => ({
         ...prev,
@@ -422,6 +438,27 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [bookmarks, activeVaultId],
   );
 
+  const toggleShortcut = useCallback(
+    async (id: string) => {
+      if (!activeVaultId) return;
+      const isShortcut = shortcuts.has(id);
+      setShortcuts((prev) => {
+        const next = new Set(prev);
+        if (isShortcut) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      try {
+        if (isShortcut) await api.removeShortcut(activeVaultId, id);
+        else await api.addShortcut(activeVaultId, id);
+      } catch (e) {
+        setShortcuts(shortcuts);
+        setError(e instanceof Error ? e.message : "Failed to toggle shortcut");
+      }
+    },
+    [shortcuts, activeVaultId],
+  );
+
   const createFolder = useCallback(
     async (path: string) => {
       if (!activeVaultId) return;
@@ -564,9 +601,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       createVault,
       renameVault,
       deleteVault,
+      setVaultIcon,
       notes,
       folders,
       bookmarks,
+      shortcuts,
       openTabs,
       activeId,
       activeNote,
@@ -588,6 +627,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       remove,
       save,
       toggleBookmark,
+      toggleShortcut,
       forceSave,
       setDraft,
       refresh,
@@ -605,9 +645,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       createVault,
       renameVault,
       deleteVault,
+      setVaultIcon,
       notes,
       folders,
       bookmarks,
+      shortcuts,
       openTabs,
       activeId,
       activeNote,
@@ -629,6 +671,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       remove,
       save,
       toggleBookmark,
+      toggleShortcut,
       forceSave,
       setDraft,
       refresh,

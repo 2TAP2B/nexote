@@ -1,20 +1,32 @@
 "use client";
 
 import {
+  Bookmark,
+  Database,
+  FileText,
+  Folder,
   FolderPlus,
+  GraduationCap,
+  Heart,
+  Home,
   Info,
   Keyboard,
   Monitor,
   Moon,
+  Music,
   Palette,
   PenLine,
   Settings,
+  Settings2,
+  Shield,
+  Star,
   Sun,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
 
@@ -58,6 +70,7 @@ export default function SettingsPanel({ open, onClose }: Props) {
     createVault,
     renameVault,
     deleteVault,
+    setVaultIcon,
     treeMode,
     setTreeMode,
     settings,
@@ -66,6 +79,7 @@ export default function SettingsPanel({ open, onClose }: Props) {
   const { theme, setTheme } = useTheme();
   const [activeCategory, setActiveCategory] = useState<CategoryId>("appearance");
   const [newVaultName, setNewVaultName] = useState("");
+  const [newVaultIcon, setNewVaultIcon] = useState("Database");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [mounted, setMounted] = useState(false);
@@ -93,8 +107,9 @@ export default function SettingsPanel({ open, onClose }: Props) {
   const handleCreate = async () => {
     const name = newVaultName.trim();
     if (!name) return;
-    await createVault(name);
+    await createVault(name, newVaultIcon);
     setNewVaultName("");
+    setNewVaultIcon("Database");
   };
 
   const handleRename = async (id: string) => {
@@ -197,6 +212,10 @@ export default function SettingsPanel({ open, onClose }: Props) {
                           : "border-border hover:bg-muted/50",
                       ].join(" ")}
                     >
+                      <IconPicker
+                        value={vault.icon ?? "Database"}
+                        onChange={(icon) => void setVaultIcon(vault.id, icon)}
+                      />
                       {renamingId === vault.id ? (
                         <input
                           autoFocus
@@ -261,6 +280,10 @@ export default function SettingsPanel({ open, onClose }: Props) {
 
                 {/* Create new vault */}
                 <div className="flex items-center gap-2">
+                  <IconPicker
+                    value={newVaultIcon}
+                    onChange={setNewVaultIcon}
+                  />
                   <input
                     value={newVaultName}
                     onChange={(e) => setNewVaultName(e.target.value)}
@@ -500,5 +523,104 @@ function AppearanceSection({
         </div>
       </div>
     </div>
+  );
+}
+
+const ICON_OPTIONS = [
+  { name: "Database", icon: Database },
+  { name: "Folder", icon: Folder },
+  { name: "Star", icon: Star },
+  { name: "Bookmark", icon: Bookmark },
+  { name: "FileText", icon: FileText },
+  { name: "Settings", icon: Settings2 },
+  { name: "GraduationCap", icon: GraduationCap },
+  { name: "Heart", icon: Heart },
+  { name: "Home", icon: Home },
+  { name: "Music", icon: Music },
+  { name: "Shield", icon: Shield },
+  { name: "Zap", icon: Zap },
+];
+
+function IconPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (icon: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const CurrentIcon =
+    ICON_OPTIONS.find((o) => o.name === value)?.icon ?? Database;
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const popW = 4 * 36 + 3 * 4 + 16; // 4 cols * 36px + gaps + padding
+    const popH = 3 * 36 + 2 * 4 + 28; // 3 rows * 36px + gaps + header
+    const left = Math.min(r.left, window.innerWidth - popW - 8);
+    const top = r.bottom + 4 + popH > window.innerHeight ? r.top - popH - 4 : r.bottom + 4;
+    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-muted"
+        title="Pick icon"
+      >
+        <CurrentIcon size={16} />
+      </button>
+      {open && pos && (
+        <div
+          ref={popRef}
+          className="fixed z-[60] rounded-lg border border-border bg-background p-2 shadow-xl"
+          style={{ left: pos.left, top: pos.top }}
+        >
+          <div className="grid grid-cols-4 gap-1">
+            {ICON_OPTIONS.map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded hover:bg-muted"
+                title={name}
+                onClick={() => {
+                  onChange(name);
+                  setOpen(false);
+                }}
+              >
+                <Icon
+                  size={18}
+                  className={
+                    name === value ? "text-primary" : "text-muted-foreground"
+                  }
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
