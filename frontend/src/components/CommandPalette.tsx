@@ -2,6 +2,7 @@
 
 import {
   Bookmark,
+  Database,
   FilePlus,
   Keyboard,
   LayoutDashboard,
@@ -30,10 +31,11 @@ type Command = {
 type Item =
   | { kind: "command"; cmd: Command }
   | { kind: "note"; id: string; title: string; path?: string }
-  | { kind: "create"; label: string; title: string };
+  | { kind: "create"; label: string; title: string }
+  | { kind: "vault"; id: string; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily } = useNotes();
+  const { notes, openTab, create, openDaily, vaults, switchVault, activeVault } = useNotes();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,6 +130,16 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       result.push({ kind: "command", cmd });
     }
 
+    // Then vaults (if query matches or empty)
+    const matchedVaults = q
+      ? vaults.filter((v) => v.name.toLowerCase().includes(q))
+      : vaults;
+    for (const v of matchedVaults) {
+      if (v.id !== activeVault?.id) {
+        result.push({ kind: "vault", id: v.id, name: v.name });
+      }
+    }
+
     // Then notes
     const matched = q
       ? notes.filter((n) => n.title.toLowerCase().includes(q))
@@ -151,7 +163,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, query]);
+  }, [commands, notes, vaults, activeVault, query]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));
@@ -169,6 +181,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         break;
       case "create":
         void create({ title: item.title });
+        break;
+      case "vault":
+        switchVault(item.id);
         break;
     }
     onClose();
@@ -240,9 +255,11 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     <div className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
                       {item.kind === "command"
                         ? "Commands"
-                        : item.kind === "note"
-                          ? "Notes"
-                          : "Create"}
+                        : item.kind === "vault"
+                          ? "Switch vault"
+                          : item.kind === "note"
+                            ? "Notes"
+                            : "Create"}
                     </div>
                   )}
                   <button
@@ -260,6 +277,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     {item.kind === "create" && (
                       <FilePlus className="h-4 w-4 shrink-0 text-muted-foreground" />
                     )}
+                    {item.kind === "vault" && (
+                      <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
                     {item.kind === "note" && (
                       <span className="h-4 w-4 shrink-0 text-muted-foreground/50">
                         ●
@@ -268,9 +288,11 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     <span className="truncate">
                       {item.kind === "command"
                         ? item.cmd.label
-                        : item.kind === "note"
-                          ? item.title || "Untitled"
-                          : item.label}
+                        : item.kind === "vault"
+                          ? item.name
+                          : item.kind === "note"
+                            ? item.title || "Untitled"
+                            : item.label}
                     </span>
                     {item.kind === "command" && item.cmd.hint && (
                       <kbd className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">

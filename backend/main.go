@@ -1,36 +1,43 @@
 // Command nexote serves the notes REST API. Notes are stored as markdown files
-// with YAML frontmatter in the directory named by NEXOTE_NOTES_DIR (default
-// ".notes-dev"). The server listens on NEXOTE_PORT (default "8080").
+// with YAML frontmatter inside vaults. Each vault is a subdirectory under
+// ~/.nexote/vaults/. The server listens on NEXOTE_PORT (default "8080").
 package main
 
 import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"nexote/api"
 	"nexote/notes"
 )
 
 func main() {
-	dir := os.Getenv("NEXOTE_NOTES_DIR")
-	if dir == "" {
-		dir = ".notes-dev"
+	// Determine the nexote config root: ~/.nexote by default, override with
+	// NEXOTE_HOME.
+	home := os.Getenv("NEXOTE_HOME")
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil {
+			log.Fatalf("find home dir: %v", err)
+		}
+		home = filepath.Join(userHome, ".nexote")
 	}
+
 	port := os.Getenv("NEXOTE_PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	store, err := notes.NewStore(dir)
+	registry, err := notes.NewVaultRegistry(home)
 	if err != nil {
-		log.Fatalf("init notes store: %v", err)
+		log.Fatalf("init vault registry: %v", err)
 	}
 
-	bookmarks := notes.NewBookmarks(dir)
-	h := api.New(store, bookmarks)
+	h := api.New(registry)
 	addr := ":" + port
-	log.Printf("nexote backend listening on http://localhost%s (notes dir: %s)", addr, dir)
+	log.Printf("nexote backend listening on http://localhost%s (home: %s)", addr, home)
 	if err := http.ListenAndServe(addr, h.Routes()); err != nil {
 		log.Fatalf("server: %v", err)
 	}

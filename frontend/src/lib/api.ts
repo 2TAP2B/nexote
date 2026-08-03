@@ -1,6 +1,6 @@
-// API client for the Nexote Go backend. During development the requests are
-// proxied to http://localhost:8080 via next.config.mjs rewrites, so the app
-// uses same-origin relative URLs.
+// API client for the Nexote Go backend. All note/bookmark/folder routes are
+// scoped under a vault ID. During development the requests are proxied to
+// http://localhost:8080 via next.config.mjs rewrites.
 
 export type NoteMeta = {
   id: string;
@@ -17,8 +17,6 @@ export type Note = NoteMeta & {
 export type NoteInput = {
   title?: string;
   body?: string;
-  // path is omitted from the JSON when undefined (don't change). Set to a
-  // string to move the note to that folder; set to "" to move to root.
   path?: string | null;
 };
 
@@ -30,6 +28,12 @@ export type FolderMeta = {
 export type ListResult = {
   notes: NoteMeta[];
   folders: FolderMeta[];
+};
+
+export type VaultMeta = {
+  id: string;
+  name: string;
+  path: string;
 };
 
 export class ApiError extends Error {
@@ -60,41 +64,73 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+const vaultBase = (vaultId: string) => `/api/vaults/${vaultId}`;
+
 export const api = {
-  list: () => request<ListResult>("/api/notes"),
-  get: (id: string) => request<Note>(`/api/notes/${id}`),
-  daily: () => request<Note>("/api/notes/daily"),
-  create: (input: NoteInput) =>
-    request<Note>("/api/notes", {
+  // --- Vaults ---
+  listVaults: () =>
+    request<{ vaults: VaultMeta[] }>("/api/vaults"),
+  createVault: (name: string) =>
+    request<VaultMeta>("/api/vaults", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  renameVault: (id: string, name: string) =>
+    request<VaultMeta>(`/api/vaults/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    }),
+  deleteVault: (id: string) =>
+    request<void>(`/api/vaults/${id}`, { method: "DELETE" }),
+
+  // --- Notes (vault-scoped) ---
+  list: (vaultId: string) =>
+    request<ListResult>(`${vaultBase(vaultId)}/notes`),
+  get: (vaultId: string, id: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/${id}`),
+  daily: (vaultId: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/daily`),
+  create: (vaultId: string, input: NoteInput) =>
+    request<Note>(`${vaultBase(vaultId)}/notes`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  copy: (id: string) =>
-    request<Note>("/api/notes/copy", {
+  copy: (vaultId: string, id: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/copy`, {
       method: "POST",
       body: JSON.stringify({ id }),
     }),
-  update: (id: string, input: NoteInput) =>
-    request<Note>(`/api/notes/${id}`, {
+  update: (vaultId: string, id: string, input: NoteInput) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/${id}`, {
       method: "PUT",
       body: JSON.stringify(input),
     }),
-  remove: (id: string) =>
-    request<void>(`/api/notes/${id}`, { method: "DELETE" }),
-  createFolder: (path: string) =>
-    request<{ path: string }>("/api/folders", {
+  remove: (vaultId: string, id: string) =>
+    request<void>(`${vaultBase(vaultId)}/notes/${id}`, {
+      method: "DELETE",
+    }),
+
+  // --- Folders (vault-scoped) ---
+  createFolder: (vaultId: string, path: string) =>
+    request<{ path: string }>(`${vaultBase(vaultId)}/folders`, {
       method: "POST",
       body: JSON.stringify({ path }),
     }),
-  removeFolder: (path: string) =>
-    request<void>(`/api/folders/${path}`, { method: "DELETE" }),
-  listBookmarks: () =>
-    request<{ bookmarks: string[] }>("/api/bookmarks"),
-  addBookmark: (id: string) =>
-    request<void>("/api/bookmarks", {
+  removeFolder: (vaultId: string, path: string) =>
+    request<void>(`${vaultBase(vaultId)}/folders/${path}`, {
+      method: "DELETE",
+    }),
+
+  // --- Bookmarks (vault-scoped) ---
+  listBookmarks: (vaultId: string) =>
+    request<{ bookmarks: string[] }>(`${vaultBase(vaultId)}/bookmarks`),
+  addBookmark: (vaultId: string, id: string) =>
+    request<void>(`${vaultBase(vaultId)}/bookmarks`, {
       method: "POST",
       body: JSON.stringify({ id }),
     }),
-  removeBookmark: (id: string) =>
-    request<void>(`/api/bookmarks/${id}`, { method: "DELETE" }),
+  removeBookmark: (vaultId: string, id: string) =>
+    request<void>(`${vaultBase(vaultId)}/bookmarks/${id}`, {
+      method: "DELETE",
+    }),
 };

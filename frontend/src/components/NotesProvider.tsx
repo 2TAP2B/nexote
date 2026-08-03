@@ -10,52 +10,49 @@ import {
   useState,
 } from "react";
 
-import { api, type FolderMeta, type Note, type NoteMeta } from "@/lib/api";
+import { api, type FolderMeta, type Note, type NoteMeta, type VaultMeta } from "@/lib/api";
 
 type Draft = { title: string; body: string };
 
 type NotesContextValue = {
+  // Vaults
+  vaults: VaultMeta[];
+  activeVault: VaultMeta | null;
+  switchVault: (id: string) => void;
+  createVault: (name: string) => Promise<void>;
+  renameVault: (id: string, name: string) => Promise<void>;
+  deleteVault: (id: string) => Promise<void>;
+
   notes: NoteMeta[];
   folders: FolderMeta[];
-  // Set of bookmarked note IDs.
   bookmarks: Set<string>;
-  // Tabs: ordered list of open note ids, with the active one focused.
-  // The dashboard tab (DASHBOARD_ID) is always at index 0 and pinned.
   openTabs: string[];
   activeId: string | null;
-  // The full note for the active tab (null if none/while loading).
   activeNote: Note | null;
-  // Whether the active tab is the dashboard (pseudo-tab).
   isDashboardActive: boolean;
-  // Cache of full notes by id, so the tab bar can render titles without an
-  // extra fetch.
   notesById: Record<string, Note>;
   loading: boolean;
   error: string | null;
   creating: boolean;
   saving: boolean;
-  // openTab loads a note (if not cached), adds it to the tab bar, and focuses
-  // it. No-op if already open (just focuses).
+
   openTab: (id: string) => Promise<void>;
   closeTab: (id: string) => void;
   create: (input?: { title?: string; path?: string }) => Promise<void>;
   copyNote: (id: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
-  // moveNote moves a note to a new folder path ("" = root) by calling update
-  // with path set. The note's title/body are preserved.
+  removeFolder: (path: string) => Promise<void>;
   moveNote: (id: string, path: string) => Promise<void>;
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
   toggleBookmark: (id: string) => Promise<void>;
-  // forceSave persists the current draft (kept in sync by EditorPane) for the
-  // active note immediately, bypassing the EditorPane debounce. Used by the
-  // Cmd/Ctrl+S shortcut.
   forceSave: () => Promise<void>;
-  // setDraft is called by EditorPane on every title/body change so shortcuts
-  // can save the latest values without prop-drilling.
   setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
+  // Multi-vault data for the advanced tree
+  allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
+  openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
 };
 
 export const DASHBOARD_ID = "__dashboard__";
@@ -69,117 +66,226 @@ export function useNotes() {
 }
 
 export function NotesProvider({ children }: { children: React.ReactNode }) {
+  const [vaults, setVaults] = useState<VaultMeta[]>([]);
+  const [activeVaultId, setActiveVaultId] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
-  // Dashboard tab is always pinned at index 0.
   const [openTabs, setOpenTabs] = useState<string[]>([DASHBOARD_ID]);
   const [activeId, setActiveId] = useState<string | null>(DASHBOARD_ID);
-  // Cache of full notes by id, so switching tabs is instant after first load.
   const [notesById, setNotesById] = useState<Record<string, Note>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [allVaultData, setAllVaultData] = useState<
+    Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>
+  >({});
 
-  const refresh = useCallback(async () => {
+  const activeVault = useMemo(
+    () => vaults.find((v) => v.id === activeVaultId) ?? null,
+    [vaults, activeVaultId],
+  );
+
+  // Load vault list on mount, then select the last active vault (or first).
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await api.listVaults();
+        const list = result.vaults ?? [];
+        setVaults(list);
+        const stored = localStorage.getItem("nexote:active-vault");
+        const pick =
+          list.find((v) => v.id === stored)?.id ?? list[0]?.id ?? null;
+        if (pick) setActiveVaultId(pick);
+        // Load notes/folders for ALL vaults (for the multi-vault tree view).
+        const data: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }> = {};
+        await Promise.all(
+          list.map(async (v) => {
+            try {
+              const res = await api.list(v.id);
+              data[v.id] = { notes: res.notes ?? [], folders: res.folders ?? [] };
+            } catch {
+              data[v.id] = { notes: [], folders: [] };
+            }
+          }),
+        );
+        setAllVaultData(data);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load vaults");
+      }
+    })();
+  }, []);
+
+  const switchVault = useCallback((id: string) => {
+    setActiveVaultId(id);
+    localStorage.setItem("nexote:active-vault", id);
+    // Reset note state when switching vaults.
+    setNotes([]);
+    setFolders([]);
+    setBookmarks(new Set());
+    setNotesById({});
+    setOpenTabs([DASHBOARD_ID]);
+    setActiveId(DASHBOARD_ID);
+  }, []);
+
+  const createVault = useCallback(async (name: string) => {
     try {
-      const result = await api.list();
-      // newest updatedAt first
-      result.notes?.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      setNotes(result.notes ?? []);
-      setFolders(result.folders ?? []);
-      const bm = await api.listBookmarks();
-      setBookmarks(new Set(bm.bookmarks ?? []));
+      const vault = await api.createVault(name);
+      setVaults((prev) => [...prev, vault]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load notes");
+      setError(e instanceof Error ? e.message : "Failed to create vault");
     }
   }, []);
 
-  // initial load
+  const renameVault = useCallback(async (id: string, name: string) => {
+    try {
+      const vault = await api.renameVault(id, name);
+      setVaults((prev) => prev.map((v) => (v.id === id ? vault : v)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to rename vault");
+    }
+  }, []);
+
+  const deleteVault = useCallback(
+    async (id: string) => {
+      try {
+        await api.deleteVault(id);
+        setVaults((prev) => {
+          const next = prev.filter((v) => v.id !== id);
+          if (activeVaultId === id && next.length > 0) {
+            switchVault(next[0].id);
+          }
+          return next;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to delete vault");
+      }
+    },
+    [activeVaultId, switchVault],
+  );
+
+  const refresh = useCallback(async () => {
+    if (!activeVaultId) return;
+    try {
+      const result = await api.list(activeVaultId);
+      result.notes?.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      setNotes(result.notes ?? []);
+      setFolders(result.folders ?? []);
+      const bm = await api.listBookmarks(activeVaultId);
+      setBookmarks(new Set(bm.bookmarks ?? []));
+      // Also update all-vault data for the active vault
+      setAllVaultData((prev) => ({
+        ...prev,
+        [activeVaultId]: { notes: result.notes ?? [], folders: result.folders ?? [] },
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load notes");
+    }
+  }, [activeVaultId]);
+
+  // Load notes when the active vault changes.
   useEffect(() => {
+    if (!activeVaultId) return;
     (async () => {
       setLoading(true);
       await refresh();
       setLoading(false);
     })();
-  }, [refresh]);
+  }, [activeVaultId, refresh]);
 
   const openTab = useCallback(
     async (id: string) => {
-      // Dashboard tab: just focus, never fetch.
       if (id === DASHBOARD_ID) {
         setActiveId(DASHBOARD_ID);
         return;
       }
-      // Focus if already open.
       if (openTabs.includes(id)) {
         setActiveId(id);
         return;
       }
+      if (!activeVaultId) return;
       setActiveId(id);
-      // Insert after the dashboard tab (if present at index 0).
       setOpenTabs((prev) =>
         prev[0] === DASHBOARD_ID
           ? [prev[0], id, ...prev.slice(1)]
           : [...prev, id],
       );
-      // Load full body if not cached.
       if (!notesById[id]) {
         try {
-          const note = await api.get(id);
+          const note = await api.get(activeVaultId, id);
           setNotesById((prev) => ({ ...prev, [id]: note }));
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to load note");
         }
       }
     },
-    [openTabs, notesById],
+    [openTabs, notesById, activeVaultId],
   );
 
-  const closeTab = useCallback(
-    (id: string) => {
-      // Never close the dashboard tab.
-      if (id === DASHBOARD_ID) return;
-      setOpenTabs((prev) => {
-        const next = prev.filter((t) => t !== id);
-        // If we closed the active tab, focus a neighbor (prefer dashboard,
-        // then the tab that takes its position).
-        setActiveId((cur) => {
-          if (cur !== id) return cur;
-          const idx = prev.indexOf(id);
-          return next[idx] ?? next[idx - 1] ?? next[0] ?? null;
-        });
-        return next;
-      });
-      // Drop from cache so a re-open refetches fresh content.
-      setNotesById((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
+  // Open a note from any vault. Switches vault if needed, then opens the note.
+  const openNoteInVault = useCallback(
+    async (vaultId: string, noteId: string) => {
+      if (vaultId !== activeVaultId) {
+        switchVault(vaultId);
+        try {
+          const note = await api.get(vaultId, noteId);
+          requestAnimationFrame(() => {
+            setNotesById((prev) => ({ ...prev, [noteId]: note }));
+            setOpenTabs((prev) =>
+              prev.includes(noteId)
+                ? prev
+                : prev[0] === DASHBOARD_ID
+                  ? [prev[0], noteId, ...prev.slice(1)]
+                  : [...prev, noteId],
+            );
+            setActiveId(noteId);
+          });
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Failed to load note");
+        }
+      } else {
+        await openTab(noteId);
+      }
     },
-    [],
+    [activeVaultId, switchVault, openTab],
   );
+
+  const closeTab = useCallback((id: string) => {
+    if (id === DASHBOARD_ID) return;
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t !== id);
+      setActiveId((cur) => {
+        if (cur !== id) return cur;
+        const idx = prev.indexOf(id);
+        return next[idx] ?? next[idx - 1] ?? next[0] ?? null;
+      });
+      return next;
+    });
+    setNotesById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   const create = useCallback(
     async (input?: { title?: string; path?: string }) => {
+      if (!activeVaultId) return;
       setCreating(true);
       try {
-        const note = await api.create({
+        const note = await api.create(activeVaultId, {
           title: input?.title ?? "Untitled",
           path: input?.path,
         });
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
-        // Insert after the dashboard tab (if present at index 0).
         setOpenTabs((prev) =>
           prev[0] === DASHBOARD_ID
             ? [prev[0], note.id, ...prev.slice(1)]
             : [...prev, note.id],
         );
         setActiveId(note.id);
-        // Signal the editor to auto-focus the title for inline renaming.
         window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create note");
@@ -187,13 +293,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [refresh],
+    [activeVaultId, refresh],
   );
 
   const copyNote = useCallback(
     async (id: string) => {
+      if (!activeVaultId) return;
       try {
-        const note = await api.copy(id);
+        const note = await api.copy(activeVaultId, id);
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
         setOpenTabs((prev) =>
@@ -206,11 +313,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : "Failed to copy note");
       }
     },
-    [refresh],
+    [activeVaultId, refresh],
   );
 
   const toggleBookmark = useCallback(
     async (id: string) => {
+      if (!activeVaultId) return;
       const isBookmarked = bookmarks.has(id);
       setBookmarks((prev) => {
         const next = new Set(prev);
@@ -219,41 +327,53 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         return next;
       });
       try {
-        if (isBookmarked) await api.removeBookmark(id);
-        else await api.addBookmark(id);
+        if (isBookmarked) await api.removeBookmark(activeVaultId, id);
+        else await api.addBookmark(activeVaultId, id);
       } catch (e) {
-        // Revert on failure
         setBookmarks(bookmarks);
         setError(e instanceof Error ? e.message : "Failed to toggle bookmark");
       }
     },
-    [bookmarks],
+    [bookmarks, activeVaultId],
   );
 
   const createFolder = useCallback(
     async (path: string) => {
+      if (!activeVaultId) return;
       try {
-        await api.createFolder(path);
+        await api.createFolder(activeVaultId, path);
         await refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create folder");
       }
     },
-    [refresh],
+    [activeVaultId, refresh],
+  );
+
+  const removeFolder = useCallback(
+    async (path: string) => {
+      if (!activeVaultId) return;
+      try {
+        await api.removeFolder(activeVaultId, path);
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to delete folder");
+      }
+    },
+    [activeVaultId, refresh],
   );
 
   const moveNote = useCallback(
     async (id: string, path: string) => {
+      if (!activeVaultId) return;
       try {
-        // Preserve the note's current title/body while changing the path.
         const cached = notesById[id];
-        await api.update(id, {
+        await api.update(activeVaultId, id, {
           title: cached?.title,
           body: cached?.body,
           path,
         });
         await refresh();
-        // Update cache with the new path.
         if (cached) {
           setNotesById((prev) => ({
             ...prev,
@@ -264,12 +384,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : "Failed to move note");
       }
     },
-    [notesById, refresh],
+    [notesById, activeVaultId, refresh],
   );
 
   const openDaily = useCallback(async () => {
+    if (!activeVaultId) return;
     try {
-      const note = await api.daily();
+      const note = await api.daily(activeVaultId);
       await refresh();
       setNotesById((prev) => ({ ...prev, [note.id]: note }));
       if (!openTabs.includes(note.id)) {
@@ -283,28 +404,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to open daily journal");
     }
-  }, [openTabs, refresh]);
+  }, [openTabs, activeVaultId, refresh]);
 
   const remove = useCallback(
     async (id: string) => {
+      if (!activeVaultId) return;
       try {
-        await api.remove(id);
+        await api.remove(activeVaultId, id);
         closeTab(id);
         await refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to delete note");
       }
     },
-    [closeTab, refresh],
+    [activeVaultId, closeTab, refresh],
   );
 
-  // Save tracks in-flight requests so a later save for the same id waits for
-  // the previous one to finish, keeping updates ordered.
   const inflight = useRef<Promise<void> | null>(null);
-
-  // Latest draft for the active note, kept in sync by EditorPane. Kept in a
-  // ref (not state) so shortcut saves read the freshest value without
-  // re-rendering on every keystroke.
   const draftRef = useRef<Draft>({ title: "", body: "" });
 
   const setDraft = useCallback((draft: Draft) => {
@@ -313,14 +429,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const save = useCallback(
     async (id: string, input: Draft) => {
+      if (!activeVaultId) return;
       const prev = inflight.current ?? Promise.resolve();
       const run = prev.then(async () => {
         setSaving(true);
         try {
-          await api.update(id, input);
+          await api.update(activeVaultId, id, input);
           await refresh();
-          // Update the cached note's title/body so the tab + tree reflect the
-          // change without a refetch.
           setNotesById((prev) => {
             const n = prev[id];
             if (!n) return prev;
@@ -342,19 +457,28 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       inflight.current = run.catch(() => {});
       return run;
     },
-    [refresh],
+    [activeVaultId, refresh],
   );
 
   const forceSave = useCallback(async () => {
-    if (!activeId) return;
+    if (!activeId || activeId === DASHBOARD_ID) return;
     await save(activeId, draftRef.current);
   }, [save, activeId]);
 
-  const activeNote = activeId && activeId !== DASHBOARD_ID ? (notesById[activeId] ?? null) : null;
+  const activeNote =
+    activeId && activeId !== DASHBOARD_ID
+      ? (notesById[activeId] ?? null)
+      : null;
   const isDashboardActive = activeId === DASHBOARD_ID;
 
   const value = useMemo<NotesContextValue>(
     () => ({
+      vaults,
+      activeVault,
+      switchVault,
+      createVault,
+      renameVault,
+      deleteVault,
       notes,
       folders,
       bookmarks,
@@ -372,6 +496,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       create,
       copyNote,
       createFolder,
+      removeFolder,
       moveNote,
       openDaily,
       remove,
@@ -380,8 +505,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       forceSave,
       setDraft,
       refresh,
+      allVaultData,
+      openNoteInVault,
     }),
     [
+      vaults,
+      activeVault,
+      switchVault,
+      createVault,
+      renameVault,
+      deleteVault,
       notes,
       folders,
       bookmarks,
@@ -399,6 +532,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       create,
       copyNote,
       createFolder,
+      removeFolder,
       moveNote,
       openDaily,
       remove,
@@ -407,6 +541,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       forceSave,
       setDraft,
       refresh,
+      allVaultData,
+      openNoteInVault,
     ],
   );
 

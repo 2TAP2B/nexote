@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
+  Database,
   FilePlus,
   Folder,
   FolderPlus,
@@ -13,6 +14,7 @@ import {
   Menu,
   PanelLeftClose,
   Search,
+  Settings,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -21,6 +23,7 @@ import EditorPane from "@/components/EditorPane";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import MobileBottomBar from "@/components/MobileBottomBar";
 import Ribbon from "@/components/Ribbon";
+import SettingsPanel from "@/components/SettingsPanel";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
@@ -39,6 +42,7 @@ function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [treeControls, setTreeControls] = useState<TreeControls>({
     expandAll: () => {},
     collapseAll: () => {},
@@ -66,11 +70,14 @@ function AppShell() {
       }
     };
     const onOpenPalette = () => setPaletteOpen(true);
+    const onOpenSettings = () => setSettingsOpen(true);
     window.addEventListener("nexote:toggle-sidebar", onToggle);
     window.addEventListener("nexote:open-palette", onOpenPalette);
+    window.addEventListener("nexote:open-settings", onOpenSettings);
     return () => {
       window.removeEventListener("nexote:toggle-sidebar", onToggle);
       window.removeEventListener("nexote:open-palette", onOpenPalette);
+      window.removeEventListener("nexote:open-settings", onOpenSettings);
     };
   }, []);
 
@@ -170,6 +177,7 @@ function AppShell() {
             <Ribbon
               onCommandPalette={() => setPaletteOpen(true)}
               onDaily={() => void openDaily()}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>
 
@@ -218,6 +226,11 @@ function AppShell() {
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}
         />
+
+        <SettingsPanel
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+        />
       </div>
     </>
   );
@@ -237,49 +250,49 @@ function SidebarHeader({
   if (collapsed) return null;
 
   return (
-    <div
-      className="flex items-center gap-0.5 px-2 py-1.5"
-      style={{ borderBottom: "1px solid var(--border)" }}
-    >
-      <ActionButton
-        label="New note"
-        icon={<FilePlus className="h-3.5 w-3.5" />}
-        onClick={onNewNote}
-      />
-      <ActionButton
-        label="New folder"
-        icon={<FolderPlus className="h-3.5 w-3.5" />}
-        onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
-      />
-      <ActionButton
-        label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
-        icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
-        onClick={treeControls.toggleSort}
-        active={treeControls.sorted}
-      />
-      <ActionButton
-        label="Card view"
-        icon={<LayoutList className="h-3.5 w-3.5" />}
-        onClick={() => {}}
-        active={false}
-      />
-      <ActionButton
-        label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
-        icon={
-          treeControls.allExpanded ? (
-            <ChevronsDownUp className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
-          )
-        }
-        onClick={treeControls.toggleExpandCollapse}
-      />
-      <div className="flex-1" />
-      <ActionButton
-        label="Collapse sidebar"
-        icon={<PanelLeftClose className="h-3.5 w-3.5" />}
-        onClick={onCollapseSidebar}
-      />
+    <div className="flex flex-col" style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* Action buttons */}
+      <div className="flex items-center gap-0.5 px-2 py-1.5">
+        <ActionButton
+          label="New note"
+          icon={<FilePlus className="h-3.5 w-3.5" />}
+          onClick={onNewNote}
+        />
+        <ActionButton
+          label="New folder"
+          icon={<FolderPlus className="h-3.5 w-3.5" />}
+          onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
+        />
+        <ActionButton
+          label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
+          icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
+          onClick={treeControls.toggleSort}
+          active={treeControls.sorted}
+        />
+        <ActionButton
+          label="Card view"
+          icon={<LayoutList className="h-3.5 w-3.5" />}
+          onClick={() => {}}
+          active={false}
+        />
+        <ActionButton
+          label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
+          icon={
+            treeControls.allExpanded ? (
+              <ChevronsDownUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
+            )
+          }
+          onClick={treeControls.toggleExpandCollapse}
+        />
+        <div className="flex-1" />
+        <ActionButton
+          label="Collapse sidebar"
+          icon={<PanelLeftClose className="h-3.5 w-3.5" />}
+          onClick={onCollapseSidebar}
+        />
+      </div>
     </div>
   );
 }

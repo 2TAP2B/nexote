@@ -8,6 +8,7 @@ import {
   FileStack,
   GitGraph,
   LayoutDashboard,
+  Settings,
   Terminal,
   Upload,
 } from "lucide-react";
@@ -17,9 +18,10 @@ import ThemeToggle from "./ThemeToggle";
 type RibbonProps = {
   onCommandPalette: () => void;
   onDaily: () => void;
+  onOpenSettings: () => void;
 };
 
-export default function Ribbon({ onCommandPalette, onDaily }: RibbonProps) {
+export default function Ribbon({ onCommandPalette, onDaily, onOpenSettings }: RibbonProps) {
   const icons: { icon: typeof FileStack; label: string; onClick: () => void }[] = [
     { icon: FileStack, label: "Vault", onClick: () => {} },
     { icon: GitGraph, label: "Graph view", onClick: () => {} },
@@ -52,6 +54,15 @@ export default function Ribbon({ onCommandPalette, onDaily }: RibbonProps) {
       <div className="flex-1" />
 
       <div className="flex flex-col items-center pb-2 gap-0.5">
+        <button
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={onOpenSettings}
+          className="flex h-9 w-9 items-center justify-center text-muted-foreground/70 transition-colors hover:text-foreground rounded-md hover:bg-white/5"
+        >
+          <Settings size={18} />
+        </button>
         <button
           type="button"
           aria-label="Code"

@@ -1,5 +1,7 @@
 // Package api wires the notes store to HTTP handlers and exposes a small
-// REST surface consumed by the Next.js frontend.
+// REST surface consumed by the Next.js frontend. All note/bookmark/folder
+// routes are scoped under /api/vaults/{vaultId}/... so multiple vaults can
+// coexist.
 package api
 
 import (
@@ -14,31 +16,42 @@ import (
 
 // Handler holds the dependencies shared across all routes.
 type Handler struct {
-	Store     *notes.Store
-	Bookmarks *notes.Bookmarks
+	Registry *notes.VaultRegistry
 }
 
-// New creates a Handler backed by the given store and bookmarks.
-func New(s *notes.Store, b *notes.Bookmarks) *Handler {
-	return &Handler{Store: s, Bookmarks: b}
+// New creates a Handler backed by the given vault registry.
+func New(r *notes.VaultRegistry) *Handler {
+	return &Handler{Registry: r}
 }
 
 // Routes returns an http.Handler serving the /api/* REST surface with CORS
 // and preflight handling applied.
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/notes", h.list)
-	mux.HandleFunc("POST /api/notes", h.create)
-	mux.HandleFunc("POST /api/notes/copy", h.copyNote)
-	mux.HandleFunc("POST /api/folders", h.createFolder)
-	mux.HandleFunc("DELETE /api/folders/{path...}", h.deleteFolder)
-	mux.HandleFunc("GET /api/notes/daily", h.daily)
-	mux.HandleFunc("GET /api/notes/{id}", h.get)
-	mux.HandleFunc("PUT /api/notes/{id}", h.update)
-	mux.HandleFunc("DELETE /api/notes/{id}", h.delete)
-	mux.HandleFunc("GET /api/bookmarks", h.listBookmarks)
-	mux.HandleFunc("POST /api/bookmarks", h.addBookmark)
-	mux.HandleFunc("DELETE /api/bookmarks/{id}", h.removeBookmark)
+
+	// Vault management
+	mux.HandleFunc("GET /api/vaults", h.listVaults)
+	mux.HandleFunc("POST /api/vaults", h.createVault)
+	mux.HandleFunc("PUT /api/vaults/{id}", h.renameVault)
+	mux.HandleFunc("DELETE /api/vaults/{id}", h.deleteVault)
+
+	// Vault-scoped note routes
+	mux.HandleFunc("GET /api/vaults/{vaultId}/notes", h.listNotes)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/notes", h.createNote)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/copy", h.copyNote)
+	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/daily", h.dailyNote)
+	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/{id}", h.getNote)
+	mux.HandleFunc("PUT /api/vaults/{vaultId}/notes/{id}", h.updateNote)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/notes/{id}", h.deleteNote)
+
+	// Vault-scoped folder routes
+	mux.HandleFunc("POST /api/vaults/{vaultId}/folders", h.createFolder)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/folders/{path...}", h.deleteFolder)
+
+	// Vault-scoped bookmark routes
+	mux.HandleFunc("GET /api/vaults/{vaultId}/bookmarks", h.listBookmarks)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/bookmarks", h.addBookmark)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/bookmarks/{id}", h.removeBookmark)
 
 	return h.cors(mux)
 }
@@ -58,8 +71,82 @@ func (h *Handler) cors(next http.Handler) http.Handler {
 	})
 }
 
-func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	result, err := h.Store.List()
+// resolveStore returns the store + bookmarks for the vault in the path.
+func (h *Handler) resolveStore(r *http.Request) (*notes.Store, *notes.Bookmarks, error) {
+	vaultId := r.PathValue("vaultId")
+	store, err := h.Registry.Store(vaultId)
+	if err != nil {
+		return nil, nil, err
+	}
+	bookmarks, err := h.Registry.Bookmarks(vaultId)
+	if err != nil {
+		return nil, nil, err
+	}
+	return store, bookmarks, nil
+}
+
+// --- Vault management ---
+
+func (h *Handler) listVaults(w http.ResponseWriter, r *http.Request) {
+	vaults, err := h.Registry.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]notes.VaultMeta{"vaults": vaults})
+}
+
+func (h *Handler) createVault(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	vault, err := h.Registry.Create(in.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, vault)
+}
+
+func (h *Handler) renameVault(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	vault, err := h.Registry.Rename(id, in.Name)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, vault)
+}
+
+func (h *Handler) deleteVault(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.Registry.Delete(id); err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Notes ---
+
+func (h *Handler) listNotes(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	result, err := store.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -67,13 +154,18 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) createNote(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
 	var in notes.CreateInput
 	if err := decodeBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	doc, err := h.Store.Create(in)
+	doc, err := store.Create(in)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -81,76 +173,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toPayload(doc))
 }
 
-func (h *Handler) createFolder(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Path string `json:"path"`
-	}
-	if err := decodeBody(r, &in); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if err := h.Store.CreateFolder(in.Path); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"path": in.Path})
-}
-
-func (h *Handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
-	folderPath := r.PathValue("path")
-	if err := h.Store.DeleteFolder(folderPath); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *Handler) daily(w http.ResponseWriter, r *http.Request) {
-	doc, err := h.Store.Daily()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toPayload(doc))
-}
-
-func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	doc, err := h.Store.Get(id)
-	if err != nil {
-		h.writeStoreError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toPayload(doc))
-}
-
-func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	var in notes.UpdateInput
-	if err := decodeBody(r, &in); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	doc, err := h.Store.Update(id, in)
-	if err != nil {
-		h.writeStoreError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toPayload(doc))
-}
-
-func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if err := h.Store.Delete(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	// Also remove from bookmarks if present.
-	_ = h.Bookmarks.Remove(id)
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (h *Handler) copyNote(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
 	var in struct {
 		ID string `json:"id"`
 	}
@@ -158,7 +186,7 @@ func (h *Handler) copyNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	doc, err := h.Store.Copy(in.ID)
+	doc, err := store.Copy(in.ID)
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
@@ -166,8 +194,115 @@ func (h *Handler) copyNote(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, toPayload(doc))
 }
 
+func (h *Handler) dailyNote(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	doc, err := store.Daily()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) getNote(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	doc, err := store.Get(id)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) updateNote(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	var in notes.UpdateInput
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := store.Update(id, in)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) deleteNote(w http.ResponseWriter, r *http.Request) {
+	store, bookmarks, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	if err := store.Delete(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	_ = bookmarks.Remove(id)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Folders ---
+
+func (h *Handler) createFolder(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	var in struct {
+		Path string `json:"path"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := store.CreateFolder(in.Path); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"path": in.Path})
+}
+
+func (h *Handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	folderPath := r.PathValue("path")
+	if err := store.DeleteFolder(folderPath); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Bookmarks ---
+
 func (h *Handler) listBookmarks(w http.ResponseWriter, r *http.Request) {
-	ids, err := h.Bookmarks.List()
+	_, bookmarks, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	ids, err := bookmarks.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -176,6 +311,11 @@ func (h *Handler) listBookmarks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) addBookmark(w http.ResponseWriter, r *http.Request) {
+	_, bookmarks, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
 	var in struct {
 		ID string `json:"id"`
 	}
@@ -183,7 +323,7 @@ func (h *Handler) addBookmark(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := h.Bookmarks.Add(in.ID); err != nil {
+	if err := bookmarks.Add(in.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -191,13 +331,20 @@ func (h *Handler) addBookmark(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) removeBookmark(w http.ResponseWriter, r *http.Request) {
+	_, bookmarks, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
 	id := r.PathValue("id")
-	if err := h.Bookmarks.Remove(id); err != nil {
+	if err := bookmarks.Remove(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// --- Error helpers ---
 
 func (h *Handler) writeStoreError(w http.ResponseWriter, err error) {
 	if errors.Is(err, notes.ErrNotFound) {
@@ -205,6 +352,14 @@ func (h *Handler) writeStoreError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, err)
+}
+
+func (h *Handler) writeRegistryError(w http.ResponseWriter, err error) {
+	if errors.Is(err, notes.ErrNotFound) {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeError(w, http.StatusBadRequest, err)
 }
 
 // Payload is the JSON shape returned for a single note.

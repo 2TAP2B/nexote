@@ -218,8 +218,8 @@ export default function EditorPane() {
           </span>
           <button
             type="button"
-            aria-label={bookmarks.has(activeNote.id) ? "Remove bookmark" : "Bookmark note"}
-            title={bookmarks.has(activeNote.id) ? "Remove bookmark" : "Bookmark note"}
+            aria-label={bookmarks.has(activeNote.id) ? "Remove from shortcuts" : "Add to shortcuts"}
+            title={bookmarks.has(activeNote.id) ? "Remove from shortcuts" : "Add to shortcuts"}
             onClick={() => void toggleBookmark(activeNote.id)}
             className="flex h-7 w-7 items-center justify-center transition-colors rounded hover:bg-white/5"
             style={{
