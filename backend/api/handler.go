@@ -16,12 +16,18 @@ import (
 
 // Handler holds the dependencies shared across all routes.
 type Handler struct {
-	Registry *notes.VaultRegistry
+	Registry     *notes.VaultRegistry
+	JournalStore *notes.Store
 }
 
-// New creates a Handler backed by the given vault registry.
-func New(r *notes.VaultRegistry) *Handler {
-	return &Handler{Registry: r}
+// New creates a Handler backed by the given vault registry. The journal
+// store is created at <registryRoot>/../journal (i.e. ~/.nexote/journal).
+func New(r *notes.VaultRegistry, journalDir string) *Handler {
+	js, err := notes.NewStore(journalDir)
+	if err != nil {
+		log.Printf("journal store: %v", err)
+	}
+	return &Handler{Registry: r, JournalStore: js}
 }
 
 // Routes returns an http.Handler serving the /api/* REST surface with CORS
@@ -41,7 +47,6 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes", h.createNote)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/copy", h.copyNote)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/move", h.moveNote)
-	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/daily", h.dailyNote)
 	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/{id}", h.getNote)
 	mux.HandleFunc("PUT /api/vaults/{vaultId}/notes/{id}", h.updateNote)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/notes/{id}", h.deleteNote)
@@ -59,6 +64,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/vaults/{vaultId}/shortcuts", h.listShortcuts)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/shortcuts", h.addShortcut)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/shortcuts/{id}", h.removeShortcut)
+
+	// Journal routes (vault-independent, always available)
+	mux.HandleFunc("GET /api/journal/daily", h.journalDaily)
+	mux.HandleFunc("GET /api/journal/notes", h.journalListNotes)
+	mux.HandleFunc("GET /api/journal/notes/{id}", h.journalGetNote)
+	mux.HandleFunc("PUT /api/journal/notes/{id}", h.journalUpdateNote)
 
 	return h.cors(mux)
 }
@@ -235,20 +246,6 @@ func (h *Handler) moveNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, toPayload(doc))
-}
-
-func (h *Handler) dailyNote(w http.ResponseWriter, r *http.Request) {
-	store, _, err := h.resolveStore(r)
-	if err != nil {
-		h.writeRegistryError(w, err)
-		return
-	}
-	doc, err := store.Daily()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 
 func (h *Handler) getNote(w http.ResponseWriter, r *http.Request) {
@@ -504,4 +501,65 @@ func writeError(w http.ResponseWriter, status int, err error) {
 		msg = http.StatusText(status)
 	}
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// --- Journal handlers (vault-independent) ---
+
+func (h *Handler) journalDaily(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	doc, err := h.JournalStore.Daily()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) journalListNotes(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	list, err := h.JournalStore.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *Handler) journalGetNote(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	id := r.PathValue("id")
+	doc, err := h.JournalStore.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) journalUpdateNote(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	id := r.PathValue("id")
+	var in notes.UpdateInput
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := h.JournalStore.Update(id, in)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
 }

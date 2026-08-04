@@ -68,7 +68,9 @@ type NotesContextValue = {
   refresh: () => Promise<void>;
   // Multi-vault data for the advanced tree
   allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
+  journalNotes: NoteMeta[];
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
+  openJournalNote: (id: string) => Promise<void>;
   treeMode: "simple" | "advanced";
   setTreeMode: (mode: "simple" | "advanced") => void;
   settings: AppSettings;
@@ -102,7 +104,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [allVaultData, setAllVaultData] = useState<
     Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>
   >({});
+  const [journalNotes, setJournalNotes] = useState<NoteMeta[]>([]);
   const [treeMode, setTreeModeState] = useState<"simple" | "advanced">("advanced");
+  const journalIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const stored = localStorage.getItem("nexote:tree-mode");
@@ -272,6 +276,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setActiveId(DASHBOARD_ID);
         return;
       }
+      // Bump the note's updatedAt so it sorts to the top of Recent.
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.id === id ? { ...n, updatedAt: new Date().toISOString() } : n,
+        ),
+      );
       if (openTabs.includes(id)) {
         setActiveId(id);
         return;
@@ -292,7 +302,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [openTabs, notesById, activeVaultId],
+    [openTabs, notesById, activeVaultId, setNotes],
   );
 
   // Open a note from any vault. Switches vault if needed, then opens the note.
@@ -321,6 +331,33 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [activeVaultId, switchVault, openTab],
+  );
+
+  // Open a journal note (vault-independent). Loads from /api/journal.
+  const openJournalNote = useCallback(
+    async (id: string) => {
+      journalIdsRef.current.add(id);
+      setActiveId(id);
+      setOpenTabs((prev) =>
+        prev[0] === DASHBOARD_ID
+          ? [prev[0], id, ...prev.slice(1)]
+          : prev.includes(id) ? prev : [...prev, id],
+      );
+      setJournalNotes((prev) =>
+        prev.map((n) =>
+          n.id === id ? { ...n, updatedAt: new Date().toISOString() } : n,
+        ),
+      );
+      if (!notesById[id]) {
+        try {
+          const note = await api.journalGet(id);
+          setNotesById((prev) => ({ ...prev, [id]: note }));
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Failed to load journal note");
+        }
+      }
+    },
+    [openTabs, notesById, setJournalNotes],
   );
 
   const closeTab = useCallback((id: string) => {
@@ -509,12 +546,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [notesById, activeVaultId, refresh],
   );
 
-  const openDaily = useCallback(async () => {
-    if (!activeVaultId) return;
+  const refreshJournal = useCallback(async () => {
     try {
-      const note = await api.daily(activeVaultId);
-      await refresh();
+      const list = await api.journalList();
+      setJournalNotes(list.notes);
+      for (const n of list.notes) journalIdsRef.current.add(n.id);
+    } catch {
+      // Journal store may not be available yet — ignore.
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshJournal();
+  }, [refreshJournal]);
+
+  const openDaily = useCallback(async () => {
+    try {
+      const note = await api.journalDaily();
+      journalIdsRef.current.add(note.id);
       setNotesById((prev) => ({ ...prev, [note.id]: note }));
+      void refreshJournal();
       if (!openTabs.includes(note.id)) {
         setOpenTabs((prev) =>
           prev[0] === DASHBOARD_ID
@@ -526,7 +577,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to open daily journal");
     }
-  }, [openTabs, activeVaultId, refresh]);
+  }, [openTabs]);
 
   const remove = useCallback(
     async (id: string) => {
@@ -551,13 +602,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const save = useCallback(
     async (id: string, input: Draft) => {
-      if (!activeVaultId) return;
+      const isJournal = journalIdsRef.current.has(id);
+      if (!activeVaultId && !isJournal) return;
       const prev = inflight.current ?? Promise.resolve();
       const run = prev.then(async () => {
         setSaving(true);
         try {
-          await api.update(activeVaultId, id, input);
-          await refresh();
+          if (isJournal) {
+            await api.journalUpdate(id, input);
+          } else {
+            await api.update(activeVaultId!, id, input);
+            await refresh();
+          }
           setNotesById((prev) => {
             const n = prev[id];
             if (!n) return prev;
@@ -632,7 +688,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setDraft,
       refresh,
       allVaultData,
+      journalNotes,
       openNoteInVault,
+      openJournalNote,
       treeMode,
       setTreeMode,
       settings,
@@ -676,7 +734,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setDraft,
       refresh,
       allVaultData,
+      journalNotes,
       openNoteInVault,
+      openJournalNote,
       treeMode,
       setTreeMode,
       settings,

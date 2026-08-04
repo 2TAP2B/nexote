@@ -66,7 +66,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         label: "Create new note",
         hint: "Ctrl+Shift+N",
         icon: <FilePlus className="h-4 w-4 shrink-0 text-muted-foreground" />,
-        run: () => void create(),
+        run: () => document.getElementById("nexote-new-note-btn")?.click(),
       },
       {
         id: "daily",

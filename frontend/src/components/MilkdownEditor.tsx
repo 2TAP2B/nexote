@@ -13,6 +13,7 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 export type MilkdownEditorHandle = {
   focus: () => void;
   selectHeading: () => void;
+  focusEnd: () => void;
 };
 
 type MilkdownEditorProps = {
@@ -36,6 +37,60 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             inputPlaceholder: "Paste a link…",
           },
         },
+      });
+
+      // Block-to-block arrow navigation: when ArrowUp is pressed at the
+      // start of a block, jump to the start of the previous block. When
+      // ArrowDown is pressed at the end of a block, jump to the start of
+      // the next block.
+      crepe.editor.config((ctx) => {
+        const opts = ctx.get("editorViewOptions" as never) as Record<string, unknown>;
+        ctx.set("editorViewOptions" as never, {
+          ...opts,
+          handleKeyDown: (_view: EditorView, event: KeyboardEvent) => {
+            if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false;
+            const view = ctx.get("editorView" as never) as EditorView;
+            const { state, dispatch } = view;
+            const { selection } = state;
+            if (event.key === "ArrowUp") {
+              if (!selection.empty) return false;
+              const $head = selection.$head;
+              if ($head.parentOffset === 0) {
+                const doc = state.doc;
+                const pos = $head.before($head.depth);
+                if (pos <= 0) return false;
+                const prevNode = doc.resolve(pos - 1).nodeBefore;
+                if (!prevNode) return false;
+                const targetPos = pos - prevNode.nodeSize;
+                dispatch(
+                  state.tr.setSelection(
+                    TextSelection.create(doc, targetPos + 1),
+                  ),
+                );
+                view.focus();
+                return true;
+              }
+            } else {
+              if (!selection.empty) return false;
+              const $head = selection.$head;
+              if ($head.parentOffset === $head.parent.content.size) {
+                const doc = state.doc;
+                if ($head.depth === 0) return false;
+                const pos = $head.after($head.depth);
+                // Ensure there IS a next block to jump to.
+                if (pos + 1 >= doc.content.size) return false;
+                dispatch(
+                  state.tr.setSelection(
+                    TextSelection.create(doc, pos + 1),
+                  ),
+                );
+                view.focus();
+                return true;
+              }
+            }
+            return false;
+          },
+        } as never);
       });
 
       crepe.on((listener) => {
@@ -83,6 +138,34 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             } else {
               editorView.focus();
             }
+          });
+        },
+        focusEnd: () => {
+          const editor = crepeRef.current?.editor;
+          if (!editor) return;
+          editor.action((ctx) => {
+            const editorView = ctx.get("editorView") as EditorView;
+            const { state, dispatch } = editorView;
+            const doc = state.doc;
+            // Walk to the last block-level node and place cursor at its end.
+            if (doc.childCount === 0) {
+              editorView.focus();
+              return;
+            }
+            let pos = 0;
+            doc.forEach((child) => {
+              pos += child.nodeSize;
+            });
+            // pos is now at the end of the last child (before the closing
+            // of the doc). Place the cursor one position before that
+            // (inside the last block's closing boundary).
+            const target = Math.max(0, pos - 1);
+            dispatch(
+              state.tr.setSelection(
+                TextSelection.create(doc, target),
+              ),
+            );
+            editorView.focus();
           });
         },
       }),

@@ -94,8 +94,18 @@ export const api = {
     request<ListResult>(`${vaultBase(vaultId)}/notes`),
   get: (vaultId: string, id: string) =>
     request<Note>(`${vaultBase(vaultId)}/notes/${id}`),
-  daily: (vaultId: string) =>
-    request<Note>(`${vaultBase(vaultId)}/notes/daily`),
+  // Journal (vault-independent) — always available
+  journalDaily: () =>
+    request<Note>("/api/journal/daily"),
+  journalList: () =>
+    request<ListResult>("/api/journal/notes"),
+  journalGet: (id: string) =>
+    request<Note>(`/api/journal/notes/${id}`),
+  journalUpdate: (id: string, input: { title?: string; body?: string }) =>
+    request<Note>(`/api/journal/notes/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
   create: (vaultId: string, input: NoteInput) =>
     request<Note>(`${vaultBase(vaultId)}/notes`, {
       method: "POST",

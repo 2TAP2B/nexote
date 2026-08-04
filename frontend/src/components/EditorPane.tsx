@@ -125,15 +125,43 @@ export default function EditorPane() {
   // past it and start writing the body.
   useEffect(() => {
     const onRenameNew = () => {
-      // The editor may need a moment to mount after the new note is set.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           editorRef.current?.selectHeading();
         });
       });
     };
+    const onFocusEnd = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          editorRef.current?.focusEnd();
+        });
+      });
+    };
     window.addEventListener("nexote:rename-new-note", onRenameNew);
-    return () => window.removeEventListener("nexote:rename-new-note", onRenameNew);
+    window.addEventListener("nexote:focus-note-end", onFocusEnd);
+    return () => {
+      window.removeEventListener("nexote:rename-new-note", onRenameNew);
+      window.removeEventListener("nexote:focus-note-end", onFocusEnd);
+    };
+  }, []);
+
+  // Escape in the editor returns focus to the notetree.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Check if the editor or something inside it is focused.
+      const el = document.activeElement as HTMLElement | null;
+      if (!el) return;
+      const inEditor = el.isContentEditable || el.closest(".milkdown") || el.closest(".ProseMirror") || el.closest("[data-milkdown-root]");
+      if (inEditor) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("nexote:focus-tree"));
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   const commitTitle = async () => {

@@ -35,7 +35,7 @@ func main() {
 		log.Fatalf("init vault registry: %v", err)
 	}
 
-	h := api.New(registry)
+	h := api.New(registry, filepath.Join(home, "journal"))
 	addr := ":" + port
 	log.Printf("nexote backend listening on http://localhost%s (home: %s)", addr, home)
 	if err := http.ListenAndServe(addr, h.Routes()); err != nil {

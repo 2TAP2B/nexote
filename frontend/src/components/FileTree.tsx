@@ -2,9 +2,12 @@
 
 import {
   ArrowLeft,
+  ArrowDownUp,
   Bookmark,
   BookmarkCheck,
+  Calendar,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Copy,
@@ -19,8 +22,10 @@ import {
   GraduationCap,
   Heart,
   Home,
+  LayoutList,
   Music,
   Pin,
+  Rows3,
   Settings2,
   Shield,
   SquareArrowOutUpRight,
@@ -131,6 +136,19 @@ export type TreeControls = {
   toggleExpandCollapse: () => void;
   allSectionsExpanded: boolean;
   toggleSectionsCollapse: () => void;
+  // Folder view state (exposed so the sidebar header can switch)
+  folderMode: boolean;
+  folderName: string;
+  folderViewMode: "compact" | "detailed";
+  onToggleFolderViewMode: () => void;
+  folderSort: boolean;
+  onToggleFolderSort: () => void;
+  onNewNoteInFolder: () => void;
+  onExitFolder: () => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onGoBack: () => void;
+  onGoForward: () => void;
 };
 
 type FileTreeProps = {
@@ -162,34 +180,109 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     activeVault,
     allVaultData,
     openNoteInVault,
+    openJournalNote,
     switchVault,
     renameVault,
     setVaultIcon,
     treeMode,
+    journalNotes,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const isFolderOpen = useCallback(
+    (path: string) => openMap[path] ?? true,
+    [openMap],
+  );
   // Recent excludes notes already pinned as shortcuts, so a note doesn't
   // appear in both the Shortcuts and Recent sections.
   const recentNotes = useMemo(
     () => notes.filter((n) => !shortcuts.has(n.id)),
     [notes, shortcuts],
   );
+
+  // Flat ordered list of visible items per section for keyboard nav.
+  type NavItem = { type: "note"; id: string } | { type: "folder"; path: string };
+
+  // Shortcuts nav list
+  const shortcutsNavItems = useMemo(() => {
+    const items: NavItem[] = [];
+    for (const n of notes) if (shortcuts.has(n.id)) items.push({ type: "note", id: n.id });
+    return items;
+  }, [notes, shortcuts]);
+
+  // Recent nav list
+  const recentNavItems = useMemo(() => {
+    return recentNotes.map((n) => ({ type: "note", id: n.id }) as NavItem);
+  }, [recentNotes]);
+
+  // Journal nav list (vault-independent)
+  const journalNavItems = useMemo(() => {
+    return journalNotes.map((n) => ({ type: "note", id: n.id }) as NavItem);
+  }, [journalNotes]);
+
+  // Vault tree nav list (notes + folders)
+  const vaultNavItems = useMemo(() => {
+    const items: NavItem[] = [];
+    const walk = (node: TreeNode) => {
+      for (const [, child] of node.children) {
+        items.push({ type: "folder", path: child.path });
+        if (isFolderOpen(child.path)) walk(child);
+      }
+      for (const n of node.notes) {
+        items.push({ type: "note", id: n.id });
+      }
+    };
+    if (activeVault) {
+      const vaultData = allVaultData[activeVault.id];
+      if (vaultData) {
+        const vaultTree = buildTree(vaultData.notes, vaultData.folders);
+        walk(vaultTree);
+      }
+    }
+    return items;
+  }, [notes, activeVault, allVaultData, isFolderOpen]);
+
+  // Which sections are currently available (for Tab cycling)
+  const availableSections = useMemo(() => {
+    const secs: string[] = [];
+    if (shortcutsNavItems.length > 0) secs.push("shortcuts");
+    if (recentNavItems.length > 0) secs.push("recent");
+    if (journalNavItems.length > 0) secs.push("journal");
+    secs.push("vault");
+    return secs;
+  }, [shortcutsNavItems.length, recentNavItems.length, journalNavItems.length]);
+
+  // Active navigation section + selected index within it.
+  const [navSection, setNavSection] = useState<string>("vault");
+  const [treeSelectedNav, setTreeSelectedNav] = useState<string | null>(null);
   const [drillPath, setDrillPath] = useState<string | null>(null);
+  const [folderHistory, setFolderHistory] = useState<string[]>([]);
+  const [folderHistoryIndex, setFolderHistoryIndex] = useState(-1);
   const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [sorted, setSorted] = useState(false);
 
   // Collapsible section states
   const [shortcutsExpanded, setShortcutsExpanded] = useState(true);
   const [recentExpanded, setRecentExpanded] = useState(true);
+  const [journalExpanded, setJournalExpanded] = useState(true);
   const [vaultExpandedMap, setVaultExpandedMap] = useState<Record<string, boolean>>({});
+  const [folderViewMode, setFolderViewMode] = useState<"compact" | "detailed">("detailed");
+  const [folderSort, setFolderSort] = useState(false);
 
   // Tracks which section a note was opened from, so the active highlight
   // only appears in the section the user actually clicked (not in every
   // section that happens to list the note).
   const [activeSource, setActiveSource] = useState<string | null>(null);
   const sectionOpenRef = useRef(false);
+
+  // Get the nav items for the current section.
+  const currentNavItems = useCallback((): NavItem[] => {
+    if (navSection === "shortcuts") return shortcutsNavItems;
+    if (navSection === "recent") return recentNavItems;
+    if (navSection === "journal") return journalNavItems;
+    return vaultNavItems;
+  }, [navSection, shortcutsNavItems, recentNavItems, journalNavItems, vaultNavItems]);
 
   // Clear activeSource when activeId changes from outside a section open
   // (e.g. command palette, daily note, tab click), so stale source tags
@@ -244,10 +337,146 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [dragOverVaultId, setDragOverVaultId] = useState<string | null>(null);
 
-  const isFolderOpen = useCallback(
-    (path: string) => openMap[path] ?? true,
-    [openMap],
-  );
+  // Navigate into a folder (advanced mode detail view). Pushes onto the
+  // history stack so left/right arrow keys can go back/forward.
+  const navigateToFolder = useCallback((path: string) => {
+    setDrillPath(path);
+    setFolderHistory((prev) => {
+      const trimmed = prev.slice(0, folderHistoryIndex + 1);
+      return [...trimmed, path];
+    });
+    setFolderHistoryIndex((i) => i + 1);
+  }, [folderHistoryIndex]);
+
+  const folderGoBack = useCallback(() => {
+    if (folderHistoryIndex > 0) {
+      const newIndex = folderHistoryIndex - 1;
+      setFolderHistoryIndex(newIndex);
+      setDrillPath(folderHistory[newIndex]);
+    } else if (folderHistoryIndex === 0) {
+      setFolderHistoryIndex(-1);
+      setDrillPath(null);
+      // Restore tree selection to the folder we just left.
+      const lastFolder = folderHistory[0];
+      if (lastFolder) setTreeSelectedNav(`folder:${lastFolder}`);
+    }
+  }, [folderHistoryIndex, folderHistory]);
+
+  const folderGoForward = useCallback(() => {
+    if (folderHistoryIndex < folderHistory.length - 1) {
+      const newIndex = folderHistoryIndex + 1;
+      setFolderHistoryIndex(newIndex);
+      setDrillPath(folderHistory[newIndex]);
+    }
+  }, [folderHistoryIndex, folderHistory]);
+
+  // Arrow-key navigation in the main tree (not folder detail view).
+  // Tab/Shift+Tab = switch between sections (shortcuts/recent/vault).
+  // Up/down = move within section. Right/Enter = open note or enter folder.
+  // Left = clear selection. Space = toggle folder. Shift+Left = focus tree.
+  useEffect(() => {
+    if (drillPath !== null || showBookmarksOnly) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+
+      // Tab / Shift+Tab — switch between sections.
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        const secs = availableSections;
+        if (secs.length === 0) return;
+        const curIdx = secs.indexOf(navSection);
+        const nextIdx = e.shiftKey
+          ? (curIdx <= 0 ? secs.length - 1 : curIdx - 1)
+          : (curIdx < 0 ? 0 : (curIdx + 1) % secs.length);
+        setNavSection(secs[nextIdx]);
+        setTreeSelectedNav(null);
+        return;
+      }
+
+      if (
+        e.key !== "ArrowUp" && e.key !== "ArrowDown" &&
+        e.key !== "ArrowRight" && e.key !== "ArrowLeft" &&
+        e.key !== "Enter" && e.key !== " "
+      ) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const items = currentNavItems();
+      if (items.length === 0) return;
+      const navKeys = items.map((it) =>
+        it.type === "note" ? `note:${it.id}` : `folder:${it.path}`,
+      );
+      const currentIdx = treeSelectedNav ? navKeys.indexOf(treeSelectedNav) : -1;
+
+      if (e.key === "ArrowDown") {
+        const next = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
+        setTreeSelectedNav(navKeys[next]);
+      } else if (e.key === "ArrowUp") {
+        const next = currentIdx < 0 ? 0 : Math.max(currentIdx - 1, 0);
+        setTreeSelectedNav(navKeys[next]);
+      } else if (e.key === "ArrowRight" || e.key === "Enter") {
+        if (currentIdx < 0) return;
+        const item = items[currentIdx];
+        if (item.type === "note") {
+          if (navSection === "journal") {
+            sectionOpenRef.current = true;
+            setActiveSource("journal");
+            void openJournalNote(item.id);
+          } else {
+            openFromSection(navSection === "vault" ? (activeVault ? `vault:${activeVault.id}` : "simple") : navSection, item.id);
+          }
+          window.dispatchEvent(new CustomEvent("nexote:focus-note-end"));
+        } else {
+          navigateToFolder(item.path);
+        }
+      } else if (e.key === "ArrowLeft") {
+        if (e.shiftKey) {
+          // Shift+Left = return focus to the tree (stay in tree, clear selection).
+          setTreeSelectedNav(null);
+        } else {
+          setTreeSelectedNav(null);
+        }
+      } else if (e.key === " ") {
+        if (currentIdx < 0) return;
+        const item = items[currentIdx];
+        if (item.type === "folder") {
+          setOpenMap((prev) => ({ ...prev, [item.path]: !(prev[item.path] ?? true) }));
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [drillPath, showBookmarksOnly, availableSections, navSection, currentNavItems, treeSelectedNav, openTab, openFromSection, openJournalNote, navigateToFolder, activeVault, setOpenMap]);
+
+  // Listen for "focus tree" event (Shift+Left from editor) — select the
+  // currently open note in the vault section so arrows work immediately.
+  useEffect(() => {
+    const onFocusTree = () => {
+      setNavSection("vault");
+      if (activeId) {
+        setTreeSelectedNav(`note:${activeId}`);
+      } else {
+        const items = vaultNavItems;
+        if (items.length > 0) {
+          setTreeSelectedNav(items[0].type === "note" ? `note:${items[0].id}` : `folder:${(items[0] as { path: string }).path}`);
+        }
+      }
+    };
+    window.addEventListener("nexote:focus-tree", onFocusTree);
+    return () => window.removeEventListener("nexote:focus-tree", onFocusTree);
+  }, [activeId, vaultNavItems]);
+
+  // Scroll the keyboard-selected item into view in the tree.
+  useEffect(() => {
+    if (!treeSelectedNav) return;
+    const [type, ...rest] = treeSelectedNav.split(":");
+    const id = rest.join(":");
+    const selector = type === "note" ? `[data-note-id="${id}"]` : `[data-folder-path="${id}"]`;
+    const el = document.querySelector(selector);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [treeSelectedNav]);
 
   const expandAll = useCallback(() => {
     const paths = allFolderPaths(tree);
@@ -286,16 +515,18 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     else expandAll();
   }, [allExpanded, collapseAll, expandAll]);
 
-  // Section collapse state: Shortcuts, Recent, and all vault sections.
+  // Section collapse state: Shortcuts, Recent, Journal, and all vault sections.
   const allSectionsExpanded =
     shortcutsExpanded &&
     recentExpanded &&
+    journalExpanded &&
     vaults.every((v) => vaultExpandedMap[v.id] ?? true);
 
   const setAllSections = useCallback(
     (expanded: boolean) => {
       setShortcutsExpanded(expanded);
       setRecentExpanded(expanded);
+      setJournalExpanded(expanded);
       setVaultExpandedMap(
         Object.fromEntries(vaults.map((v) => [v.id, expanded])),
       );
@@ -378,6 +609,18 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     };
   }, [vaultIconPicker]);
 
+  const openFolderDialog = useCallback((parentPath?: string) => {
+    setFolderDialog({ open: true, parentPath });
+  }, []);
+
+  const handleCreateHere = useCallback(() => {
+    void create(drillPath ? { path: drillPath } : undefined);
+  }, [create, drillPath]);
+
+  const handleNewFolderHere = useCallback(() => {
+    openFolderDialog(drillPath ?? undefined);
+  }, [openFolderDialog, drillPath]);
+
   useEffect(() => {
     onControlsReady?.({
       expandAll,
@@ -388,6 +631,24 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
       toggleExpandCollapse,
       allSectionsExpanded,
       toggleSectionsCollapse,
+      folderMode: drillPath !== null && treeMode === "advanced",
+      folderName: drillPath ? (drillPath.split("/").pop() || drillPath) : "",
+      folderViewMode,
+      onToggleFolderViewMode: () => setFolderViewMode((m) => (m === "detailed" ? "compact" : "detailed")),
+      folderSort,
+      onToggleFolderSort: () => setFolderSort((s) => !s),
+      onNewNoteInFolder: handleCreateHere,
+      onExitFolder: () => {
+        const lastFolder = drillPath;
+        setDrillPath(null);
+        setFolderHistory([]);
+        setFolderHistoryIndex(-1);
+        if (lastFolder) setTreeSelectedNav(`folder:${lastFolder}`);
+      },
+      canGoBack: folderHistoryIndex >= 0,
+      canGoForward: folderHistoryIndex < folderHistory.length - 1,
+      onGoBack: folderGoBack,
+      onGoForward: folderGoForward,
     });
   }, [
     onControlsReady,
@@ -399,20 +660,16 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     toggleExpandCollapse,
     allSectionsExpanded,
     toggleSectionsCollapse,
+    drillPath,
+    treeMode,
+    folderViewMode,
+    folderSort,
+    handleCreateHere,
+    folderHistoryIndex,
+    folderHistory.length,
+    folderGoBack,
+    folderGoForward,
   ]);
-
-  const openFolderDialog = useCallback((parentPath?: string) => {
-    setFolderDialog({ open: true, parentPath });
-  }, []);
-
-  // When a folder is drilled into, new notes/folders are created inside it.
-  const handleCreateHere = useCallback(() => {
-    void create(drillPath ? { path: drillPath } : undefined);
-  }, [create, drillPath]);
-
-  const handleNewFolderHere = useCallback(() => {
-    openFolderDialog(drillPath ?? undefined);
-  }, [openFolderDialog, drillPath]);
 
   const handleCreateFolder = useCallback(
     (fullPath: string) => {
@@ -494,265 +751,373 @@ export default function FileTree({ collapsed, onControlsReady }: FileTreeProps) 
     );
   }
 
+  const inFolderMode = drillPath !== null && treeMode === "advanced";
+
   return (
     <div className="flex h-full flex-col">
       <button id="nexote-new-note-btn" type="button" className="hidden" onClick={handleCreateHere} />
       <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={handleNewFolderHere} />
 
-      <div className="flex-1 overflow-y-auto px-1 pb-2 pt-1">
-        {showBookmarksOnly ? (
-          <BookmarksList
-            notes={notes.filter((n) => bookmarks.has(n.id))}
-            activeId={activeId}
-            activeSource={activeSource}
-            onOpen={(id) => openFromSection("bookmarks", id)}
-            onDelete={setPendingDelete}
-            onCopy={copyNote}
-            onBookmark={toggleBookmark}
-            onShortcut={toggleShortcut}
-            bookmarks={bookmarks}
-            shortcuts={shortcuts}
-            onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-            renaming={renaming}
-            setRenaming={setRenaming}
-            onRename={handleRename}
-            onMoveNote={handleMoveNote}
-          />
-        ) : drillPath !== null ? (
-          <DrillView
-            path={drillPath}
-            notes={notes}
-            folders={folders ?? []}
-            activeId={activeId}
-            activeSource={activeSource}
-            onOpen={(id) => openFromSection("drill", id)}
-            onDelete={setPendingDelete}
-            onCopy={copyNote}
-            onBookmark={toggleBookmark}
-            onShortcut={toggleShortcut}
-            bookmarks={bookmarks}
-            shortcuts={shortcuts}
-            onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-            renaming={renaming}
-            setRenaming={setRenaming}
-            onRename={handleRename}
-            onMoveNote={handleMoveNote}
-            onBack={() => setDrillPath(null)}
-            onDrillInto={setDrillPath}
-          />
-        ) : treeMode === "simple" ? (
-          <div>
-            <TreeChildren
-              node={tree}
-              depth={0}
+      <div className="relative flex-1 overflow-hidden">
+        {/* Root tree panel — slides left when entering folder */}
+        <div
+          className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1 transition-transform duration-300 ease-in-out"
+          style={{
+            transform: inFolderMode ? "translateX(-100%)" : "translateX(0)",
+            pointerEvents: inFolderMode ? "none" : "auto",
+          }}
+        >
+          {showBookmarksOnly ? (
+            <BookmarksList
+              notes={notes.filter((n) => bookmarks.has(n.id))}
               activeId={activeId}
               activeSource={activeSource}
-              sectionTag="simple"
-              onOpen={(id) => openFromSection("simple", id)}
+              onOpen={(id) => openFromSection("bookmarks", id)}
               onDelete={setPendingDelete}
               onCopy={copyNote}
               onBookmark={toggleBookmark}
               onShortcut={toggleShortcut}
               bookmarks={bookmarks}
               shortcuts={shortcuts}
-              isFolderOpen={isFolderOpen}
-              setOpenMap={setOpenMap}
-              sorted={sorted}
-              onNoteDragStart={handleNoteDragStart}
-              onFolderDragOver={setDragOverPath}
-              onFolderDrop={handleFolderDrop}
-              dragOverPath={dragOverPath}
               onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
               renaming={renaming}
               setRenaming={setRenaming}
               onRename={handleRename}
               onMoveNote={handleMoveNote}
-              onDeleteFolder={handleDeleteFolder}
-              onNewNoteInFolder={(path) => void create({ path })}
-              onNewFolderInFolder={(path) => openFolderDialog(path)}
+            />
+          ) : drillPath !== null && treeMode !== "advanced" ? (
+            <DrillView
+              path={drillPath}
+              notes={notes}
+              folders={folders ?? []}
+              activeId={activeId}
+              activeSource={activeSource}
+              onOpen={(id) => openFromSection("drill", id)}
+              onDelete={setPendingDelete}
+              onCopy={copyNote}
+              onBookmark={toggleBookmark}
+              onShortcut={toggleShortcut}
+              bookmarks={bookmarks}
+              shortcuts={shortcuts}
+              onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+              renaming={renaming}
+              setRenaming={setRenaming}
+              onRename={handleRename}
+              onMoveNote={handleMoveNote}
+              onBack={() => setDrillPath(null)}
               onDrillInto={setDrillPath}
             />
-          </div>
-        ) : (
-          <>
-            {/* Shortcuts section — pinned on top of the tree */}
-            {shortcuts.size > 0 && (
-              <CollapsibleSection
-                title="Shortcuts"
-                count={shortcuts.size}
-                expanded={shortcutsExpanded}
-                onToggle={() => setShortcutsExpanded((v) => !v)}
-                icon={<Pin className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />}
-              >
-                <ul>
-                  {notes
-                    .filter((n) => shortcuts.has(n.id))
-                    .sort((a, b) => a.title.localeCompare(b.title))
-                    .map((n) => (
-                      <NoteItem
-                        key={n.id}
-                        note={n}
-                        depth={0}
-                        active={n.id === activeId && activeSource === "shortcuts"}
-                        activeId={activeId}
-                        onOpen={(id) => openFromSection("shortcuts", id)}
-                        onDelete={setPendingDelete}
-                        onCopy={copyNote}
-                        onBookmark={toggleBookmark}
-                        onShortcut={toggleShortcut}
-                        bookmarks={bookmarks}
-                        shortcuts={shortcuts}
-                        onNoteDragStart={handleNoteDragStart}
-                        onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-                        renaming={renaming}
-                        setRenaming={setRenaming}
-                        onRename={handleRename}
-                        onMoveNote={handleMoveNote}
-                        isFolderOpen={() => false}
-                        setOpenMap={() => {}}
-                        sorted={false}
-                        onFolderDragOver={() => {}}
-                        onFolderDrop={() => {}}
-                        dragOverPath={null}
-                        onDeleteFolder={() => {}}
-                        onNewNoteInFolder={() => {}}
-                        onNewFolderInFolder={() => {}}
-                        onDrillInto={() => {}}
-                      />
-                    ))}
-                </ul>
-              </CollapsibleSection>
-            )}
-
-            {/* Recent files section */}
-            <CollapsibleSection
-              title="Recent"
-              count={Math.min(10, recentNotes.length)}
-              expanded={recentExpanded}
-              onToggle={() => setRecentExpanded((v) => !v)}
-              icon={<Clock className="h-3.5 w-3.5 shrink-0" style={{ color: "#6b6b70" }} />}
-            >
-              <RecentFilesList
-                notes={recentNotes}
+          ) : treeMode === "simple" ? (
+            <div>
+              <TreeChildren
+                node={tree}
+                depth={0}
                 activeId={activeId}
                 activeSource={activeSource}
-                onOpen={(id) => openFromSection("recent", id)}
+                sectionTag="simple"
+                treeSelectedNav={treeSelectedNav}
+                setTreeSelectedNav={setTreeSelectedNav}
+                onOpen={(id) => openFromSection("simple", id)}
                 onDelete={setPendingDelete}
                 onCopy={copyNote}
                 onBookmark={toggleBookmark}
                 onShortcut={toggleShortcut}
                 bookmarks={bookmarks}
                 shortcuts={shortcuts}
+                isFolderOpen={isFolderOpen}
+                setOpenMap={setOpenMap}
+                sorted={sorted}
+                onNoteDragStart={handleNoteDragStart}
+                onFolderDragOver={setDragOverPath}
+                onFolderDrop={handleFolderDrop}
+                dragOverPath={dragOverPath}
                 onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
                 renaming={renaming}
                 setRenaming={setRenaming}
                 onRename={handleRename}
                 onMoveNote={handleMoveNote}
+                onDeleteFolder={handleDeleteFolder}
+                onNewNoteInFolder={(path) => void create({ path })}
+                onNewFolderInFolder={(path) => openFolderDialog(path)}
+                onDrillInto={setDrillPath}
               />
-            </CollapsibleSection>
-
-            {/* Vault sections */}
-            {vaults.map((vault) => {
-              const vaultData = allVaultData[vault.id];
-              if (!vaultData) return null;
-              const isExpanded = vaultExpandedMap[vault.id] ?? true;
-              const isActiveVault = vault.id === activeVault?.id;
-              const vaultTree = buildTree(vaultData.notes, vaultData.folders);
-              return (
+            </div>
+          ) : (
+            <>
+              {/* Shortcuts section */}
+              {shortcuts.size > 0 && (
                 <CollapsibleSection
-                  key={vault.id}
-                  title={vault.name}
-                  count={vaultData.notes.length}
-                  expanded={isExpanded}
-                  onToggle={() =>
-                    setVaultExpandedMap((prev) => ({
-                      ...prev,
-                      [vault.id]: !isExpanded,
-                    }))
-                  }
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (dragNoteId) setDragOverVaultId(vault.id);
-                  }}
-                  onDragLeave={() => {
-                    if (dragOverVaultId === vault.id) setDragOverVaultId(null);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    handleVaultDrop(vault.id);
-                  }}
-                  dropActive={dragNoteId !== null && dragOverVaultId === vault.id}
-                  icon={(() => {
-                    const VaultIcon = getVaultIcon(vault.icon);
-                    return <VaultIcon className="h-3.5 w-3.5 shrink-0" style={{ opacity: isActiveVault ? 1 : 0.6 }} />;
-                  })()}
-                  bold={isActiveVault}
-                  onContextMenu={(e) => handleVaultContextMenu(e, vault.id, vault.name)}
-                  editing={renaming?.id === `vault:${vault.id}`}
-                  editValue={renaming?.id === `vault:${vault.id}` ? renaming.value : undefined}
-                  onEditChange={(v) =>
-                    setRenaming({ id: `vault:${vault.id}`, value: v })
-                  }
-                  onEditCommit={() => {
-                    if (renaming) {
-                      void handleRename(`vault:${vault.id}`, renaming.value.trim() || vault.name);
-                    }
-                    setRenaming(null);
-                  }}
-                  onEditCancel={() => setRenaming(null)}
+                  title="Shortcuts"
+                  count={shortcuts.size}
+                  expanded={shortcutsExpanded}
+                  onToggle={() => setShortcutsExpanded((v) => !v)}
+                  icon={<Pin className="h-3.5 w-3.5 shrink-0" style={{ color: navSection === "shortcuts" ? "var(--primary)" : "#6b6b70" }} />}
+                  sectionActive={navSection === "shortcuts"}
                 >
-                  {isActiveVault ? (
-                    <TreeChildren
-                      node={vaultTree}
-                      depth={0}
-                      activeId={activeId}
-                      activeSource={activeSource}
-                      sectionTag={`vault:${vault.id}`}
-                      onOpen={(id) => openFromSection(`vault:${vault.id}`, id)}
-                      onDelete={setPendingDelete}
-                      onCopy={copyNote}
-                      onBookmark={toggleBookmark}
-                      onShortcut={toggleShortcut}
-                      bookmarks={bookmarks}
-                      shortcuts={shortcuts}
-                      isFolderOpen={isFolderOpen}
-                      setOpenMap={setOpenMap}
-                      sorted={sorted}
-                      onNoteDragStart={handleNoteDragStart}
-                      onFolderDragOver={setDragOverPath}
-                      onFolderDrop={handleFolderDrop}
-                      dragOverPath={dragOverPath}
-                      onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-                      renaming={renaming}
-                      setRenaming={setRenaming}
-                      onRename={handleRename}
-                      onMoveNote={handleMoveNote}
-                      onDeleteFolder={handleDeleteFolder}
-                      onNewNoteInFolder={(path) => void create({ path })}
-                      onNewFolderInFolder={(path) => openFolderDialog(path)}
-                      onDrillInto={setDrillPath}
-                    />
-                  ) : (
-                    <VaultNoteList
-                      vaultId={vault.id}
-                      notes={vaultData.notes}
-                      folders={vaultData.folders}
-                      activeId={activeId}
-                      activeSource={activeSource}
-                      onOpen={(id) => {
-                        sectionOpenRef.current = true;
-                        setActiveSource(`vault:${vault.id}`);
-                        openNoteInVault(vault.id, id);
-                      }}
-                      onDrillInto={() => {
-                        switchVault(vault.id);
-                      }}
-                    />
-                  )}
+                  <ul>
+                    {notes
+                      .filter((n) => shortcuts.has(n.id))
+                      .sort((a, b) => a.title.localeCompare(b.title))
+                      .map((n) => (
+                        <NoteItem
+                          key={n.id}
+                          note={n}
+                          depth={0}
+                          active={n.id === activeId && activeSource === "shortcuts"}
+                          activeId={activeId}
+                          treeSelectedNav={navSection === "shortcuts" ? treeSelectedNav : null}
+                          setTreeSelectedNav={setTreeSelectedNav}
+                          onOpen={(id) => openFromSection("shortcuts", id)}
+                          onDelete={setPendingDelete}
+                          onCopy={copyNote}
+                          onBookmark={toggleBookmark}
+                          onShortcut={toggleShortcut}
+                          bookmarks={bookmarks}
+                          shortcuts={shortcuts}
+                          onNoteDragStart={handleNoteDragStart}
+                          onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                          renaming={renaming}
+                          setRenaming={setRenaming}
+                          onRename={handleRename}
+                          onMoveNote={handleMoveNote}
+                          isFolderOpen={() => false}
+                          setOpenMap={() => {}}
+                          sorted={false}
+                          onFolderDragOver={() => {}}
+                          onFolderDrop={() => {}}
+                          dragOverPath={null}
+                          onDeleteFolder={() => {}}
+                          onNewNoteInFolder={() => {}}
+                          onNewFolderInFolder={() => {}}
+                          onDrillInto={() => {}}
+                        />
+                      ))}
+                  </ul>
                 </CollapsibleSection>
-              );
-            })}
-          </>
+              )}
+
+              {/* Recent files section */}
+              <CollapsibleSection
+                title="Recent"
+                count={Math.min(10, recentNotes.length)}
+                expanded={recentExpanded}
+                onToggle={() => setRecentExpanded((v) => !v)}
+                icon={<Clock className="h-3.5 w-3.5 shrink-0" style={{ color: navSection === "recent" ? "var(--primary)" : "#6b6b70" }} />}
+                sectionActive={navSection === "recent"}
+              >
+                <RecentFilesList
+                  notes={recentNotes}
+                  activeId={activeId}
+                  activeSource={activeSource}
+                  treeSelectedNav={navSection === "recent" ? treeSelectedNav : null}
+                  setTreeSelectedNav={setTreeSelectedNav}
+                  onOpen={(id) => openFromSection("recent", id)}
+                  onDelete={setPendingDelete}
+                  onCopy={copyNote}
+                  onBookmark={toggleBookmark}
+                  onShortcut={toggleShortcut}
+                  bookmarks={bookmarks}
+                  shortcuts={shortcuts}
+                  onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                  renaming={renaming}
+                  setRenaming={setRenaming}
+                  onRename={handleRename}
+                  onMoveNote={handleMoveNote}
+                />
+              </CollapsibleSection>
+
+              {/* Journal section */}
+              {journalNotes.length > 0 && (
+                <CollapsibleSection
+                  title="Journal"
+                  count={journalNotes.length}
+                  expanded={journalExpanded}
+                  onToggle={() => setJournalExpanded((v) => !v)}
+                  icon={<Calendar className="h-3.5 w-3.5 shrink-0" style={{ color: navSection === "journal" ? "var(--primary)" : "#6b6b70" }} />}
+                  sectionActive={navSection === "journal"}
+                >
+                  <ul>
+                    {journalNotes
+                      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+                      .map((n) => (
+                        <NoteItem
+                          key={n.id}
+                          note={n}
+                          depth={0}
+                          active={n.id === activeId && activeSource === "journal"}
+                          activeId={activeId}
+                          treeSelectedNav={navSection === "journal" ? treeSelectedNav : null}
+                          setTreeSelectedNav={setTreeSelectedNav}
+                          onOpen={(id) => {
+                            sectionOpenRef.current = true;
+                            setActiveSource("journal");
+                            void openJournalNote(id);
+                          }}
+                          onDelete={setPendingDelete}
+                          onCopy={copyNote}
+                          onBookmark={toggleBookmark}
+                          onShortcut={toggleShortcut}
+                          bookmarks={bookmarks}
+                          shortcuts={shortcuts}
+                          onNoteDragStart={() => {}}
+                          onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                          renaming={renaming}
+                          setRenaming={setRenaming}
+                          onRename={handleRename}
+                          onMoveNote={() => {}}
+                          isFolderOpen={() => false}
+                          setOpenMap={() => {}}
+                          sorted={false}
+                          onFolderDragOver={() => {}}
+                          onFolderDrop={() => {}}
+                          dragOverPath={null}
+                          onDeleteFolder={() => {}}
+                          onNewNoteInFolder={() => {}}
+                          onNewFolderInFolder={() => {}}
+                          onDrillInto={() => {}}
+                        />
+                      ))}
+                  </ul>
+                </CollapsibleSection>
+              )}
+
+              {/* Vault sections */}
+              {vaults.map((vault) => {
+                const vaultData = allVaultData[vault.id];
+                if (!vaultData) return null;
+                const isExpanded = vaultExpandedMap[vault.id] ?? true;
+                const isActiveVault = vault.id === activeVault?.id;
+                const vaultTree = buildTree(vaultData.notes, vaultData.folders);
+                return (
+                  <CollapsibleSection
+                    key={vault.id}
+                    title={vault.name}
+                    count={vaultData.notes.length}
+                    expanded={isExpanded}
+                    onToggle={() =>
+                      setVaultExpandedMap((prev) => ({
+                        ...prev,
+                        [vault.id]: !isExpanded,
+                      }))
+                    }
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (dragNoteId) setDragOverVaultId(vault.id);
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverVaultId === vault.id) setDragOverVaultId(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      handleVaultDrop(vault.id);
+                    }}
+                    dropActive={dragNoteId !== null && dragOverVaultId === vault.id}
+                    icon={(() => {
+                      const VaultIcon = getVaultIcon(vault.icon);
+                      return <VaultIcon className="h-3.5 w-3.5 shrink-0" style={{ opacity: isActiveVault ? 1 : 0.6, color: navSection === "vault" ? "var(--primary)" : undefined }} />;
+                    })()}
+                    bold={isActiveVault}
+                    sectionActive={navSection === "vault"}
+                    onContextMenu={(e) => handleVaultContextMenu(e, vault.id, vault.name)}
+                    editing={renaming?.id === `vault:${vault.id}`}
+                    editValue={renaming?.id === `vault:${vault.id}` ? renaming.value : undefined}
+                    onEditChange={(v) =>
+                      setRenaming({ id: `vault:${vault.id}`, value: v })
+                    }
+                    onEditCommit={() => {
+                      if (renaming) {
+                        void handleRename(`vault:${vault.id}`, renaming.value.trim() || vault.name);
+                      }
+                      setRenaming(null);
+                    }}
+                    onEditCancel={() => setRenaming(null)}
+                  >
+                    {isActiveVault ? (
+                      <TreeChildren
+                        node={vaultTree}
+                        depth={0}
+                        activeId={activeId}
+                        activeSource={activeSource}
+                        sectionTag={`vault:${vault.id}`}
+                        treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
+                        setTreeSelectedNav={setTreeSelectedNav}
+                        onOpen={(id) => openFromSection(`vault:${vault.id}`, id)}
+                        onDelete={setPendingDelete}
+                        onCopy={copyNote}
+                        onBookmark={toggleBookmark}
+                        onShortcut={toggleShortcut}
+                        bookmarks={bookmarks}
+                        shortcuts={shortcuts}
+                        isFolderOpen={isFolderOpen}
+                        setOpenMap={setOpenMap}
+                        sorted={sorted}
+                        onNoteDragStart={handleNoteDragStart}
+                        onFolderDragOver={setDragOverPath}
+                        onFolderDrop={handleFolderDrop}
+                        dragOverPath={dragOverPath}
+                        onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                        renaming={renaming}
+                        setRenaming={setRenaming}
+                        onRename={handleRename}
+                        onMoveNote={handleMoveNote}
+                        onDeleteFolder={handleDeleteFolder}
+                        onNewNoteInFolder={(path) => void create({ path })}
+                        onNewFolderInFolder={(path) => openFolderDialog(path)}
+                        onDrillInto={navigateToFolder}
+                      />
+                    ) : (
+                      <VaultNoteList
+                        vaultId={vault.id}
+                        notes={vaultData.notes}
+                        folders={vaultData.folders}
+                        activeId={activeId}
+                        activeSource={activeSource}
+                        onOpen={(id) => {
+                          sectionOpenRef.current = true;
+                          setActiveSource(`vault:${vault.id}`);
+                          openNoteInVault(vault.id, id);
+                        }}
+                        onDrillInto={() => {
+                          switchVault(vault.id);
+                        }}
+                      />
+                    )}
+                  </CollapsibleSection>
+                );
+              })}
+            </>
+          )}
+        </div>
+
+        {/* Folder view panel — slides in from right */}
+        {drillPath !== null && treeMode === "advanced" && (
+          <div className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1 slide-in-right"
+          >
+            <FolderDetailView
+              path={drillPath}
+              notes={notes}
+              activeId={activeId}
+              activeSource={activeSource}
+              notesById={notesById}
+              onOpen={(id) => openFromSection("drill", id)}
+              onBack={() => {
+                const lastFolder = drillPath;
+                setDrillPath(null);
+                setFolderHistory([]);
+                setFolderHistoryIndex(-1);
+                if (lastFolder) setTreeSelectedNav(`folder:${lastFolder}`);
+              }}
+              canGoBack={folderHistoryIndex >= 0}
+              canGoForward={folderHistoryIndex < folderHistory.length - 1}
+              onGoBack={folderGoBack}
+              onGoForward={folderGoForward}
+              viewMode={folderViewMode}
+              onToggleViewMode={() => setFolderViewMode((m) => m === "detailed" ? "compact" : "detailed")}
+              onNewNote={handleCreateHere}
+              sort={folderSort}
+              onToggleSort={() => setFolderSort((s) => !s)}
+            />
+          </div>
         )}
       </div>
 
@@ -851,6 +1216,8 @@ type TreeChildProps = {
   activeId: string | null;
   activeSource?: string | null;
   sectionTag?: string;
+  treeSelectedNav?: string | null;
+  setTreeSelectedNav?: (nav: string | null) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
@@ -921,14 +1288,19 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
     onNewFolderInFolder,
     onDeleteFolder,
     onDrillInto,
+    treeSelectedNav,
+    setTreeSelectedNav,
   } = props;
   const open = isFolderOpen(node.path);
   const isDragOver = dragOverPath === node.path;
+  const isSelected = treeSelectedNav === `folder:${node.path}`;
 
   return (
     <li>
       <div
+        data-folder-path={node.path}
         draggable={false}
+        onMouseEnter={() => setTreeSelectedNav?.(`folder:${node.path}`)}
         onDragOver={(e) => {
           e.preventDefault();
           onFolderDragOver(node.path);
@@ -969,7 +1341,14 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               ? "bg-primary/20"
               : "hover:bg-white/5",
           ].join(" ")}
-          style={{ height: 33, paddingLeft: 14 + depth * 14, paddingRight: 14, borderRadius: 5 }}
+          style={{
+            height: 33,
+            paddingLeft: 14 + depth * 14,
+            paddingRight: 14,
+            borderRadius: 5,
+            background: isSelected ? "rgba(255,255,255,0.10)" : undefined,
+            outline: undefined,
+          }}
         >
           <button
             type="button"
@@ -1029,6 +1408,8 @@ function NoteItem(
     note,
     depth,
     active,
+    treeSelectedNav,
+    setTreeSelectedNav,
     onOpen,
     onDelete,
     onCopy,
@@ -1047,12 +1428,16 @@ function NoteItem(
   const isRenaming = renaming?.id === note.id;
   const isBookmarked = bookmarks.has(note.id);
   const isShortcut = shortcuts.has(note.id);
+  const isSelected = treeSelectedNav === `note:${note.id}`;
 
   return (
     <li>
       <div
+        data-note-id={note.id}
         draggable
         onDragStart={() => onNoteDragStart(note.id)}
+        onMouseEnter={() => setTreeSelectedNav?.(`note:${note.id}`)}
+        onClick={() => !isRenaming && onOpen(note.id)}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -1108,7 +1493,12 @@ function NoteItem(
           paddingLeft: 30 + depth * 14,
           paddingRight: 14,
           borderRadius: 5,
-          background: active ? "var(--primary)" : undefined,
+          background: active
+            ? "var(--primary)"
+            : isSelected
+              ? "rgba(255,255,255,0.10)"
+              : undefined,
+          outline: undefined,
         }}
       >
         <FileText
@@ -1147,7 +1537,6 @@ function NoteItem(
         ) : (
           <button
             type="button"
-            onClick={() => onOpen(note.id)}
             onDoubleClick={() => setRenaming({ id: note.id, value: note.title })}
             className="min-w-0 flex-1 truncate text-left"
             style={{
@@ -1322,6 +1711,324 @@ function RecentFiles({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// --- Helpers for folder detail view ---
+
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function timeBucket(updatedAt: string): "today" | "yesterday" | "week" | "older" {
+  const updated = new Date(updatedAt);
+  const now = new Date();
+  const today = startOfDay(now);
+  const updatedDay = startOfDay(updated);
+  const diffDays = Math.round((today.getTime() - updatedDay.getTime()) / 86400000);
+  if (diffDays <= 0) return "today";
+  if (diffDays === 1) return "yesterday";
+  if (diffDays <= 7) return "week";
+  return "older";
+}
+
+const BUCKET_LABELS: Record<string, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  week: "Last 7 days",
+  older: "Older",
+};
+
+const BUCKET_ORDER = ["today", "yesterday", "week", "older"] as const;
+
+function formatTime(updatedAt: string) {
+  const d = new Date(updatedAt);
+  const now = new Date();
+  const sameDay = startOfDay(d).getTime() === startOfDay(now).getTime();
+  if (sameDay) {
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  const diffDays = Math.round((startOfDay(now).getTime() - startOfDay(d).getTime()) / 86400000);
+  if (diffDays < 7) {
+    return d.toLocaleDateString(undefined, { weekday: "short" });
+  }
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Build a preview snippet from the note body, skipping the first H1
+// heading (which is the title) and taking the next meaningful content.
+// Strips HTML tags, markdown markers, and image/link syntax.
+function makeSnippetAfterH1(body: string | undefined, max = 100) {
+  if (!body) return "";
+  const lines = body.split("\n");
+  let start = 0;
+  if (lines[0] && /^#\s+/.test(lines[0])) {
+    start = 1;
+  }
+  const rest = lines
+    .slice(start)
+    .map((l) =>
+      l
+        .replace(/<[^>]+>/g, " ")
+        .replace(/^#+\s*/, "")
+        .replace(/[*_`~]/g, "")
+        .replace(/\[(.+?)\]\(.+?\)/g, "$1")
+        .replace(/!\[.*?\]\(.*?\)/g, "")
+        .replace(/^\s*[-+*]\s+/, "")
+        .trim(),
+    )
+    .filter((l) => l.length > 0);
+  const text = rest.join(" ").replace(/\s+/g, " ").trim();
+  return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+// --- Folder detail view (advanced mode) ---
+// Shows notes in a folder grouped by time buckets with previews.
+function FolderDetailView({
+  path,
+  notes,
+  activeId,
+  activeSource,
+  notesById,
+  onOpen,
+  onBack,
+  canGoBack,
+  canGoForward,
+  onGoBack,
+  onGoForward,
+  viewMode,
+  onToggleViewMode,
+  onNewNote,
+  sort,
+  onToggleSort,
+}: {
+  path: string;
+  notes: { id: string; title: string; path: string; updatedAt: string }[];
+  activeId: string | null;
+  activeSource: string | null;
+  notesById: Record<string, { body?: string }>;
+  onOpen: (id: string) => void;
+  onBack: () => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onGoBack: () => void;
+  onGoForward: () => void;
+  viewMode: "compact" | "detailed";
+  onToggleViewMode: () => void;
+  onNewNote: () => void;
+  sort: boolean;
+  onToggleSort: () => void;
+}) {
+  const folderName = path.split("/").pop() || path;
+  const folderNotes = notes
+    .filter((n) => n.path === path)
+    .sort((a, b) => {
+      if (sort) return a.title.localeCompare(b.title);
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
+
+  // Flat ordered list of note ids for keyboard navigation.
+  const flatIds = useMemo(() => folderNotes.map((n) => n.id), [folderNotes]);
+  const [selectedIndex, setSelectedIndex] = useState(() => {
+    const ai = flatIds.indexOf(activeId ?? "");
+    return ai >= 0 ? ai : 0;
+  });
+
+  // Reset selection when the folder changes.
+  useEffect(() => {
+    const ai = flatIds.indexOf(activeId ?? "");
+    setSelectedIndex(ai >= 0 ? ai : 0);
+  }, [path, flatIds, activeId]);
+
+  // Group by time bucket.
+  const grouped = useMemo(() => {
+    const map: Record<string, typeof folderNotes> = {};
+    for (const n of folderNotes) {
+      const b = timeBucket(n.updatedAt);
+      (map[b] ??= []).push(n);
+    }
+    return map;
+  }, [folderNotes]);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    rootRef.current?.focus();
+  }, [path]);
+
+  // Keyboard navigation via window listener (more reliable than element
+  // focus, which can be stolen by the editor or lost to the scroll
+  // container). We use capture phase so we get the event before the
+  // scroll container and can preventDefault.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Don't interfere when the editor or an input is focused.
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".milkdown") || el.closest(".ProseMirror"))) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "ArrowDown") {
+          setSelectedIndex((i) => Math.min(i + 1, flatIds.length - 1));
+        } else if (e.key === "ArrowUp") {
+          setSelectedIndex((i) => Math.max(i - 1, 0));
+        } else if (e.key === "ArrowRight" || e.key === "Enter") {
+          if (flatIds[selectedIndex]) onOpen(flatIds[selectedIndex]);
+        } else if (e.key === "ArrowLeft") {
+          onGoBack();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [flatIds, selectedIndex, onOpen, onGoBack]);
+
+  return (
+    <div
+      ref={rootRef}
+      tabIndex={0}
+      className="flex flex-col outline-none"
+    >
+      {/* Note list — compact or detailed */}
+      <div className="pt-1">
+        {folderNotes.length === 0 && (
+          <div className="px-3 py-2 text-xs" style={{ color: "#6b6b70", paddingLeft: 30 }}>
+            This folder has no notes.
+          </div>
+        )}
+        {viewMode === "compact" ? (
+          <ul>
+            {folderNotes.map((n) => {
+              const flatIndex = flatIds.indexOf(n.id);
+              const active = n.id === activeId && activeSource === "drill";
+              const selected = flatIndex === selectedIndex;
+              return (
+                <li key={n.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(n.id)}
+                    onMouseEnter={() => setSelectedIndex(flatIndex)}
+                    className="group flex w-full items-center gap-2 transition-colors hover:bg-white/5"
+                    style={{
+                      height: 33,
+                      paddingLeft: 14,
+                      paddingRight: 14,
+                      borderRadius: 5,
+                      background: active ? "var(--primary)" : selected ? "rgba(255,255,255,0.06)" : undefined,
+                    }}
+                  >
+                    <FileText
+                      className="h-3.5 w-3.5 shrink-0"
+                      style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
+                    />
+                    <span
+                      className="min-w-0 flex-1 truncate text-left"
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        color: active ? "var(--primary-foreground)" : "#c8c8cc",
+                      }}
+                    >
+                      {n.title || "Untitled"}
+                    </span>
+                    <span
+                      className="shrink-0"
+                      style={{ fontSize: 11, color: active ? "var(--primary-foreground)" : "#6b6b70", opacity: 0.8 }}
+                    >
+                      {formatTime(n.updatedAt)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          BUCKET_ORDER.map((bucket) => {
+            const items = grouped[bucket];
+            if (!items || items.length === 0) return null;
+            return (
+              <div key={bucket} className="mb-2">
+                <div
+                  className="px-3 pb-1 pt-2"
+                  style={{ fontSize: 12, fontWeight: 500, color: "#6b6b70", paddingLeft: 14 }}
+                >
+                  {BUCKET_LABELS[bucket]}
+                </div>
+                <ul>
+                  {items.map((n) => {
+                    const flatIndex = flatIds.indexOf(n.id);
+                    const active = n.id === activeId && activeSource === "drill";
+                    const selected = flatIndex === selectedIndex;
+                    const snippet = makeSnippetAfterH1(notesById[n.id]?.body);
+                    return (
+                      <li key={n.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpen(n.id)}
+                          onMouseEnter={() => setSelectedIndex(flatIndex)}
+                          className="group flex w-full flex-col gap-0.5 transition-colors hover:bg-white/5"
+                          style={{
+                            paddingLeft: 14,
+                            paddingRight: 14,
+                            paddingTop: 7,
+                            paddingBottom: 7,
+                            borderRadius: 5,
+                            background: active
+                              ? "var(--primary)"
+                              : selected
+                                ? "rgba(255,255,255,0.06)"
+                                : undefined,
+                          }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText
+                              className="h-3.5 w-3.5 shrink-0"
+                              style={{ color: active ? "var(--primary-foreground)" : "#6b6b70" }}
+                            />
+                            <span
+                              className="min-w-0 flex-1 truncate text-left"
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 500,
+                                color: active ? "var(--primary-foreground)" : "#c8c8cc",
+                              }}
+                            >
+                              {n.title || "Untitled"}
+                            </span>
+                            <span
+                              className="shrink-0"
+                              style={{
+                                fontSize: 11,
+                                color: active ? "var(--primary-foreground)" : "#6b6b70",
+                                opacity: 0.8,
+                              }}
+                            >
+                              {formatTime(n.updatedAt)}
+                            </span>
+                          </div>
+                          {snippet && (
+                            <span
+                              className="truncate text-left"
+                              style={{
+                                fontSize: 12,
+                                color: active ? "var(--primary-foreground)" : "#6b6b70",
+                                opacity: 0.7,
+                                paddingLeft: 22,
+                              }}
+                            >
+                              {snippet}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -1506,6 +2213,7 @@ function CollapsibleSection({
   onEditChange,
   onEditCommit,
   onEditCancel,
+  sectionActive,
 }: {
   title: string;
   count: number;
@@ -1524,6 +2232,7 @@ function CollapsibleSection({
   onEditChange?: (value: string) => void;
   onEditCommit?: () => void;
   onEditCancel?: () => void;
+  sectionActive?: boolean;
 }) {
   return (
     <div
@@ -1580,7 +2289,7 @@ function CollapsibleSection({
               style={{
                 fontSize: 13.5,
                 fontWeight: 500,
-                color: "#c8c8cc",
+                color: sectionActive ? "var(--primary)" : "#c8c8cc",
               }}
             >
               {title}
@@ -1606,6 +2315,8 @@ function RecentFilesList({
   notes,
   activeId,
   activeSource,
+  treeSelectedNav,
+  setTreeSelectedNav,
   onOpen,
   onDelete,
   onCopy,
@@ -1622,6 +2333,8 @@ function RecentFilesList({
   notes: { id: string; title: string; path: string; updatedAt: string }[];
   activeId: string | null;
   activeSource: string | null;
+  treeSelectedNav?: string | null;
+  setTreeSelectedNav?: (nav: string | null) => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
@@ -1650,6 +2363,8 @@ function RecentFilesList({
           depth={0}
           active={n.id === activeId && activeSource === "recent"}
           activeId={activeId}
+          treeSelectedNav={treeSelectedNav}
+          setTreeSelectedNav={setTreeSelectedNav}
           onOpen={onOpen}
           onDelete={onDelete}
           onCopy={onCopy}

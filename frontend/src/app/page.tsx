@@ -2,6 +2,7 @@
 
 import {
   ArrowDownAZ,
+  ArrowLeft,
   Bookmark,
   ChevronLeft,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   LayoutList,
   Menu,
   PanelLeftClose,
+  Rows3,
   Search,
   Settings,
   SquareStack,
@@ -54,6 +56,18 @@ function AppShell() {
     toggleExpandCollapse: () => {},
     allSectionsExpanded: true,
     toggleSectionsCollapse: () => {},
+    folderMode: false,
+    folderName: "",
+    folderViewMode: "detailed",
+    onToggleFolderViewMode: () => {},
+    folderSort: false,
+    onToggleFolderSort: () => {},
+    onNewNoteInFolder: () => {},
+    onExitFolder: () => {},
+    canGoBack: false,
+    canGoForward: false,
+    onGoBack: () => {},
+    onGoForward: () => {},
   });
 
   useSwipeSidebar({
@@ -235,7 +249,7 @@ function AppShell() {
             <SidebarHeader
               collapsed={collapsed}
               onCollapseSidebar={() => setCollapsed(true)}
-              onNewNote={() => void create()}
+              onNewNote={() => document.getElementById("nexote-new-note-btn")?.click()}
               treeControls={treeControls}
             />
             <div className="min-h-0 flex-1 overflow-hidden">
@@ -303,59 +317,122 @@ function SidebarHeader({
   if (collapsed) return null;
 
   return (
-    <div className="flex flex-col" style={{ borderBottom: "1px solid var(--border)" }}>
-      {/* Action buttons */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5">
-        <ActionButton
-          label="New note"
-          icon={<FilePlus className="h-3.5 w-3.5" />}
-          onClick={onNewNote}
-        />
-        <ActionButton
-          label="New folder"
-          icon={<FolderPlus className="h-3.5 w-3.5" />}
-          onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
-        />
-        <ActionButton
-          label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
-          icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
-          onClick={treeControls.toggleSort}
-          active={treeControls.sorted}
-        />
-        <ActionButton
-          label="Card view"
-          icon={<LayoutList className="h-3.5 w-3.5" />}
-          onClick={() => {}}
-          active={false}
-        />
-        <ActionButton
-          label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
-          icon={
-            treeControls.allExpanded ? (
-              <ChevronsDownUp className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
-            )
-          }
-          onClick={treeControls.toggleExpandCollapse}
-        />
-        <ActionButton
-          label={
-            treeControls.allSectionsExpanded
-              ? "Collapse all sections"
-              : "Expand all sections"
-          }
-          icon={<SquareStack className="h-3.5 w-3.5" />}
-          onClick={treeControls.toggleSectionsCollapse}
-          active={false}
-        />
-        <div className="flex-1" />
-        <ActionButton
-          label="Collapse sidebar"
-          icon={<PanelLeftClose className="h-3.5 w-3.5" />}
-          onClick={onCollapseSidebar}
-        />
+    <div className="relative overflow-hidden" style={{ borderBottom: "1px solid var(--border)" }}>
+      {/* Root tree header */}
+      <div
+        key="root"
+        className={treeControls.folderMode ? "slide-out-left" : "slide-in-right"}
+      >
+        <div className="flex items-center gap-0.5 px-2 py-1.5">
+          <ActionButton
+            label="New note"
+            icon={<FilePlus className="h-3.5 w-3.5" />}
+            onClick={onNewNote}
+          />
+          <ActionButton
+            label="New folder"
+            icon={<FolderPlus className="h-3.5 w-3.5" />}
+            onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
+          />
+          <ActionButton
+            label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
+            icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
+            onClick={treeControls.toggleSort}
+            active={treeControls.sorted}
+          />
+          <ActionButton
+            label="Card view"
+            icon={<LayoutList className="h-3.5 w-3.5" />}
+            onClick={() => {}}
+            active={false}
+          />
+          <ActionButton
+            label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
+            icon={
+              treeControls.allExpanded ? (
+                <ChevronsDownUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
+              )
+            }
+            onClick={treeControls.toggleExpandCollapse}
+          />
+          <ActionButton
+            label={
+              treeControls.allSectionsExpanded
+                ? "Collapse all sections"
+                : "Expand all sections"
+            }
+            icon={<SquareStack className="h-3.5 w-3.5" />}
+            onClick={treeControls.toggleSectionsCollapse}
+            active={false}
+          />
+          <div className="flex-1" />
+          <ActionButton
+            label="Collapse sidebar"
+            icon={<PanelLeftClose className="h-3.5 w-3.5" />}
+            onClick={onCollapseSidebar}
+          />
+        </div>
       </div>
+
+      {/* Folder view header (slides in from right when folderMode) */}
+      {treeControls.folderMode && (
+        <div
+          key="folder"
+          className="slide-in-right"
+          style={{ position: "absolute", inset: 0, background: "var(--sidebar)" }}
+        >
+          <div className="flex items-center gap-0.5 px-2 py-1.5">
+            <ActionButton
+              label="Back to tree"
+              icon={<ArrowLeft className="h-3.5 w-3.5" />}
+              onClick={treeControls.onExitFolder}
+            />
+            <span
+              className="truncate px-1 text-sm font-medium"
+              style={{ color: "#c8c8cc", maxWidth: 120 }}
+            >
+              {treeControls.folderName}
+            </span>
+            <div className="flex-1" />
+            <ActionButton
+              label="New note"
+              icon={<FilePlus className="h-3.5 w-3.5" />}
+              onClick={treeControls.onNewNoteInFolder}
+            />
+            <ActionButton
+              label={treeControls.folderSort ? "Sort: A-Z (on)" : "Sort A-Z"}
+              icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
+              onClick={treeControls.onToggleFolderSort}
+              active={treeControls.folderSort}
+            />
+            <ActionButton
+              label={treeControls.folderViewMode === "detailed" ? "Detailed" : "Compact"}
+              icon={
+                treeControls.folderViewMode === "detailed" ? (
+                  <Rows3 className="h-3.5 w-3.5" />
+                ) : (
+                  <LayoutList className="h-3.5 w-3.5" />
+                )
+              }
+              onClick={treeControls.onToggleFolderViewMode}
+            />
+            <ActionButton
+              label="Back"
+              icon={<ChevronLeft className="h-3.5 w-3.5" />}
+              onClick={treeControls.onGoBack}
+              disabled={!treeControls.canGoBack}
+            />
+            <ActionButton
+              label="Forward"
+              icon={<ChevronRight className="h-3.5 w-3.5" />}
+              onClick={treeControls.onGoForward}
+              disabled={!treeControls.canGoForward}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -365,11 +442,13 @@ function ActionButton({
   icon,
   onClick,
   active,
+  disabled,
 }: {
   label: string;
   icon: React.ReactNode;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -377,9 +456,11 @@ function ActionButton({
       aria-label={label}
       title={label}
       onClick={onClick}
+      disabled={disabled}
       className={[
-        "flex h-7 w-7 items-center justify-center transition-colors",
+        "flex h-7 w-7 items-center justify-center transition-colors rounded-md hover:bg-white/5",
         active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+        disabled ? "opacity-30 pointer-events-none" : "",
       ].join(" ")}
       style={
         active

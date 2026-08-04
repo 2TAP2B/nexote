@@ -38,7 +38,7 @@ export default function Shortcuts({ onOpenPalette }: ShortcutsProps) {
       // keydown event never reaches JavaScript, so we use Shift+N instead.
       if (key === "n" && e.shiftKey) {
         e.preventDefault();
-        void create();
+        document.getElementById("nexote-new-note-btn")?.click();
         return;
       }
 
