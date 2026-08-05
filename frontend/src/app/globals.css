@@ -119,6 +119,253 @@
     0px 1px 2px 0px rgba(0, 0, 0, 0.5), 0px 2px 6px 2px rgba(0, 0, 0, 0.3);
 }
 
+/*
+ * Color schemes — Nord, Catppuccin (Frappé/Macchiato/Mocha), Dracula, Gruvbox.
+ * Each scheme defines light + dark variants of the app CSS variables.
+ * The Milkdown Crepe editor vars are mapped generically from the app vars
+ * via the [class*="scheme-"] selectors below so every scheme gets a matching
+ * editor without repeating palette values.
+ */
+
+/* Generic Milkdown Crepe mapping for any active scheme (light + dark). */
+[class*="scheme-"] .milkdown {
+  --crepe-color-background: var(--background);
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: var(--muted);
+  --crepe-color-surface-low: var(--sidebar);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--muted-foreground);
+  --crepe-color-primary: var(--primary);
+  --crepe-color-secondary: var(--muted);
+  --crepe-color-on-secondary: var(--foreground);
+  --crepe-color-inverse: var(--accent);
+  --crepe-color-on-inverse: var(--background);
+  --crepe-color-hover: color-mix(in oklab, var(--primary) 12%, var(--background));
+  --crepe-color-selected: color-mix(in oklab, var(--primary) 20%, var(--background));
+  --crepe-color-inline-area: var(--muted);
+  --crepe-color-inline-code: var(--accent);
+  --crepe-color-error: #d20f39;
+  --crepe-shadow-1:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.12), 0px 1px 3px 1px rgba(0, 0, 0, 0.08);
+  --crepe-shadow-2:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.12), 0px 2px 6px 2px rgba(0, 0, 0, 0.10);
+  --crepe-font-default: var(--font-sans), system-ui, sans-serif;
+  --crepe-font-title: var(--font-sans), system-ui, sans-serif;
+  --crepe-font-code: var(--font-mono), "Fira Code", monospace;
+}
+[class*="scheme-"].dark .milkdown {
+  --crepe-color-error: #f38ba8;
+  --crepe-shadow-1:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.5), 0px 1px 3px 1px rgba(0, 0, 0, 0.3);
+  --crepe-shadow-2:
+    0px 1px 2px 0px rgba(0, 0, 0, 0.5), 0px 2px 6px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Nord ─────────────────────────────────────────────────────────── */
+.scheme-nord {
+  --background: #eceff4;
+  --foreground: #2e3440;
+  --muted: #e5e9f0;
+  --sidebar: #e5e9f0;
+  --icon-rail: #d8dee9;
+  --muted-foreground: #4c566a;
+  --border: rgba(46, 52, 64, 0.10);
+  --input: rgba(46, 52, 64, 0.10);
+  --tab-active: #d8dee9;
+  --primary: #5e81ac;
+  --primary-foreground: #eceff4;
+  --accent: #81a1c1;
+  --accent-foreground: #eceff4;
+  --ring: #5e81ac;
+}
+.scheme-nord.dark {
+  --background: #2e3440;
+  --foreground: #d8dee9;
+  --muted: #3b4252;
+  --sidebar: #3b4252;
+  --icon-rail: #2e3440;
+  --muted-foreground: #9aa6b8;
+  --border: rgba(216, 222, 233, 0.10);
+  --input: rgba(216, 222, 233, 0.10);
+  --tab-active: #434c5e;
+  --primary: #88c0d0;
+  --primary-foreground: #2e3440;
+  --accent: #5e81ac;
+  --accent-foreground: #eceff4;
+  --ring: #88c0d0;
+}
+
+/* ── Catppuccin Frappé ─────────────────────────────────────────────── */
+.scheme-catppuccin-frappe {
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --muted: #ccd0da;
+  --sidebar: #e6e9ef;
+  --icon-rail: #dce0e8;
+  --muted-foreground: #9ca0b0;
+  --border: rgba(76, 79, 105, 0.10);
+  --input: rgba(76, 79, 105, 0.10);
+  --tab-active: #bcc0cc;
+  --primary: #8839ef;
+  --primary-foreground: #eff1f5;
+  --accent: #1e66f5;
+  --accent-foreground: #eff1f5;
+  --ring: #8839ef;
+}
+.scheme-catppuccin-frappe.dark {
+  --background: #303446;
+  --foreground: #c6d0f5;
+  --muted: #414559;
+  --sidebar: #292c3c;
+  --icon-rail: #232634;
+  --muted-foreground: #737994;
+  --border: rgba(198, 208, 245, 0.07);
+  --input: rgba(198, 208, 245, 0.07);
+  --tab-active: #51576d;
+  --primary: #ca9ee6;
+  --primary-foreground: #303446;
+  --accent: #8caaee;
+  --accent-foreground: #303446;
+  --ring: #ca9ee6;
+}
+
+/* ── Catppuccin Macchiato ──────────────────────────────────────────── */
+.scheme-catppuccin-macchiato {
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --muted: #ccd0da;
+  --sidebar: #e6e9ef;
+  --icon-rail: #dce0e8;
+  --muted-foreground: #9ca0b0;
+  --border: rgba(76, 79, 105, 0.10);
+  --input: rgba(76, 79, 105, 0.10);
+  --tab-active: #bcc0cc;
+  --primary: #8839ef;
+  --primary-foreground: #eff1f5;
+  --accent: #1e66f5;
+  --accent-foreground: #eff1f5;
+  --ring: #8839ef;
+}
+.scheme-catppuccin-macchiato.dark {
+  --background: #24273a;
+  --foreground: #cad3f5;
+  --muted: #363a4f;
+  --sidebar: #1e2030;
+  --icon-rail: #181926;
+  --muted-foreground: #6e738d;
+  --border: rgba(202, 211, 245, 0.07);
+  --input: rgba(202, 211, 245, 0.07);
+  --tab-active: #494d64;
+  --primary: #c6a0f6;
+  --primary-foreground: #24273a;
+  --accent: #8aadf4;
+  --accent-foreground: #24273a;
+  --ring: #c6a0f6;
+}
+
+/* ── Catppuccin Mocha ──────────────────────────────────────────────── */
+.scheme-catppuccin-mocha {
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --muted: #ccd0da;
+  --sidebar: #e6e9ef;
+  --icon-rail: #dce0e8;
+  --muted-foreground: #9ca0b0;
+  --border: rgba(76, 79, 105, 0.10);
+  --input: rgba(76, 79, 105, 0.10);
+  --tab-active: #bcc0cc;
+  --primary: #8839ef;
+  --primary-foreground: #eff1f5;
+  --accent: #1e66f5;
+  --accent-foreground: #eff1f5;
+  --ring: #8839ef;
+}
+.scheme-catppuccin-mocha.dark {
+  --background: #1e1e2e;
+  --foreground: #cdd6f4;
+  --muted: #313244;
+  --sidebar: #181825;
+  --icon-rail: #11111b;
+  --muted-foreground: #6c7086;
+  --border: rgba(205, 214, 244, 0.07);
+  --input: rgba(205, 214, 244, 0.07);
+  --tab-active: #45475a;
+  --primary: #cba6f7;
+  --primary-foreground: #1e1e2e;
+  --accent: #89b4fa;
+  --accent-foreground: #1e1e2e;
+  --ring: #cba6f7;
+}
+
+/* ── Dracula (dark) / Alucard (light) ──────────────────────────────── */
+.scheme-dracula {
+  --background: #fffbeb;
+  --foreground: #1f1f1f;
+  --muted: #f5f4e8;
+  --sidebar: #f5f4e8;
+  --icon-rail: #e8e7d6;
+  --muted-foreground: #6c664b;
+  --border: rgba(31, 31, 31, 0.10);
+  --input: rgba(31, 31, 31, 0.10);
+  --tab-active: #e8e7d6;
+  --primary: #644ac9;
+  --primary-foreground: #fffbeb;
+  --accent: #a3144d;
+  --accent-foreground: #fffbeb;
+  --ring: #644ac9;
+}
+.scheme-dracula.dark {
+  --background: #282a36;
+  --foreground: #f8f8f2;
+  --muted: #44475a;
+  --sidebar: #21222c;
+  --icon-rail: #191a21;
+  --muted-foreground: #6272a4;
+  --border: rgba(248, 248, 242, 0.07);
+  --input: rgba(248, 248, 242, 0.07);
+  --tab-active: #44475a;
+  --primary: #bd93f9;
+  --primary-foreground: #282a36;
+  --accent: #ff79c6;
+  --accent-foreground: #282a36;
+  --ring: #bd93f9;
+}
+
+/* ── Gruvbox ───────────────────────────────────────────────────────── */
+.scheme-gruvbox {
+  --background: #fbf1c7;
+  --foreground: #282828;
+  --muted: #ebdbb2;
+  --sidebar: #ebdbb2;
+  --icon-rail: #d5c4a1;
+  --muted-foreground: #665c54;
+  --border: rgba(40, 40, 40, 0.12);
+  --input: rgba(40, 40, 40, 0.12);
+  --tab-active: #d5c4a1;
+  --primary: #076678;
+  --primary-foreground: #fbf1c7;
+  --accent: #8f3f71;
+  --accent-foreground: #fbf1c7;
+  --ring: #076678;
+}
+.scheme-gruvbox.dark {
+  --background: #282828;
+  --foreground: #ebdbb2;
+  --muted: #3c3836;
+  --sidebar: #3c3836;
+  --icon-rail: #1d2021;
+  --muted-foreground: #a89984;
+  --border: rgba(235, 219, 178, 0.07);
+  --input: rgba(235, 219, 178, 0.07);
+  --tab-active: #504945;
+  --primary: #83a598;
+  --primary-foreground: #282828;
+  --accent: #d3869b;
+  --accent-foreground: #282828;
+  --ring: #83a598;
+}
+
 html,
 body {
   height: 100%;
@@ -141,30 +388,26 @@ body {
 /*
  * Editor: narrow centered column (720px) with generous top padding and
  * abundant bottom space for a "floating page" feel.
- * Both .milkdown and .ProseMirror are flex children so scroll behavior
- * is reliable regardless of ProseMirror's internal wheel handling.
+ * The editor wrapper (EditorPane) is the scroll container — it owns the
+ * main page-style scrollbar on the right edge. .milkdown / .ProseMirror
+ * grow to their natural content height so the wrapper can scroll.
  */
 .milkdown {
-  flex: 1;
-  min-height: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 100%;
 }
 /* The React wrapper div rendered by <Milkdown/> — it sits between our
  * flex container and the .milkdown div created by Milkdown core, so it
  * must also participate in the flex chain or the editor can't scroll. */
 [data-milkdown-root] {
-  flex: 1;
-  min-height: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 100%;
 }
 .milkdown .ProseMirror {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
@@ -211,6 +454,29 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Editor scroll container — a real page-style scrollbar at the right edge
+ * of the editor pane, matching the sidebar tree scrollbar. */
+.nexote-editor-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--foreground) 30%, transparent) transparent;
+}
+.nexote-editor-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.nexote-editor-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.nexote-editor-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--foreground) 22%, transparent);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.nexote-editor-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--foreground) 40%, transparent);
+  background-clip: content-box;
 }
 
 .milkdown .ProseMirror h1 {

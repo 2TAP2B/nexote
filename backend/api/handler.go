@@ -70,6 +70,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/journal/notes", h.journalListNotes)
 	mux.HandleFunc("GET /api/journal/notes/{id}", h.journalGetNote)
 	mux.HandleFunc("PUT /api/journal/notes/{id}", h.journalUpdateNote)
+	mux.HandleFunc("DELETE /api/journal/notes/{id}", h.journalDeleteNote)
 
 	return h.cors(mux)
 }
@@ -562,4 +563,17 @@ func (h *Handler) journalUpdateNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) journalDeleteNote(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	id := r.PathValue("id")
+	if err := h.JournalStore.Delete(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

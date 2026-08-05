@@ -37,7 +37,7 @@ function replaceOrAddH1(body: string, title: string): string {
 }
 
 export default function EditorPane() {
-  const { activeNote, activeId, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings } =
+  const { activeNote, activeId, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings } =
     useNotes();
 
   const [title, setTitle] = useState("");
@@ -150,10 +150,15 @@ export default function EditorPane() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // Check if the editor or something inside it is focused.
+      // Only act when the editor (or something inside it) is focused.
       const el = document.activeElement as HTMLElement | null;
       if (!el) return;
-      const inEditor = el.isContentEditable || el.closest(".milkdown") || el.closest(".ProseMirror") || el.closest("[data-milkdown-root]");
+      const inEditor =
+        el.isContentEditable ||
+        el.closest(".milkdown") ||
+        el.closest(".ProseMirror") ||
+        el.closest("[data-milkdown-root]") ||
+        el.closest("[contenteditable]");
       if (inEditor) {
         e.preventDefault();
         e.stopPropagation();
@@ -162,7 +167,7 @@ export default function EditorPane() {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [activeNote]);
 
   const commitTitle = async () => {
     if (!editingTitle) return;
@@ -182,6 +187,22 @@ export default function EditorPane() {
     return <WelcomeDashboard />;
   }
 
+  // Cycle to the previous / next open tab.
+  const goPrevTab = () => {
+    if (!activeId || openTabs.length < 2) return;
+    const idx = openTabs.indexOf(activeId);
+    if (idx < 0) return;
+    const prev = idx <= 0 ? openTabs.length - 1 : idx - 1;
+    void openTab(openTabs[prev]);
+  };
+  const goNextTab = () => {
+    if (!activeId || openTabs.length < 2) return;
+    const idx = openTabs.indexOf(activeId);
+    if (idx < 0) return;
+    const next = idx >= openTabs.length - 1 ? 0 : idx + 1;
+    void openTab(openTabs[next]);
+  };
+
   return (
     <main className="flex min-w-0 flex-1 flex-col min-h-0 bg-background">
       {/* Title bar: nav arrows, breadcrumb, actions */}
@@ -189,20 +210,22 @@ export default function EditorPane() {
         className="flex shrink-0 items-center px-4"
         style={{ height: 36, borderBottom: "1px solid var(--border)" }}
       >
-        {/* Left: nav arrows */}
+        {/* Left: nav arrows — cycle through open tabs */}
         <div className="flex items-center gap-1">
           <button
             type="button"
-            aria-label="Go back"
-            title="Go back"
+            aria-label="Previous tab"
+            title="Previous tab"
+            onClick={goPrevTab}
             className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
           >
             <ArrowLeft size={15} />
           </button>
           <button
             type="button"
-            aria-label="Go forward"
-            title="Go forward"
+            aria-label="Next tab"
+            title="Next tab"
+            onClick={goNextTab}
             className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
           >
             <ArrowRight size={15} />
@@ -283,9 +306,9 @@ export default function EditorPane() {
         </div>
       </div>
 
-      {/* Editor — .milkdown handles its own scrolling */}
+      {/* Editor — the wrapper scrolls (native page-style scrollbar) */}
       <div
-        className="min-h-0 flex-1 flex flex-col"
+        className="nexote-editor-scroll min-h-0 flex-1 flex flex-col overflow-y-auto"
         style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
       >
         <MilkdownEditorWrapper

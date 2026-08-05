@@ -87,16 +87,17 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                 }
               }}
               onDoubleClick={() => !isDashboard && startRename(id, title)}
-              className="group flex shrink-0 cursor-pointer items-center px-3"
+              className="group flex shrink-0 cursor-pointer items-center"
               style={{
-                minWidth: isDashboard ? 40 : 100,
-                maxWidth: 220,
+                width: isDashboard ? 44 : 168,
                 height: 34,
                 marginTop: 3,
                 marginBottom: 3,
                 background: active ? "var(--background)" : "transparent",
                 borderRadius: 8,
                 marginLeft: 3,
+                paddingLeft: isDashboard ? 10 : 12,
+                paddingRight: isDashboard ? 10 : 8,
               }}
             >
               {isRenaming ? (
@@ -120,7 +121,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                 />
               ) : (
                 <span
-                  className="truncate"
+                  className="min-w-0 flex-1 truncate"
                   style={{
                     fontSize: 13,
                     fontWeight: active ? 500 : 400,
@@ -131,7 +132,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                   {title}
                 </span>
               )}
-              {!isRenaming && active && !isDashboard && (
+              {!isRenaming && !isDashboard && (
                 <button
                   type="button"
                   aria-label="Close tab"
@@ -145,7 +146,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                     width: 20,
                     height: 20,
                     borderRadius: 4,
-                    opacity: 0.5,
+                    opacity: active ? 0.5 : 0.3,
                     color: "var(--foreground)",
                     flexShrink: 0,
                   }}
@@ -155,7 +156,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = "transparent";
-                    e.currentTarget.style.opacity = "0.5";
+                    e.currentTarget.style.opacity = active ? "0.5" : "0.3";
                   }}
                 >
                   <X size={12} />

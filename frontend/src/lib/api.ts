@@ -106,6 +106,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+  journalDelete: (id: string) =>
+    request<void>(`/api/journal/notes/${id}`, {
+      method: "DELETE",
+    }),
   create: (vaultId: string, input: NoteInput) =>
     request<Note>(`${vaultBase(vaultId)}/notes`, {
       method: "POST",

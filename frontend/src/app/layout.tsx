@@ -39,6 +39,14 @@ export default function RootLayout({
       suppressHydrationWarning
       className={[inter.variable, lora.variable, mono.variable].join(" ")}
     >
+      <head>
+        {/* Apply the saved color scheme before paint to avoid FOUC. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var s=localStorage.getItem('nexote:color-scheme');if(s&&s!=='default'){document.documentElement.classList.add('scheme-'+s)}}catch(e){}`,
+          }}
+        />
+      </head>
       <body>
         <ThemeProvider
           attribute="class"

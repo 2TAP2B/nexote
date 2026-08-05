@@ -21,10 +21,28 @@ type ShortcutsProps = {
 //   Cmd/Ctrl+D        open today's daily note (may conflict with bookmark in some browsers)
 //   Cmd/Ctrl+Shift+F  open the command palette (search across notes)
 //   Cmd/Ctrl+Shift+D  open the dashboard (pinned tab)
+//   Cmd/Ctrl+Shift+L  jump back to the note tree from the editor
 //   Escape            close command palette / dialogs (handled by those components)
+//                    — also returns focus to the tree when the editor is focused
 export default function Shortcuts({ onOpenPalette }: ShortcutsProps) {
   const { create, forceSave, activeId, closeTab, openTabs, openTab, openDaily } =
     useNotes();
+
+  // Ctrl/Cmd+Shift+L — jump back to the note tree from anywhere (editor,
+  // dashboard, etc.). Always available, regardless of focus.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === "l" && e.shiftKey) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("nexote:focus-tree"));
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

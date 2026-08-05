@@ -60,6 +60,7 @@ type NotesContextValue = {
   moveNote: (id: string, path: string) => Promise<void>;
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
+  removeJournal: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
   toggleBookmark: (id: string) => Promise<void>;
   toggleShortcut: (id: string) => Promise<void>;
@@ -276,12 +277,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setActiveId(DASHBOARD_ID);
         return;
       }
-      // Bump the note's updatedAt so it sorts to the top of Recent.
-      setNotes((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, updatedAt: new Date().toISOString() } : n,
-        ),
-      );
       if (openTabs.includes(id)) {
         setActiveId(id);
         return;
@@ -342,11 +337,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         prev[0] === DASHBOARD_ID
           ? [prev[0], id, ...prev.slice(1)]
           : prev.includes(id) ? prev : [...prev, id],
-      );
-      setJournalNotes((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, updatedAt: new Date().toISOString() } : n,
-        ),
       );
       if (!notesById[id]) {
         try {
@@ -593,6 +583,20 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [activeVaultId, closeTab, refresh],
   );
 
+  // Delete a journal note (vault-independent).
+  const removeJournal = useCallback(
+    async (id: string) => {
+      try {
+        await api.journalDelete(id);
+        closeTab(id);
+        await refreshJournal();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to delete journal note");
+      }
+    },
+    [closeTab, refreshJournal],
+  );
+
   const inflight = useRef<Promise<void> | null>(null);
   const draftRef = useRef<Draft>({ title: "", body: "" });
 
@@ -681,6 +685,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       moveNote,
       openDaily,
       remove,
+      removeJournal,
       save,
       toggleBookmark,
       toggleShortcut,
@@ -727,6 +732,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       moveNote,
       openDaily,
       remove,
+      removeJournal,
       save,
       toggleBookmark,
       toggleShortcut,

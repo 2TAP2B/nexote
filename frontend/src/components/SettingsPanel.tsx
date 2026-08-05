@@ -33,6 +33,8 @@ import { useNotes } from "@/lib/notes-context";
 type Props = {
   open: boolean;
   onClose: () => void;
+  colorScheme?: string;
+  onColorSchemeChange?: (scheme: string) => void;
 };
 
 type CategoryId = "appearance" | "vaults" | "editor" | "shortcuts" | "about";
@@ -62,7 +64,7 @@ const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: "Ctrl+Shift+F", desc: "Command palette (search)" },
 ];
 
-export default function SettingsPanel({ open, onClose }: Props) {
+export default function SettingsPanel({ open, onClose, colorScheme, onColorSchemeChange }: Props) {
   const {
     vaults,
     activeVault,
@@ -193,6 +195,8 @@ export default function SettingsPanel({ open, onClose }: Props) {
                 onThemeChange={setTheme}
                 treeMode={treeMode}
                 setTreeMode={setTreeMode}
+                colorScheme={colorScheme}
+                onColorSchemeChange={onColorSchemeChange}
               />
             )}
 
@@ -436,11 +440,15 @@ function AppearanceSection({
   onThemeChange,
   treeMode,
   setTreeMode,
+  colorScheme,
+  onColorSchemeChange,
 }: {
   theme: string;
   onThemeChange: (t: "light" | "dark" | "system") => void;
   treeMode: "simple" | "advanced";
   setTreeMode: (mode: "simple" | "advanced") => void;
+  colorScheme?: string;
+  onColorSchemeChange?: (scheme: string) => void;
 }) {
   const options = [
     { value: "light", label: "Light", icon: <Sun className="h-4 w-4" /> },
@@ -448,13 +456,52 @@ function AppearanceSection({
     { value: "system", label: "System", icon: <Monitor className="h-4 w-4" /> },
   ] as const;
 
+  const schemes = [
+    { value: "default", label: "Default", swatch: "#7c3aed" },
+    { value: "nord", label: "Nord", swatch: "#5e81ac" },
+    { value: "catppuccin-frappe", label: "Catppuccin Frappé", swatch: "#ca9ee6" },
+    { value: "catppuccin-macchiato", label: "Catppuccin Macchiato", swatch: "#c6a0f6" },
+    { value: "catppuccin-mocha", label: "Catppuccin Mocha", swatch: "#cba6f7" },
+    { value: "dracula", label: "Dracula", swatch: "#bd93f9" },
+    { value: "gruvbox", label: "Gruvbox", swatch: "#83a598" },
+  ] as const;
+
   return (
     <div className="flex flex-col gap-3 p-4">
       <SectionHeader icon={<Palette className="h-4 w-4" />} title="Appearance" />
 
-      {/* Theme */}
+      {/* Color scheme */}
       <div className="flex flex-col gap-1">
-        <span className="text-sm text-foreground">Theme</span>
+        <span className="text-sm text-foreground">Color scheme</span>
+        <div className="grid grid-cols-2 gap-1 rounded-lg border border-border p-1">
+          {schemes.map((opt) => {
+            const active = (colorScheme ?? "default") === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onColorSchemeChange?.(opt.value)}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors"
+                style={
+                  active
+                    ? { background: "var(--primary)", color: "var(--primary-foreground)" }
+                    : { color: "var(--foreground)" }
+                }
+              >
+                <span
+                  className="h-3.5 w-3.5 shrink-0 rounded-full border border-border"
+                  style={{ background: active ? "var(--background)" : opt.swatch }}
+                />
+                <span className="truncate">{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Theme (light / dark / system) */}
+      <div className="flex flex-col gap-1">
+        <span className="text-sm text-foreground">Mode</span>
         <div className="flex gap-1 rounded-lg border border-border p-1">
           {options.map((opt) => {
             const active = theme === opt.value;

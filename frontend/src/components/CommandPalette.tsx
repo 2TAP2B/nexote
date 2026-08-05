@@ -2,13 +2,17 @@
 
 import {
   Bookmark,
+  CalendarDays,
+  Clock,
   Database,
   FilePlus,
+  FileStack,
   Keyboard,
   LayoutDashboard,
   PanelLeftClose,
   Search,
   Sparkles,
+  Star,
   Sun,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -83,6 +87,51 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
           <LayoutDashboard className="h-4 w-4 shrink-0 text-muted-foreground" />
         ),
         run: () => void openTab(DASHBOARD_ID),
+      },
+      {
+        id: "go-notetree",
+        label: "Go to Notetree",
+        icon: <FileStack className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "tree" }),
+          ),
+      },
+      {
+        id: "go-recent",
+        label: "Go to Recent notes",
+        icon: <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "recent" }),
+          ),
+      },
+      {
+        id: "go-shortcuts",
+        label: "Go to Shortcuts",
+        icon: <Star className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "shortcuts" }),
+          ),
+      },
+      {
+        id: "go-bookmarks",
+        label: "Go to Bookmarks",
+        icon: <Bookmark className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "bookmarks" }),
+          ),
+      },
+      {
+        id: "go-daily",
+        label: "Go to Daily notes",
+        icon: <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "journal" }),
+          ),
       },
       {
         id: "toggle-sidebar",

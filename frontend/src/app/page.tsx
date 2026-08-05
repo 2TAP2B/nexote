@@ -3,20 +3,17 @@
 import {
   ArrowDownAZ,
   ArrowLeft,
-  Bookmark,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
-  Database,
   FilePlus,
-  Folder,
   FolderPlus,
   LayoutList,
   Menu,
   PanelLeftClose,
   Rows3,
   Search,
-  Settings,
   SquareStack,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -25,7 +22,7 @@ import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import MobileBottomBar from "@/components/MobileBottomBar";
-import Ribbon from "@/components/Ribbon";
+import Ribbon, { type SidebarView } from "@/components/Ribbon";
 import SettingsPanel from "@/components/SettingsPanel";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
@@ -41,11 +38,13 @@ export default function Page() {
 }
 
 function AppShell() {
-  const { openDaily, create, openTab } = useNotes();
+  const { openDaily, openTab } = useNotes();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
+  const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [treeControls, setTreeControls] = useState<TreeControls>({
     expandAll: () => {},
@@ -89,13 +88,19 @@ function AppShell() {
     };
     const onOpenPalette = () => setPaletteOpen(true);
     const onOpenSettings = () => setSettingsOpen(true);
+    const onSelectView = (e: Event) => {
+      const detail = (e as CustomEvent).detail as SidebarView;
+      if (detail) setSidebarView(detail);
+    };
     window.addEventListener("nexote:toggle-sidebar", onToggle);
     window.addEventListener("nexote:open-palette", onOpenPalette);
     window.addEventListener("nexote:open-settings", onOpenSettings);
+    window.addEventListener("nexote:select-view", onSelectView as EventListener);
     return () => {
       window.removeEventListener("nexote:toggle-sidebar", onToggle);
       window.removeEventListener("nexote:open-palette", onOpenPalette);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
+      window.removeEventListener("nexote:select-view", onSelectView as EventListener);
     };
   }, []);
 
@@ -110,6 +115,27 @@ function AppShell() {
   useEffect(() => {
     localStorage.setItem("nexote:sidebar-width", String(sidebarWidth));
   }, [sidebarWidth]);
+
+  // Hydrate + sync the color scheme class on <html>.
+  useEffect(() => {
+    const saved = localStorage.getItem("nexote:color-scheme");
+    if (saved) setColorScheme(saved);
+  }, []);
+  useEffect(() => {
+    const el = document.documentElement;
+    // Remove any existing scheme-* class, then add the new one (if not default).
+    el.classList.forEach((c) => {
+      if (c.startsWith("scheme-")) el.classList.remove(c);
+    });
+    if (colorScheme && colorScheme !== "default") {
+      el.classList.add(`scheme-${colorScheme}`);
+    }
+    try {
+      localStorage.setItem("nexote:color-scheme", colorScheme);
+    } catch {
+      // ignore
+    }
+  }, [colorScheme]);
 
   const startResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -140,7 +166,7 @@ function AppShell() {
           className="hidden md:flex shrink-0"
           style={{ height: 40, background: "var(--tab-active)", borderBottom: "1px solid var(--border)" }}
         >
-          {/* Left section: collapse toggle + folder/search/bookmark above sidebar */}
+          {/* Left section: collapse toggle + search above sidebar */}
           <div
             className={
               "flex items-center gap-0.5 shrink-0 transition-[width] duration-200 " +
@@ -158,43 +184,15 @@ function AppShell() {
               {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
             </button>
             {!collapsed && (
-              <>
-                <button
-                  type="button"
-                  aria-label="File tree"
-                  title="File tree"
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("nexote:show-filetree"),
-                    )
-                  }
-                  className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
-                >
-                  <Folder size={18} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Search"
-                  title="Search"
-                  onClick={() => setPaletteOpen(true)}
-                  className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
-                >
-                  <Search size={18} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Bookmarks"
-                  title="Bookmarks"
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("nexote:toggle-bookmarks"),
-                    )
-                  }
-                  className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
-                >
-                  <Bookmark size={18} />
-                </button>
-              </>
+              <button
+                type="button"
+                aria-label="Search"
+                title="Search"
+                onClick={() => setPaletteOpen(true)}
+                className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-white/5"
+              >
+                <Search size={18} />
+              </button>
             )}
           </div>
           <div className="flex-1 min-w-0 h-full">
@@ -226,8 +224,9 @@ function AppShell() {
           {/* Ribbon: vertical icon strip (desktop only, below top bar) */}
           <div className="hidden md:flex shrink-0">
             <Ribbon
+              activeView={sidebarView}
+              onSelectView={setSidebarView}
               onCommandPalette={() => setPaletteOpen(true)}
-              onDaily={() => void openDaily()}
               onOpenSettings={() => setSettingsOpen(true)}
             />
           </div>
@@ -248,13 +247,17 @@ function AppShell() {
           >
             <SidebarHeader
               collapsed={collapsed}
+              view={sidebarView}
               onCollapseSidebar={() => setCollapsed(true)}
               onNewNote={() => document.getElementById("nexote-new-note-btn")?.click()}
+              onOpenDaily={() => void openDaily()}
               treeControls={treeControls}
             />
             <div className="min-h-0 flex-1 overflow-hidden">
               <FileTree
                 collapsed={collapsed}
+                view={sidebarView}
+                onSelectView={setSidebarView}
                 onControlsReady={setTreeControls}
               />
             </div>
@@ -297,32 +300,132 @@ function AppShell() {
         <SettingsPanel
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
+          colorScheme={colorScheme}
+          onColorSchemeChange={setColorScheme}
         />
       </div>
     </>
   );
 }
 
+const VIEW_TITLES: Record<Exclude<SidebarView, "tree">, string> = {
+  recent: "Recent",
+  shortcuts: "Shortcuts",
+  bookmarks: "Bookmarks",
+  journal: "Daily notes",
+};
+
 function SidebarHeader({
   collapsed,
+  view,
   onCollapseSidebar,
   onNewNote,
+  onOpenDaily,
   treeControls,
 }: {
   collapsed: boolean;
+  view: SidebarView;
   onCollapseSidebar: () => void;
   onNewNote: () => void;
+  onOpenDaily: () => void;
   treeControls: TreeControls;
 }) {
   if (collapsed) return null;
 
-  return (
-    <div className="relative overflow-hidden" style={{ borderBottom: "1px solid var(--border)" }}>
-      {/* Root tree header */}
+  // Non-tree views: title-only bar with New note (+ Open today for journal).
+  if (view !== "tree") {
+    return (
       <div
-        key="root"
-        className={treeControls.folderMode ? "slide-out-left" : "slide-in-right"}
+        className="flex items-center gap-0.5 px-2 py-1.5"
+        style={{ borderBottom: "1px solid var(--border)" }}
       >
+        <span
+          className="truncate px-1 text-sm font-medium"
+          style={{ color: "var(--foreground)" }}
+        >
+          {VIEW_TITLES[view]}
+        </span>
+        <div className="flex-1" />
+        {view === "journal" && (
+          <ActionButton
+            label="Open today's note"
+            icon={<CalendarDays className="h-3.5 w-3.5" />}
+            onClick={onOpenDaily}
+          />
+        )}
+        <ActionButton
+          label="New note"
+          icon={<FilePlus className="h-3.5 w-3.5" />}
+          onClick={onNewNote}
+        />
+        <ActionButton
+          label="Collapse sidebar"
+          icon={<PanelLeftClose className="h-3.5 w-3.5" />}
+          onClick={onCollapseSidebar}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ borderBottom: "1px solid var(--border)" }}>
+      {treeControls.folderMode ? (
+        /* Folder view header — back, name, new note, sort, view mode, nav */
+        <div className="flex items-center gap-0.5 px-2 py-1.5">
+          <ActionButton
+            label="Back to tree"
+            icon={<ArrowLeft className="h-3.5 w-3.5" />}
+            onClick={treeControls.onExitFolder}
+          />
+          <span
+            className="truncate px-1 text-sm font-medium"
+            style={{ color: "var(--foreground)", maxWidth: 120 }}
+          >
+            {treeControls.folderName}
+          </span>
+          <div className="flex-1" />
+          <ActionButton
+            label="New note"
+            icon={<FilePlus className="h-3.5 w-3.5" />}
+            onClick={treeControls.onNewNoteInFolder}
+          />
+          <ActionButton
+            label={treeControls.folderSort ? "Sort: A-Z (on)" : "Sort A-Z"}
+            icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
+            onClick={treeControls.onToggleFolderSort}
+            active={treeControls.folderSort}
+          />
+          <ActionButton
+            label={treeControls.folderViewMode === "detailed" ? "Detailed" : "Compact"}
+            icon={
+              treeControls.folderViewMode === "detailed" ? (
+                <Rows3 className="h-3.5 w-3.5" />
+              ) : (
+                <LayoutList className="h-3.5 w-3.5" />
+              )
+            }
+            onClick={treeControls.onToggleFolderViewMode}
+          />
+          <ActionButton
+            label="Back"
+            icon={<ChevronLeft className="h-3.5 w-3.5" />}
+            onClick={treeControls.onGoBack}
+            disabled={!treeControls.canGoBack}
+          />
+          <ActionButton
+            label="Forward"
+            icon={<ChevronRight className="h-3.5 w-3.5" />}
+            onClick={treeControls.onGoForward}
+            disabled={!treeControls.canGoForward}
+          />
+          <ActionButton
+            label="Collapse sidebar"
+            icon={<PanelLeftClose className="h-3.5 w-3.5" />}
+            onClick={onCollapseSidebar}
+          />
+        </div>
+      ) : (
+        /* Root tree header */
         <div className="flex items-center gap-0.5 px-2 py-1.5">
           <ActionButton
             label="New note"
@@ -373,64 +476,6 @@ function SidebarHeader({
             icon={<PanelLeftClose className="h-3.5 w-3.5" />}
             onClick={onCollapseSidebar}
           />
-        </div>
-      </div>
-
-      {/* Folder view header (slides in from right when folderMode) */}
-      {treeControls.folderMode && (
-        <div
-          key="folder"
-          className="slide-in-right"
-          style={{ position: "absolute", inset: 0, background: "var(--sidebar)" }}
-        >
-          <div className="flex items-center gap-0.5 px-2 py-1.5">
-            <ActionButton
-              label="Back to tree"
-              icon={<ArrowLeft className="h-3.5 w-3.5" />}
-              onClick={treeControls.onExitFolder}
-            />
-            <span
-              className="truncate px-1 text-sm font-medium"
-              style={{ color: "#c8c8cc", maxWidth: 120 }}
-            >
-              {treeControls.folderName}
-            </span>
-            <div className="flex-1" />
-            <ActionButton
-              label="New note"
-              icon={<FilePlus className="h-3.5 w-3.5" />}
-              onClick={treeControls.onNewNoteInFolder}
-            />
-            <ActionButton
-              label={treeControls.folderSort ? "Sort: A-Z (on)" : "Sort A-Z"}
-              icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
-              onClick={treeControls.onToggleFolderSort}
-              active={treeControls.folderSort}
-            />
-            <ActionButton
-              label={treeControls.folderViewMode === "detailed" ? "Detailed" : "Compact"}
-              icon={
-                treeControls.folderViewMode === "detailed" ? (
-                  <Rows3 className="h-3.5 w-3.5" />
-                ) : (
-                  <LayoutList className="h-3.5 w-3.5" />
-                )
-              }
-              onClick={treeControls.onToggleFolderViewMode}
-            />
-            <ActionButton
-              label="Back"
-              icon={<ChevronLeft className="h-3.5 w-3.5" />}
-              onClick={treeControls.onGoBack}
-              disabled={!treeControls.canGoBack}
-            />
-            <ActionButton
-              label="Forward"
-              icon={<ChevronRight className="h-3.5 w-3.5" />}
-              onClick={treeControls.onGoForward}
-              disabled={!treeControls.canGoForward}
-            />
-          </div>
         </div>
       )}
     </div>

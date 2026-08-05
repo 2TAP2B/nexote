@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 export type MenuItem = {
   label: string;
@@ -19,6 +20,8 @@ type ContextMenuProps = {
 
 // A small menu rendered at fixed coordinates. Closes on outside click, Esc, or
 // scroll. Used for right-click context menus on notes/folders in the tree.
+// Rendered via a portal to document.body so it always sits above the editor
+// and sidebar regardless of their stacking contexts.
 export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -46,10 +49,10 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
   const left = Math.min(x, maxX);
   const top = Math.min(y, maxY);
 
-  return (
+  return createPortal(
     <div
       ref={ref}
-      style={{ position: "fixed", left, top, zIndex: 50 }}
+      style={{ position: "fixed", left, top, zIndex: 9999 }}
       className="min-w-[160px] overflow-hidden rounded-xl border border-border bg-background py-1 shadow-lg"
     >
       {items.map((item, i) =>
@@ -75,6 +78,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
           </button>
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
