@@ -5,6 +5,7 @@ import {
   ArrowDownUp,
   Bookmark,
   BookmarkCheck,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -17,19 +18,24 @@ import {
   FolderOpen,
   FolderPlus,
   GraduationCap,
+  Hash,
   Heart,
   Home,
+  ListTodo,
   Music,
   Settings2,
   Shield,
+  Square,
   SquareArrowOutUpRight,
   Star,
+  Tag as TagIcon,
   Trash2,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
+import { type FolderMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 
 import { type SidebarView } from "./Ribbon";
 
@@ -185,6 +191,15 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
     setVaultIcon,
     treeMode,
     journalNotes,
+    tagsByVault,
+    refreshTags,
+    addTagToNote,
+    removeTagFromNote,
+    renameTagInVault,
+    deleteTagInVault,
+    tasks,
+    refreshTasks,
+    toggleTaskItem,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
@@ -209,6 +224,8 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
     shortcuts: "shortcuts",
     bookmarks: "bookmarks",
     journal: "journal",
+    tags: "tags",
+    tasks: "tasks",
   };
 
   // Shortcuts nav list (sorted by updatedAt desc to match the detailed view)
@@ -901,6 +918,30 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
               onShortcut={toggleShortcut}
               bookmarks={bookmarks}
               shortcuts={shortcuts}
+            />
+          ) : view === "tags" ? (
+            <TagsView
+              tagsByVault={tagsByVault}
+              allVaultData={allVaultData}
+              vaults={vaults}
+              activeId={activeId}
+              notesById={notesById}
+              treeSelectedNav={treeSelectedNav}
+              setTreeSelectedNav={setTreeSelectedNav}
+              onOpenNote={openNoteInVault}
+              onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+              onRenameTag={(vaultId, from, to) => void renameTagInVault(vaultId, from, to)}
+              onDeleteTag={(vaultId, tag) => void deleteTagInVault(vaultId, tag)}
+              onRefreshTags={(vaultId) => void refreshTags(vaultId)}
+            />
+          ) : view === "tasks" ? (
+            <TasksView
+              tasks={tasks}
+              activeId={activeId}
+              treeSelectedNav={treeSelectedNav}
+              setTreeSelectedNav={setTreeSelectedNav}
+              onOpenNote={openNoteInVault}
+              onToggle={toggleTaskItem}
             />
           ) : view === "tree" && drillPath !== null && treeMode !== "advanced" ? (
             <DrillView
@@ -2552,5 +2593,365 @@ function RecentFilesList({
         />
       ))}
     </ul>
+  );
+}
+// --- Tags View ---
+// Shows tags from all vaults as a flat alphabetical list. Clicking a tag
+// shows notes that carry it. Context menu: rename / delete tag.
+function TagsView({
+  tagsByVault,
+  allVaultData,
+  vaults,
+  activeId,
+  notesById,
+  treeSelectedNav,
+  setTreeSelectedNav,
+  onOpenNote,
+  onContextMenu,
+  onRenameTag,
+  onDeleteTag,
+  onRefreshTags,
+}: {
+  tagsByVault: Record<string, TagCount[]>;
+  allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
+  vaults: VaultMeta[];
+  activeId: string | null;
+  notesById: Record<string, { body?: string; title?: string }>;
+  treeSelectedNav?: string | null;
+  setTreeSelectedNav?: (nav: string | null) => void;
+  onOpenNote: (vaultId: string, noteId: string) => void;
+  onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
+  onRenameTag: (vaultId: string, from: string, to: string) => void;
+  onDeleteTag: (vaultId: string, tag: string) => void;
+  onRefreshTags: (vaultId: string) => void;
+}) {
+  useEffect(() => {
+    for (const v of vaults) onRefreshTags(v.id);
+  }, [vaults, onRefreshTags]);
+
+  const allTags = useMemo(() => {
+    const map = new Map<string, { name: string; count: number; vaults: string[] }>();
+    for (const v of vaults) {
+      const tags = tagsByVault[v.id] ?? [];
+      for (const t of tags) {
+        const existing = map.get(t.name);
+        if (existing) {
+          existing.count += t.count;
+          if (!existing.vaults.includes(v.id)) existing.vaults.push(v.id);
+        } else {
+          map.set(t.name, { name: t.name, count: t.count, vaults: [v.id] });
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [tagsByVault, vaults]);
+
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  const matchingNotes = useMemo(() => {
+    if (!selectedTag) return [];
+    const result: { vaultId: string; vaultName: string; id: string; title: string; updatedAt: string }[] = [];
+    for (const v of vaults) {
+      const data = allVaultData[v.id];
+      if (!data) continue;
+      for (const n of data.notes) {
+        if (n.tags?.includes(selectedTag)) {
+          result.push({ vaultId: v.id, vaultName: v.name, id: n.id, title: n.title, updatedAt: n.updatedAt });
+        }
+      }
+    }
+    return result.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [selectedTag, allVaultData, vaults]);
+
+  if (selectedTag) {
+    return (
+      <div className="pt-1">
+        <button
+          type="button"
+          onClick={() => setSelectedTag(null)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors hover:bg-white/5"
+          style={{ borderRadius: 5, color: "var(--muted-foreground)" }}
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          <span>Tags</span>
+        </button>
+        <div
+          className="px-3 pb-1 pt-1"
+          style={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)", paddingLeft: 14 }}
+        >
+          #{selectedTag} · {matchingNotes.length} {matchingNotes.length === 1 ? "note" : "notes"}
+        </div>
+        <ul>
+          {matchingNotes.length === 0 && (
+            <li className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
+              No notes with this tag.
+            </li>
+          )}
+          {matchingNotes.map((n) => {
+            const active = n.id === activeId;
+            const navSelected = treeSelectedNav === `note:${n.id}`;
+            const snippet = makeSnippetAfterH1(notesById[n.id]?.body);
+            return (
+              <li key={`${n.vaultId}:${n.id}`}>
+                <button
+                  type="button"
+                  data-note-id={n.id}
+                  onClick={() => onOpenNote(n.vaultId, n.id)}
+                  onMouseEnter={() => setTreeSelectedNav?.(`note:${n.id}`)}
+                  className="group flex w-full flex-col gap-0.5 transition-colors hover:bg-white/5"
+                  style={{
+                    paddingLeft: 14,
+                    paddingRight: 14,
+                    paddingTop: 7,
+                    paddingBottom: 7,
+                    borderRadius: 5,
+                    background: active ? "var(--primary)" : navSelected ? "rgba(255,255,255,0.06)" : undefined,
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText
+                      className="h-3.5 w-3.5 shrink-0"
+                      style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+                    />
+                    <span
+                      className="min-w-0 flex-1 truncate text-left"
+                      style={{ fontSize: 13, fontWeight: 500, color: active ? "var(--primary-foreground)" : "var(--foreground)" }}
+                    >
+                      {n.title || "Untitled"}
+                    </span>
+                    <span
+                      className="shrink-0"
+                      style={{ fontSize: 11, color: active ? "var(--primary-foreground)" : "var(--muted-foreground)", opacity: 0.7 }}
+                    >
+                      {n.vaultName}
+                    </span>
+                  </div>
+                  {snippet && (
+                    <span
+                      className="truncate text-left"
+                      style={{ fontSize: 12, color: active ? "var(--primary-foreground)" : "var(--muted-foreground)", opacity: 0.7, paddingLeft: 22 }}
+                    >
+                      {snippet}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pt-1">
+      {allTags.length === 0 && (
+        <div className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
+          No tags yet. Add tags to notes via the context menu.
+        </div>
+      )}
+      <ul>
+        {allTags.map((t) => {
+          const navKey = `tag:${t.name}`;
+          const navSelected = treeSelectedNav === navKey;
+          return (
+            <li key={t.name}>
+              <button
+                type="button"
+                data-tag-name={t.name}
+                onClick={() => {
+                  setSelectedTag(t.name);
+                  setTreeSelectedNav?.(null);
+                }}
+                onMouseEnter={() => setTreeSelectedNav?.(navKey)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onContextMenu(e.clientX, e.clientY, [
+                    {
+                      label: "Rename tag",
+                      icon: <Edit3 className="h-4 w-4" />,
+                      onClick: () => {
+                        const newName = window.prompt("Rename tag:", t.name);
+                        if (newName && newName.trim() && newName !== t.name) {
+                          for (const vid of t.vaults) onRenameTag(vid, t.name, newName.trim());
+                        }
+                      },
+                    },
+                    {
+                      label: "Delete tag",
+                      icon: <Trash2 className="h-4 w-4" />,
+                      danger: true,
+                      onClick: () => {
+                        if (window.confirm(`Delete tag "${t.name}" from all notes?`)) {
+                          for (const vid of t.vaults) onDeleteTag(vid, t.name);
+                        }
+                      },
+                    },
+                  ]);
+                }}
+                className="group flex w-full items-center gap-2 transition-colors hover:bg-white/5"
+                style={{
+                  height: 33,
+                  paddingLeft: 14,
+                  paddingRight: 14,
+                  borderRadius: 5,
+                  background: navSelected ? "rgba(255,255,255,0.06)" : undefined,
+                }}
+              >
+                <Hash
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: "var(--primary)" }}
+                />
+                <span
+                  className="min-w-0 flex-1 truncate text-left"
+                  style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}
+                >
+                  {t.name}
+                </span>
+                <span
+                  className="shrink-0"
+                  style={{ fontSize: 12, color: "var(--muted-foreground)" }}
+                >
+                  {t.count}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// --- Tasks View ---
+// Shows all checkbox items across all vaults as one flat list. Unchecked
+// tasks first, then a collapsible "Completed" section. Each row has an
+// inline checkbox toggle + task text + a small info line (note / vault / time).
+function TasksView({
+  tasks,
+  activeId,
+  treeSelectedNav,
+  setTreeSelectedNav,
+  onOpenNote,
+  onToggle,
+}: {
+  tasks: TaskItem[];
+  activeId: string | null;
+  treeSelectedNav?: string | null;
+  setTreeSelectedNav?: (nav: string | null) => void;
+  onOpenNote: (vaultId: string, noteId: string) => void;
+  onToggle: (vaultId: string, noteId: string, line: number, checked: boolean) => void;
+}) {
+  const [showCompleted, setShowCompleted] = useState(true);
+
+  const unchecked = useMemo(
+    () => tasks.filter((t) => !t.checked).sort((a, b) => a.noteTitle.localeCompare(b.noteTitle)),
+    [tasks],
+  );
+  const completed = useMemo(
+    () => tasks.filter((t) => t.checked).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [tasks],
+  );
+
+  const renderTask = (t: TaskItem) => {
+    const navKey = `task:${t.vaultId}:${t.noteId}:${t.line}`;
+    const navSelected = treeSelectedNav === navKey;
+    return (
+      <li key={`${t.vaultId}:${t.noteId}:${t.line}`}>
+        <div
+          data-task-key={`${t.vaultId}:${t.noteId}:${t.line}`}
+          onMouseEnter={() => setTreeSelectedNav?.(navKey)}
+          className="group flex w-full items-start gap-2 transition-colors hover:bg-white/5"
+          style={{
+            paddingLeft: 14,
+            paddingRight: 14,
+            paddingTop: 7,
+            paddingBottom: 7,
+            borderRadius: 5,
+            background: navSelected ? "rgba(255,255,255,0.06)" : undefined,
+          }}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle(t.vaultId, t.noteId, t.line, !t.checked);
+            }}
+            className="mt-0.5 flex shrink-0 items-center justify-center rounded"
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              border: t.checked ? "none" : "1.5px solid var(--muted-foreground)",
+              background: t.checked ? "var(--primary)" : "transparent",
+            }}
+          >
+            {t.checked && (
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2.5 6L5 8.5L9.5 3.5" stroke="var(--primary-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenNote(t.vaultId, t.noteId)}
+            className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
+          >
+            <span
+              className="truncate"
+              style={{
+                fontSize: 13,
+                fontWeight: 400,
+                color: t.checked ? "var(--muted-foreground)" : "var(--foreground)",
+                textDecoration: t.checked ? "line-through" : "none",
+                opacity: t.checked ? 0.6 : 1,
+              }}
+            >
+              {t.text || "(empty task)"}
+            </span>
+            <span
+              className="truncate"
+              style={{ fontSize: 11, color: "var(--muted-foreground)", opacity: 0.7 }}
+            >
+              {t.noteTitle || "Untitled"} · {t.vaultName} · {formatTime(t.updatedAt)}
+            </span>
+          </button>
+        </div>
+      </li>
+    );
+  };
+
+  return (
+    <div className="pt-1">
+      {tasks.length === 0 && (
+        <div className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
+          No tasks found. Add "- [ ]" checkboxes to your notes.
+        </div>
+      )}
+      <ul>
+        {unchecked.map((t) => renderTask(t))}
+      </ul>
+      {completed.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowCompleted((v) => !v)}
+            className="flex w-full items-center gap-1 px-3 py-1 text-xs transition-colors hover:bg-white/5"
+            style={{ borderRadius: 5, color: "var(--muted-foreground)" }}
+          >
+            <ChevronRight
+              className={["h-3 w-3 shrink-0 transition-transform", showCompleted ? "rotate-90" : ""].join(" ")}
+            />
+            <span>Completed · {completed.length}</span>
+          </button>
+          {showCompleted && (
+            <ul>
+              {completed.map((t) => renderTask(t))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

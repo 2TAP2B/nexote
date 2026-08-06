@@ -5,6 +5,8 @@ import {
   CalendarDays,
   Clock,
   FileStack,
+  Hash,
+  ListTodo,
   Settings,
   Star,
   Terminal,
@@ -17,7 +19,9 @@ export type SidebarView =
   | "recent"
   | "shortcuts"
   | "bookmarks"
-  | "journal";
+  | "journal"
+  | "tags"
+  | "tasks";
 
 type RibbonProps = {
   activeView: SidebarView;
@@ -41,6 +45,8 @@ export default function Ribbon({
     { icon: Clock, label: "Recent", view: "recent" },
     { icon: Star, label: "Shortcuts", view: "shortcuts" },
     { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
+    { icon: Hash, label: "Tags", view: "tags" },
+    { icon: ListTodo, label: "Tasks", view: "tasks" },
     { icon: CalendarDays, label: "Daily notes", view: "journal" },
   ];
 

@@ -65,12 +65,23 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/vaults/{vaultId}/shortcuts", h.addShortcut)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/shortcuts/{id}", h.removeShortcut)
 
+	// Vault-scoped tag routes
+	mux.HandleFunc("GET /api/vaults/{vaultId}/tags", h.listTags)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/{id}/tags", h.addTag)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/notes/{id}/tags/{tag...}", h.removeTag)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/tags/rename", h.renameTag)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/tags/{tag...}", h.deleteTag)
+
 	// Journal routes (vault-independent, always available)
 	mux.HandleFunc("GET /api/journal/daily", h.journalDaily)
 	mux.HandleFunc("GET /api/journal/notes", h.journalListNotes)
 	mux.HandleFunc("GET /api/journal/notes/{id}", h.journalGetNote)
 	mux.HandleFunc("PUT /api/journal/notes/{id}", h.journalUpdateNote)
 	mux.HandleFunc("DELETE /api/journal/notes/{id}", h.journalDeleteNote)
+
+	// Task routes (vault-independent, scans all vaults)
+	mux.HandleFunc("GET /api/tasks", h.listTasks)
+	mux.HandleFunc("PUT /api/tasks", h.toggleTask)
 
 	return h.cors(mux)
 }
@@ -458,21 +469,23 @@ func (h *Handler) writeRegistryError(w http.ResponseWriter, err error) {
 
 // Payload is the JSON shape returned for a single note.
 type Payload struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Path      string `json:"path"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
-	Body      string `json:"body"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Path      string   `json:"path"`
+	CreatedAt string   `json:"createdAt"`
+	UpdatedAt string   `json:"updatedAt"`
+	Tags      []string `json:"tags"`
+	Body      string   `json:"body"`
 }
 
 func toPayload(d notes.Document) Payload {
 	return Payload{
 		ID:        d.Meta.ID,
 		Title:     d.Meta.Title,
-		Path:      d.Meta.Path,
+		Path:       d.Meta.Path,
 		CreatedAt: d.Meta.CreatedAt.Format(timeRFC3339Millis),
 		UpdatedAt: d.Meta.UpdatedAt.Format(timeRFC3339Millis),
+		Tags:      d.Meta.Tags,
 		Body:      d.Body,
 	}
 }
@@ -576,4 +589,167 @@ func (h *Handler) journalDeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Tags ---
+
+func (h *Handler) listTags(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	tags, err := store.TagIndex()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tags": tags})
+}
+
+func (h *Handler) addTag(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	var in struct {
+		Tag string `json:"tag"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := store.AddTag(id, in.Tag)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) removeTag(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	tag := r.PathValue("tag")
+	doc, err := store.RemoveTag(id, tag)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) renameTag(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	var in struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	count, err := store.RenameTag(in.From, in.To)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"renamed": count})
+}
+
+func (h *Handler) deleteTag(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	tag := r.PathValue("tag")
+	count, err := store.DeleteTag(tag)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": count})
+}
+
+// --- Tasks ---
+
+// TaskPayload is a task annotated with vault info, returned by GET /api/tasks.
+type TaskPayload struct {
+	VaultID    string `json:"vaultId"`
+	VaultName  string `json:"vaultName"`
+	NoteID     string `json:"noteId"`
+	NoteTitle  string `json:"noteTitle"`
+	Text       string `json:"text"`
+	Checked    bool   `json:"checked"`
+	Line       int    `json:"line"`
+	CreatedAt  string `json:"createdAt"`
+	UpdatedAt  string `json:"updatedAt"`
+}
+
+func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
+	vaults, err := h.Registry.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var result []TaskPayload
+	for _, v := range vaults {
+		store, err := h.Registry.Store(v.ID)
+		if err != nil {
+			continue
+		}
+		tasks, err := store.Tasks()
+		if err != nil {
+			continue
+		}
+		for _, t := range tasks {
+			result = append(result, TaskPayload{
+				VaultID:   v.ID,
+				VaultName: v.Name,
+				NoteID:    t.NoteID,
+				NoteTitle: t.NoteTitle,
+				Text:      t.Text,
+				Checked:   t.Checked,
+				Line:      t.Line,
+				CreatedAt: t.CreatedAt.Format(timeRFC3339Millis),
+				UpdatedAt: t.UpdatedAt.Format(timeRFC3339Millis),
+			})
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": result})
+}
+
+func (h *Handler) toggleTask(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		VaultID string `json:"vaultId"`
+		NoteID  string `json:"noteId"`
+		Line    int    `json:"line"`
+		Checked bool   `json:"checked"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	store, err := h.Registry.Store(in.VaultID)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	doc, err := store.SetTaskChecked(in.NoteID, in.Line, in.Checked)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
 }

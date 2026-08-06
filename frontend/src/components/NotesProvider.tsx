@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { api, type FolderMeta, type Note, type NoteMeta, type VaultMeta } from "@/lib/api";
+import { api, type FolderMeta, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 
 type Draft = { title: string; body: string };
 
@@ -70,6 +70,17 @@ type NotesContextValue = {
   // Multi-vault data for the advanced tree
   allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
   journalNotes: NoteMeta[];
+  // Tags
+  tagsByVault: Record<string, TagCount[]>;
+  refreshTags: (vaultId: string) => Promise<void>;
+  addTagToNote: (vaultId: string, noteId: string, tag: string) => Promise<void>;
+  removeTagFromNote: (vaultId: string, noteId: string, tag: string) => Promise<void>;
+  renameTagInVault: (vaultId: string, from: string, to: string) => Promise<void>;
+  deleteTagInVault: (vaultId: string, tag: string) => Promise<void>;
+  // Tasks
+  tasks: TaskItem[];
+  refreshTasks: () => Promise<void>;
+  toggleTaskItem: (vaultId: string, noteId: string, line: number, checked: boolean) => Promise<void>;
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
   openJournalNote: (id: string) => Promise<void>;
   treeMode: "simple" | "advanced";
@@ -106,6 +117,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>
   >({});
   const [journalNotes, setJournalNotes] = useState<NoteMeta[]>([]);
+  const [tagsByVault, setTagsByVault] = useState<Record<string, TagCount[]>>({});
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [treeMode, setTreeModeState] = useState<"simple" | "advanced">("advanced");
   const journalIdsRef = useRef<Set<string>>(new Set());
 
@@ -550,6 +563,64 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     void refreshJournal();
   }, [refreshJournal]);
 
+  // --- Tags ---
+
+  const refreshTags = useCallback(async (vaultId: string) => {
+    try {
+      const res = await api.listTags(vaultId);
+      setTagsByVault((prev) => ({ ...prev, [vaultId]: res.tags ?? [] }));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const addTagToNote = useCallback(async (vaultId: string, noteId: string, tag: string) => {
+    const doc = await api.addTag(vaultId, noteId, tag);
+    setNotesById((prev) => ({ ...prev, [noteId]: doc }));
+    await refreshTags(vaultId);
+    await refresh();
+  }, [refresh, refreshTags]);
+
+  const removeTagFromNote = useCallback(async (vaultId: string, noteId: string, tag: string) => {
+    const doc = await api.removeTag(vaultId, noteId, tag);
+    setNotesById((prev) => ({ ...prev, [noteId]: doc }));
+    await refreshTags(vaultId);
+    await refresh();
+  }, [refresh, refreshTags]);
+
+  const renameTagInVault = useCallback(async (vaultId: string, from: string, to: string) => {
+    await api.renameTag(vaultId, from, to);
+    await refreshTags(vaultId);
+    await refresh();
+  }, [refresh, refreshTags]);
+
+  const deleteTagInVault = useCallback(async (vaultId: string, tag: string) => {
+    await api.deleteTag(vaultId, tag);
+    await refreshTags(vaultId);
+    await refresh();
+  }, [refresh, refreshTags]);
+
+  // --- Tasks ---
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const res = await api.listTasks();
+      setTasks(res.tasks ?? []);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleTaskItem = useCallback(async (vaultId: string, noteId: string, line: number, checked: boolean) => {
+    const doc = await api.toggleTask(vaultId, noteId, line, checked);
+    setNotesById((prev) => ({ ...prev, [noteId]: doc }));
+    await refreshTasks();
+  }, [refreshTasks]);
+
+  useEffect(() => {
+    void refreshTasks();
+  }, [refreshTasks]);
+
   const openDaily = useCallback(async () => {
     try {
       const note = await api.journalDaily();
@@ -694,6 +765,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       refresh,
       allVaultData,
       journalNotes,
+      tagsByVault,
+      refreshTags,
+      addTagToNote,
+      removeTagFromNote,
+      renameTagInVault,
+      deleteTagInVault,
+      tasks,
+      refreshTasks,
+      toggleTaskItem,
       openNoteInVault,
       openJournalNote,
       treeMode,
@@ -741,6 +821,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       refresh,
       allVaultData,
       journalNotes,
+      tagsByVault,
+      refreshTags,
+      addTagToNote,
+      removeTagFromNote,
+      renameTagInVault,
+      deleteTagInVault,
+      tasks,
+      refreshTasks,
+      toggleTaskItem,
       openNoteInVault,
       openJournalNote,
       treeMode,

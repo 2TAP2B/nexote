@@ -7,8 +7,10 @@ import {
   Database,
   FilePlus,
   FileStack,
+  Hash,
   Keyboard,
   LayoutDashboard,
+  ListTodo,
   PanelLeftClose,
   Search,
   Sparkles,
@@ -122,6 +124,24 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         run: () =>
           window.dispatchEvent(
             new CustomEvent("nexote:select-view", { detail: "bookmarks" }),
+          ),
+      },
+      {
+        id: "go-tags",
+        label: "Go to Tags",
+        icon: <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "tags" }),
+          ),
+      },
+      {
+        id: "go-tasks",
+        label: "Go to Tasks",
+        icon: <ListTodo className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "tasks" }),
           ),
       },
       {

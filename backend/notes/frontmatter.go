@@ -33,6 +33,7 @@ type Meta struct {
 	Path      string    `yaml:"path,omitempty"`
 	CreatedAt time.Time `yaml:"createdAt"`
 	UpdatedAt time.Time `yaml:"updatedAt"`
+	Tags      []string  `yaml:"tags,omitempty"`
 }
 
 // Document is a parsed note: its metadata plus the markdown body.

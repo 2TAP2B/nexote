@@ -313,6 +313,8 @@ const VIEW_TITLES: Record<Exclude<SidebarView, "tree">, string> = {
   shortcuts: "Shortcuts",
   bookmarks: "Bookmarks",
   journal: "Daily notes",
+  tags: "Tags",
+  tasks: "Tasks",
 };
 
 function SidebarHeader({

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -36,6 +37,7 @@ type Entry struct {
 	Path      string    `json:"path"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+	Tags      []string  `json:"tags"`
 }
 
 // FolderEntry represents an (possibly empty) folder in the tree.
@@ -92,6 +94,7 @@ func (s *Store) List() (ListResult, error) {
 			Path:      doc.Meta.Path,
 			CreatedAt: doc.Meta.CreatedAt,
 			UpdatedAt: doc.Meta.UpdatedAt,
+			Tags:      doc.Meta.Tags,
 		})
 		return nil
 	})
@@ -302,6 +305,257 @@ func (s *Store) Daily() (Document, error) {
 	// Seed the body with a header so the journal isn't empty.
 	doc.Body = fmt.Sprintf("# %s\n\n", date)
 	doc.Meta.UpdatedAt = now
+	if err := s.write(doc); err != nil {
+		return Document{}, err
+	}
+	return doc, nil
+}
+
+// --- Tags ---
+
+// TagCount is a tag name plus the number of notes that carry it.
+type TagCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// normalizeTag trims whitespace, strips a leading "#", and lowercases. This
+// gives a canonical form for tag comparison and storage so "#Work", "work",
+// and "Work " all map to "work".
+func normalizeTag(tag string) string {
+	tag = strings.TrimSpace(tag)
+	tag = strings.TrimPrefix(tag, "#")
+	tag = strings.TrimSpace(tag)
+	return strings.ToLower(tag)
+}
+
+func containsString(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// AddTag adds a tag to a note's frontmatter. Idempotent — if the tag is
+// already present nothing changes. Returns the updated document.
+func (s *Store) AddTag(id string, tag string) (Document, error) {
+	nt := normalizeTag(tag)
+	if nt == "" {
+		return Document{}, fmt.Errorf("tag cannot be empty")
+	}
+	doc, err := s.read(id)
+	if err != nil {
+		return Document{}, err
+	}
+	if containsString(doc.Meta.Tags, nt) {
+		return doc, nil
+	}
+	doc.Meta.Tags = append(doc.Meta.Tags, nt)
+	doc.Meta.UpdatedAt = time.Now().UTC()
+	if err := s.write(doc); err != nil {
+		return Document{}, err
+	}
+	return doc, nil
+}
+
+// RemoveTag removes a tag from a note's frontmatter. Returns the updated
+// document.
+func (s *Store) RemoveTag(id string, tag string) (Document, error) {
+	nt := normalizeTag(tag)
+	doc, err := s.read(id)
+	if err != nil {
+		return Document{}, err
+	}
+	filtered := doc.Meta.Tags[:0]
+	for _, t := range doc.Meta.Tags {
+		if t != nt {
+			filtered = append(filtered, t)
+		}
+	}
+	doc.Meta.Tags = filtered
+	doc.Meta.UpdatedAt = time.Now().UTC()
+	if err := s.write(doc); err != nil {
+		return Document{}, err
+	}
+	return doc, nil
+}
+
+// RenameTag renames a tag across all notes in the store. Returns the number
+// of notes that had the tag renamed.
+func (s *Store) RenameTag(from string, to string) (int, error) {
+	nf := normalizeTag(from)
+	nt := normalizeTag(to)
+	if nf == "" || nt == "" {
+		return 0, fmt.Errorf("tag cannot be empty")
+	}
+	list, err := s.List()
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, e := range list.Notes {
+		if !containsString(e.Tags, nf) {
+			continue
+		}
+		doc, err := s.read(e.ID)
+		if err != nil {
+			continue
+		}
+		renamed := false
+		for i, t := range doc.Meta.Tags {
+			if t == nf {
+				doc.Meta.Tags[i] = nt
+				renamed = true
+			}
+		}
+		if renamed {
+			doc.Meta.UpdatedAt = time.Now().UTC()
+			if err := s.write(doc); err != nil {
+				return count, err
+			}
+			count++
+		}
+	}
+	return count, nil
+}
+
+// DeleteTag removes a tag from all notes in the store. Returns the number of
+// notes that had the tag removed.
+func (s *Store) DeleteTag(tag string) (int, error) {
+	nt := normalizeTag(tag)
+	list, err := s.List()
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, e := range list.Notes {
+		if !containsString(e.Tags, nt) {
+			continue
+		}
+		doc, err := s.read(e.ID)
+		if err != nil {
+			continue
+		}
+		filtered := doc.Meta.Tags[:0]
+		for _, t := range doc.Meta.Tags {
+			if t != nt {
+				filtered = append(filtered, t)
+			}
+		}
+		doc.Meta.Tags = filtered
+		doc.Meta.UpdatedAt = time.Now().UTC()
+		if err := s.write(doc); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
+}
+
+// TagIndex returns all unique tags in the store with their note counts,
+// sorted alphabetically by tag name.
+func (s *Store) TagIndex() ([]TagCount, error) {
+	list, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, e := range list.Notes {
+		for _, t := range e.Tags {
+			counts[t]++
+		}
+	}
+	result := make([]TagCount, 0, len(counts))
+	for name, c := range counts {
+		result = append(result, TagCount{Name: name, Count: c})
+	}
+	// Sort alphabetically.
+	for i := 1; i < len(result); i++ {
+		for j := i; j > 0 && result[j-1].Name > result[j].Name; j-- {
+			result[j-1], result[j] = result[j], result[j-1]
+		}
+	}
+	return result, nil
+}
+
+// --- Tasks ---
+
+// Task is a single checkbox item extracted from a note's body.
+type Task struct {
+	NoteID    string    `json:"noteId"`
+	NoteTitle string    `json:"noteTitle"`
+	Text      string    `json:"text"`
+	Checked   bool      `json:"checked"`
+	Line      int       `json:"line"` // 0-based line index in the note body
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// taskLineRe matches markdown task list items: "- [ ] text" or "- [x] text",
+// also allowing "*", "+", and leading whitespace.
+var taskLineRe = regexp.MustCompile(`(?m)^(\s*[-*+]\s+)\[( |x|X)\]\s+(.+)$`)
+
+// Tasks walks all notes in the store and extracts every task list item from
+// their bodies. The returned tasks are sorted by note title, then by line
+// number within each note.
+func (s *Store) Tasks() ([]Task, error) {
+	list, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	var tasks []Task
+	for _, e := range list.Notes {
+		doc, err := s.read(e.ID)
+		if err != nil {
+			continue
+		}
+		body := doc.Body
+		lines := strings.Split(body, "\n")
+		for i, line := range lines {
+			m := taskLineRe.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			checked := m[2] == "x" || m[2] == "X"
+			text := strings.TrimSpace(m[3])
+			tasks = append(tasks, Task{
+				NoteID:    e.ID,
+				NoteTitle: e.Title,
+				Text:      text,
+				Checked:   checked,
+				Line:      i,
+				CreatedAt: e.CreatedAt,
+				UpdatedAt: e.UpdatedAt,
+			})
+		}
+	}
+	return tasks, nil
+}
+
+// SetTaskChecked flips a task checkbox in a note's body. It reads the note,
+// rewrites the specified line (0-based) to [ ] or [x], and saves.
+func (s *Store) SetTaskChecked(id string, line int, checked bool) (Document, error) {
+	doc, err := s.read(id)
+	if err != nil {
+		return Document{}, err
+	}
+	lines := strings.Split(doc.Body, "\n")
+	if line < 0 || line >= len(lines) {
+		return doc, fmt.Errorf("task line out of range")
+	}
+	m := taskLineRe.FindStringSubmatch(lines[line])
+	if m == nil {
+		return doc, fmt.Errorf("line %d is not a task", line)
+	}
+	mark := " "
+	if checked {
+		mark = "x"
+	}
+	lines[line] = m[1] + "[" + mark + "] " + strings.TrimSpace(m[3])
+	doc.Body = strings.Join(lines, "\n")
+	doc.Meta.UpdatedAt = time.Now().UTC()
 	if err := s.write(doc); err != nil {
 		return Document{}, err
 	}

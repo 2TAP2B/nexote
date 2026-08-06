@@ -8,6 +8,7 @@ export type NoteMeta = {
   path: string;
   createdAt: string;
   updatedAt: string;
+  tags?: string[];
 };
 
 export type Note = NoteMeta & {
@@ -35,6 +36,23 @@ export type VaultMeta = {
   name: string;
   icon?: string;
   path: string;
+};
+
+export type TagCount = {
+  name: string;
+  count: number;
+};
+
+export type TaskItem = {
+  vaultId: string;
+  vaultName: string;
+  noteId: string;
+  noteTitle: string;
+  text: string;
+  checked: boolean;
+  line: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export class ApiError extends Error {
@@ -170,5 +188,36 @@ export const api = {
   removeShortcut: (vaultId: string, id: string) =>
     request<void>(`${vaultBase(vaultId)}/shortcuts/${id}`, {
       method: "DELETE",
+    }),
+
+  // --- Tags (vault-scoped) ---
+  listTags: (vaultId: string) =>
+    request<{ tags: TagCount[] }>(`${vaultBase(vaultId)}/tags`),
+  addTag: (vaultId: string, id: string, tag: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/${id}/tags`, {
+      method: "POST",
+      body: JSON.stringify({ tag }),
+    }),
+  removeTag: (vaultId: string, id: string, tag: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/${id}/tags/${encodeURIComponent(tag)}`, {
+      method: "DELETE",
+    }),
+  renameTag: (vaultId: string, from: string, to: string) =>
+    request<{ renamed: number }>(`${vaultBase(vaultId)}/tags/rename`, {
+      method: "POST",
+      body: JSON.stringify({ from, to }),
+    }),
+  deleteTag: (vaultId: string, tag: string) =>
+    request<{ removed: number }>(`${vaultBase(vaultId)}/tags/${encodeURIComponent(tag)}`, {
+      method: "DELETE",
+    }),
+
+  // --- Tasks (vault-independent, scans all vaults) ---
+  listTasks: () =>
+    request<{ tasks: TaskItem[] }>("/api/tasks"),
+  toggleTask: (vaultId: string, noteId: string, line: number, checked: boolean) =>
+    request<Note>("/api/tasks", {
+      method: "PUT",
+      body: JSON.stringify({ vaultId, noteId, line, checked }),
     }),
 };
