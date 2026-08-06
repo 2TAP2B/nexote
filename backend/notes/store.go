@@ -250,11 +250,12 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	return doc, nil
 }
 
-// inlineTagRe matches #hashtags in the body: a # optionally followed by a
-// space, then a tag name starting with a lowercase letter or digit (to avoid
-// matching headings like "# Title"). Preceded by start-of-line or whitespace.
-// This avoids matching URLs (#fragment), color codes, and headings.
-var inlineTagRe = regexp.MustCompile(`(?m)(?:^|\s)#\s*([a-z0-9][\w-]*)`)
+// inlineTagRe matches #hashtags in the body. Milkdown escapes # at the start
+// of a line as \# to prevent heading interpretation, so we match both #tag
+// and \#tag. The tag name must start with a lowercase letter or digit to
+// avoid matching real headings ("# Title"). Preceded by start-of-line or
+// whitespace. Skips code blocks (handled separately by extractInlineTags).
+var inlineTagRe = regexp.MustCompile(`(?m)(?:^|\s)\\?#\s*([a-z0-9][\w-]*)`)
 
 // extractInlineTags scans the body for #hashtags and returns a deduplicated,
 // normalized list. Lines inside fenced code blocks (``` ... ```) are skipped.
