@@ -39,10 +39,11 @@ type Item =
   | { kind: "command"; cmd: Command }
   | { kind: "note"; id: string; title: string; path?: string }
   | { kind: "create"; label: string; title: string }
-  | { kind: "vault"; id: string; name: string };
+  | { kind: "vault"; id: string; name: string }
+  | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily, vaults, switchVault, activeVault } = useNotes();
+  const { notes, openTab, create, openDaily, vaults, switchVault, activeVault, tagsByVault } = useNotes();
   const { theme, setTheme } = useTheme();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -195,6 +196,24 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const q = query.trim().toLowerCase();
     const result: Item[] = [];
 
+    // Tag search: when query starts with #, only show matching tags.
+    if (q.startsWith("#")) {
+      const tagQuery = q.slice(1);
+      const allTags = new Map<string, number>();
+      for (const v of vaults) {
+        for (const t of tagsByVault[v.id] ?? []) {
+          allTags.set(t.name, (allTags.get(t.name) ?? 0) + t.count);
+        }
+      }
+      const matched = [...allTags.entries()]
+        .filter(([name]) => !tagQuery || name.includes(tagQuery))
+        .sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [name] of matched) {
+        result.push({ kind: "tag", name });
+      }
+      return result;
+    }
+
     // Always show commands first (filtered by query)
     const matchedCmds = q
       ? commands.filter((c) => c.label.toLowerCase().includes(q))
@@ -236,7 +255,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, vaults, activeVault, query]);
+  }, [commands, notes, vaults, activeVault, tagsByVault, query]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));
@@ -257,6 +276,11 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         break;
       case "vault":
         switchVault(item.id);
+        break;
+      case "tag":
+        window.dispatchEvent(
+          new CustomEvent("nexote:select-view", { detail: "tags" }),
+        );
         break;
     }
     onClose();
@@ -332,7 +356,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                           ? "Switch vault"
                           : item.kind === "note"
                             ? "Notes"
-                            : "Create"}
+                            : item.kind === "tag"
+                              ? "Tags"
+                              : "Create"}
                     </div>
                   )}
                   <button
@@ -358,6 +384,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                         ●
                       </span>
                     )}
+                    {item.kind === "tag" && (
+                      <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
                     <span className="truncate">
                       {item.kind === "command"
                         ? item.cmd.label
@@ -365,7 +394,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                           ? item.name
                           : item.kind === "note"
                             ? item.title || "Untitled"
-                            : item.label}
+                            : item.kind === "tag"
+                              ? `#${item.name}`
+                              : item.label}
                     </span>
                     {item.kind === "command" && item.cmd.hint && (
                       <kbd className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">

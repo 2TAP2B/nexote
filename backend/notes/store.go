@@ -207,6 +207,8 @@ type UpdateInput struct {
 // Update rewrites a note's title and body, bumping updatedAt. The id and
 // createdAt are preserved. If Path is non-nil, the note is moved to that folder
 // (empty string = root); the old file is deleted and a new one written.
+// Inline #hashtags in the body are extracted and merged into the frontmatter
+// tags so they appear in the tag index.
 func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	doc, err := s.read(id)
 	if err != nil {
@@ -223,6 +225,19 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	doc.Body = in.Body
 	doc.Meta.UpdatedAt = time.Now().UTC()
 
+	// Extract inline #hashtags from the body and merge into frontmatter tags.
+	bodyTags := extractInlineTags(doc.Body)
+	existing := make(map[string]bool, len(doc.Meta.Tags))
+	for _, t := range doc.Meta.Tags {
+		existing[t] = true
+	}
+	for _, t := range bodyTags {
+		if !existing[t] {
+			doc.Meta.Tags = append(doc.Meta.Tags, t)
+			existing[t] = true
+		}
+	}
+
 	// If the path changed, delete the old file first, then write the new one.
 	if doc.Meta.Path != oldPath {
 		if oldFile, err := s.resolvePath(id); err == nil {
@@ -233,6 +248,39 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 		return Document{}, err
 	}
 	return doc, nil
+}
+
+// inlineTagRe matches #hashtags in the body: a # followed by one or more word
+// characters or hyphens, preceded by start-of-line or whitespace. This avoids
+// matching URLs (#fragment) and color codes (#ffffff inside code).
+var inlineTagRe = regexp.MustCompile(`(?m)(?:^|\s)#([\w-]+)`)
+
+// extractInlineTags scans the body for #hashtags and returns a deduplicated,
+// normalized list. Lines inside fenced code blocks (``` ... ```) are skipped.
+func extractInlineTags(body string) []string {
+	lines := strings.Split(body, "\n")
+	inCodeBlock := false
+	seen := map[string]bool{}
+	var tags []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inCodeBlock = !inCodeBlock
+			continue
+		}
+		if inCodeBlock {
+			continue
+		}
+		for _, m := range inlineTagRe.FindAllStringSubmatch(line, -1) {
+			tag := normalizeTag(m[1])
+			if tag == "" || seen[tag] {
+				continue
+			}
+			seen[tag] = true
+			tags = append(tags, tag)
+		}
+	}
+	return tags
 }
 
 // Delete removes the note file. Missing files are treated as success so the
