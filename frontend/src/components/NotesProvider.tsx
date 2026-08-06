@@ -686,8 +686,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           if (isJournal) {
             await api.journalUpdate(id, input);
           } else {
-            await api.update(activeVaultId!, id, input);
+            const updated = await api.update(activeVaultId!, id, input);
             await refresh();
+            void refreshTags(activeVaultId!);
+            setNotesById((prev) => {
+              const n = prev[id];
+              if (!n) return prev;
+              return {
+                ...prev,
+                [id]: {
+                  ...n,
+                  title: input.title || n.title,
+                  body: input.body ?? n.body,
+                  tags: updated.tags ?? n.tags,
+                },
+              };
+            });
+            return;
           }
           setNotesById((prev) => {
             const n = prev[id];
@@ -712,7 +727,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       inflight.current = run.catch(() => {});
       return run;
     },
-    [activeVaultId, refresh, refreshTasks],
+    [activeVaultId, refresh, refreshTasks, refreshTags],
   );
 
   const forceSave = useCallback(async () => {
