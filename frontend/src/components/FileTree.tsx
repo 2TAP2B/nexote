@@ -1086,6 +1086,16 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
                         onNewNoteInFolder={(path) => void create({ path })}
                         onNewFolderInFolder={(path) => openFolderDialog(path)}
                         onDrillInto={navigateToFolder}
+                        onAddTag={(id) => {
+                          const tag = window.prompt("Add tag:");
+                          if (tag && tag.trim()) void addTagToNote(vault.id, id, tag.trim());
+                        }}
+                        onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
+                        noteTags={(id) => {
+                          const data = allVaultData[vault.id];
+                          const n = data?.notes.find((nn) => nn.id === id);
+                          return n?.tags ?? [];
+                        }}
                       />
                     ) : (
                       <TreeChildren
@@ -1143,6 +1153,16 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
                         onDrillInto={(path) => {
                           switchVault(vault.id);
                           navigateToFolder(path);
+                        }}
+                        onAddTag={(id) => {
+                          const tag = window.prompt("Add tag:");
+                          if (tag && tag.trim()) void addTagToNote(vault.id, id, tag.trim());
+                        }}
+                        onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
+                        noteTags={(id) => {
+                          const data = allVaultData[vault.id];
+                          const n = data?.notes.find((nn) => nn.id === id);
+                          return n?.tags ?? [];
                         }}
                       />
                     )}
@@ -1315,6 +1335,9 @@ type TreeChildProps = {
   onNewNoteInFolder: (path: string) => void;
   onNewFolderInFolder: (path: string) => void;
   onDrillInto: (path: string) => void;
+  onAddTag?: (id: string) => void;
+  onRemoveTag?: (id: string, tag: string) => void;
+  noteTags?: (id: string) => string[];
 };
 
 function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
@@ -1497,6 +1520,9 @@ function NoteItem(
     setRenaming,
     onRename,
     onMoveNote,
+    onAddTag,
+    onRemoveTag,
+    noteTags,
   } = props;
 
   const isRenaming = renaming?.id === note.id;
@@ -1515,7 +1541,7 @@ function NoteItem(
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          onContextMenu(e.clientX, e.clientY, [
+          const items: MenuItem[] = [
             {
               label: "Open in new tab",
               icon: <SquareArrowOutUpRight className="h-4 w-4" />,
@@ -1544,6 +1570,24 @@ function NoteItem(
               icon: <Bookmark className="h-4 w-4" />,
               onClick: () => onBookmark(note.id),
             },
+          ];
+          if (onAddTag) {
+            items.push({
+              label: "Add tag…",
+              icon: <Hash className="h-4 w-4" />,
+              onClick: () => onAddTag(note.id),
+            });
+          }
+          if (onRemoveTag && noteTags) {
+            for (const tag of noteTags(note.id)) {
+              items.push({
+                label: `Remove #${tag}`,
+                icon: <TagIcon className="h-4 w-4" />,
+                onClick: () => onRemoveTag(note.id, tag),
+              });
+            }
+          }
+          items.push(
             { label: "", onClick: () => {}, separator: true },
             {
               label: "Rename",
@@ -1556,7 +1600,8 @@ function NoteItem(
               danger: true,
               onClick: () => onDelete(note.id),
             },
-          ]);
+          );
+          onContextMenu(e.clientX, e.clientY, items);
         }}
         className={[
           "group flex w-full items-center gap-2 transition-colors",

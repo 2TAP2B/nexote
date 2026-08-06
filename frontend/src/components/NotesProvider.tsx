@@ -701,6 +701,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
               },
             };
           });
+          // Refresh tasks since the body may have changed checkbox states.
+          void refreshTasks();
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to save note");
         } finally {
@@ -710,7 +712,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       inflight.current = run.catch(() => {});
       return run;
     },
-    [activeVaultId, refresh],
+    [activeVaultId, refresh, refreshTasks],
   );
 
   const forceSave = useCallback(async () => {
