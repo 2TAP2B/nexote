@@ -250,10 +250,11 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	return doc, nil
 }
 
-// inlineTagRe matches #hashtags in the body: a # followed by one or more word
-// characters or hyphens, preceded by start-of-line or whitespace. This avoids
-// matching URLs (#fragment) and color codes (#ffffff inside code).
-var inlineTagRe = regexp.MustCompile(`(?m)(?:^|\s)#([\w-]+)`)
+// inlineTagRe matches #hashtags in the body: a # optionally followed by a
+// space, then a tag name starting with a lowercase letter or digit (to avoid
+// matching headings like "# Title"). Preceded by start-of-line or whitespace.
+// This avoids matching URLs (#fragment), color codes, and headings.
+var inlineTagRe = regexp.MustCompile(`(?m)(?:^|\s)#\s*([a-z0-9][\w-]*)`)
 
 // extractInlineTags scans the body for #hashtags and returns a deduplicated,
 // normalized list. Lines inside fenced code blocks (``` ... ```) are skipped.
