@@ -668,7 +668,7 @@ body {
  * over the editor. */
 .mob-shell-root .milkdown .ProseMirror {
   max-width: 100%;
-  padding: 70px 20px 120px;
+  padding: 70px 20px 176px;
 }
 .mob-shell-root .milkdown,
 .mob-shell-root [data-milkdown-root] {

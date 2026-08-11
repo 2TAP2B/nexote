@@ -12,6 +12,8 @@ import {
   headingSchema,
   orderedListSchema,
   setBlockTypeCommand,
+  toggleEmphasisCommand,
+  toggleStrongCommand,
   wrapInBlockTypeCommand,
 } from "@milkdown/kit/preset/commonmark";
 import type { NodeType } from "@milkdown/kit/prose/model";
@@ -20,7 +22,7 @@ import { $prose, replaceAll } from "@milkdown/kit/utils";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import type { EditorView } from "prosemirror-view";
 import { Decoration, DecorationSet } from "prosemirror-view";
-import { NodeSelection, Plugin, PluginKey, TextSelection } from "prosemirror-state";
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
@@ -119,11 +121,56 @@ const aiStreamingWatchPlugin = $prose((ctx) =>
   }),
 );
 
+// True when the editor has a non-empty text selection (mirrors the Crepe
+// toolbar's shouldShow so the pinned mobile bar can reappear on select).
+function hasTextSelection(state: EditorState): boolean {
+  const { doc, selection } = state;
+  if (selection.empty) return false;
+  if (!doc.textBetween(selection.from, selection.to).length) return false;
+  return true;
+}
+
+// Watches the selection and dispatches a window event when it transitions
+// between empty and non-empty. The mobile note view uses this to keep the
+// pinned format bar visible while the user has text selected, even when the
+// scroll-chrome logic would have hidden it.
+const selectionWatchKey = new PluginKey("nexote-selection-watch");
+const selectionWatchPlugin = $prose((ctx) =>
+  new Plugin<boolean>({
+    key: selectionWatchKey,
+    state: {
+      init: (_c, state) => hasTextSelection(state),
+      apply(_tr, prev, _old, newState) {
+        const next = hasTextSelection(newState);
+        if (next !== prev) {
+          window.dispatchEvent(
+            new CustomEvent("nexote:selection-change", { detail: next }),
+          );
+        }
+        return next;
+      },
+    },
+  }),
+);
+
 export type MilkdownEditorHandle = {
   focus: () => void;
   selectHeading: () => void;
   focusEnd: () => void;
+  format: (action: FormatAction) => void;
+  askAI: () => void;
 };
+
+export type FormatAction =
+  | "bold"
+  | "italic"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "bullet-list"
+  | "ordered-list"
+  | "quote"
+  | "code-block";
 
 export type AIConfig = {
   baseUrl: string;
@@ -137,6 +184,7 @@ type MilkdownEditorProps = {
   aiConfig: AIConfig;
   vaultId: string;
   noteId: string;
+  mobile?: boolean;
 };
 
 const AI_SYSTEM_PROMPT = `You are a writing assistant embedded in a markdown editor.
@@ -293,7 +341,7 @@ function pinScroll(view: EditorView): () => void {
 
 // Inner editor lives inside MilkdownProvider so it can use the editor hooks.
 const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
-  function MilkdownEditor({ defaultValue, onChange, aiConfig, vaultId, noteId }, ref) {
+  function MilkdownEditor({ defaultValue, onChange, aiConfig, vaultId, noteId, mobile }, ref) {
     const crepeRef = useRef<Crepe | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
@@ -453,6 +501,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       // provider is present, so it stays hidden until configured.
       const features: NonNullable<CrepeConfig["features"]> = {
         [Crepe.Feature.ImageBlock]: true,
+        // On mobile the floating selection toolbar is disabled; a pinned
+        // bottom bar (MobileFormatBar) drives the same commands instead.
+        [Crepe.Feature.Toolbar]: !mobile,
       };
       if (baseUrl) {
         features[Crepe.Feature.AI] = true;
@@ -586,6 +637,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       // Emit AI session start/end events for the review overlay.
       crepe.editor.use(aiStreamingWatchPlugin);
 
+      // Emit selection empty/non-empty transitions for the mobile format bar.
+      crepe.editor.use(selectionWatchPlugin);
+
       // Clicking a highlighted tag pill opens the Tags view with that tag
       // selected (the sidebar listens for this event and switches views).
       const onRootClick = (e: MouseEvent) => {
@@ -699,7 +753,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
 
       crepeRef.current = crepe;
       return crepe;
-    }, [aiConfig, vaultId, noteId]);
+    }, [aiConfig, vaultId, noteId, mobile]);
 
     useImperativeHandle(
       ref,
@@ -764,6 +818,65 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               ),
             );
             editorView.focus();
+          });
+        },
+        format: (action: FormatAction) => {
+          const editor = crepeRef.current?.editor;
+          if (!editor) return;
+          editor.action((ctx) => {
+            const commands = ctx.get(commandsCtx);
+            switch (action) {
+              case "bold":
+                commands.call(toggleStrongCommand.key);
+                break;
+              case "italic":
+                commands.call(toggleEmphasisCommand.key);
+                break;
+              case "h1":
+              case "h2":
+              case "h3":
+                commands.call(setBlockTypeCommand.key, {
+                  nodeType: headingSchema.type(ctx),
+                  attrs: { level: Number(action[1]) },
+                });
+                break;
+              case "bullet-list":
+                commands.call(wrapInBlockTypeCommand.key, {
+                  nodeType: bulletListSchema.type(ctx),
+                });
+                break;
+              case "ordered-list":
+                commands.call(wrapInBlockTypeCommand.key, {
+                  nodeType: orderedListSchema.type(ctx),
+                });
+                break;
+              case "quote":
+                commands.call(wrapInBlockTypeCommand.key, {
+                  nodeType: blockquoteSchema.type(ctx),
+                });
+                break;
+              case "code-block":
+                commands.call(setBlockTypeCommand.key, {
+                  nodeType: codeBlockSchema.type(ctx),
+                });
+                break;
+            }
+          });
+        },
+        askAI: () => {
+          const editor = crepeRef.current?.editor;
+          if (!editor) return;
+          editor.action((ctx) => {
+            // Same call the Crepe toolbar's AI button makes: open the AI
+            // instruction tooltip for the current selection. It's only
+            // registered when the AI feature is enabled (baseUrl set).
+            const api = ctx.get("aiInstructionTooltipAPI" as never) as {
+              show: (from: number, to: number) => void;
+            };
+            if (!api?.show) return;
+            const view = ctx.get(editorViewCtx);
+            const { from, to } = view.state.selection;
+            api.show(from, to);
           });
         },
       }),

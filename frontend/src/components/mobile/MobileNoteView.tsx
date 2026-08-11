@@ -8,6 +8,7 @@ import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
+import MobileFormatBar from "./MobileFormatBar";
 import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVirtualKeyboardInset } from "./useVirtualKeyboardInset";
 
@@ -41,6 +42,8 @@ export default function MobileNoteView({
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
     useNotes();
+
+  const editorRef = useRef<MilkdownEditorHandle>(null);
 
   // Height of the on-screen keyboard (0 when hidden). The editor scroll area
   // shrinks by this amount while typing so the caret never scrolls underneath
@@ -185,14 +188,25 @@ export default function MobileNoteView({
         }
       >
         <MilkdownEditorWrapper
+          ref={editorRef}
           key={`${activeNote.id}-${bodyKey}`}
           defaultValue={activeNote.body}
           onChange={handleEditorChange}
           aiConfig={aiConfig}
           vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
           noteId={activeNote.id}
+          mobile
         />
       </div>
+
+      {/* Pinned formatting bar — always visible, replaces the floating
+       * Milkdown selection toolbar. Sits above the keyboard and above the
+       * bottom pill. */}
+      <MobileFormatBar
+        editorRef={editorRef}
+        aiAvailable={Boolean(aiConfig.baseUrl)}
+        kbdInset={kbdInset}
+      />
     </div>
   );
 }
