@@ -17,6 +17,7 @@ import {
   SquareStack,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import CommandPalette from "@/components/CommandPalette";
 import EditorPane from "@/components/EditorPane";
@@ -29,9 +30,27 @@ import TopBar from "@/components/TopBar";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
 
+// Redirect mobile visitors to the dedicated /m mobile UI, unless the user
+// has explicitly chosen "View desktop" (nexote-force-desktop in localStorage).
+function MobileRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("nexote-force-desktop") === "1") return;
+    } catch {
+      // localStorage unavailable — skip redirect
+    }
+    const ua = navigator.userAgent;
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
+    if (isMobile) router.replace("/m");
+  }, [router]);
+  return null;
+}
+
 export default function Page() {
   return (
     <NotesProvider>
+      <MobileRedirect />
       <AppShell />
     </NotesProvider>
   );
@@ -44,6 +63,7 @@ function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
+  const [tagSelection, setTagSelection] = useState<string | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [treeControls, setTreeControls] = useState<TreeControls>({
@@ -92,15 +112,24 @@ function AppShell() {
       const detail = (e as CustomEvent).detail as SidebarView;
       if (detail) setSidebarView(detail);
     };
+    const onSelectTag = (e: Event) => {
+      const detail = (e as CustomEvent).detail as string;
+      if (detail) {
+        setTagSelection(detail);
+        setSidebarView("tags");
+      }
+    };
     window.addEventListener("nexote:toggle-sidebar", onToggle);
     window.addEventListener("nexote:open-palette", onOpenPalette);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
+    window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     return () => {
       window.removeEventListener("nexote:toggle-sidebar", onToggle);
       window.removeEventListener("nexote:open-palette", onOpenPalette);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
+      window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
     };
   }, []);
 
@@ -226,6 +255,7 @@ function AppShell() {
             <Ribbon
               activeView={sidebarView}
               onSelectView={setSidebarView}
+              onOpenDaily={() => void openDaily()}
               onCommandPalette={() => setPaletteOpen(true)}
               onOpenSettings={() => setSettingsOpen(true)}
             />
@@ -257,6 +287,8 @@ function AppShell() {
               <FileTree
                 collapsed={collapsed}
                 view={sidebarView}
+                selectedTag={tagSelection}
+                onSelectTagConsumed={() => setTagSelection(null)}
                 onSelectView={setSidebarView}
                 onControlsReady={setTreeControls}
               />
@@ -315,6 +347,7 @@ const VIEW_TITLES: Record<Exclude<SidebarView, "tree">, string> = {
   journal: "Daily notes",
   tags: "Tags",
   tasks: "Tasks",
+  images: "Images",
 };
 
 function SidebarHeader({

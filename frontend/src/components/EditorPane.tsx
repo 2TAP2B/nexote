@@ -11,7 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
@@ -23,21 +23,25 @@ const MilkdownEditorWrapper = dynamic<
   }
 >(() => import("@/components/MilkdownEditor"), { ssr: false });
 
-function extractH1(body: string): string | null {
-  const m = body.match(/^# (.+)$/m);
+// The note title is written as an H2 (##) heading at the start of the body.
+// (H1 was avoided because a custom Ctrl+A handler that excluded the H1 title
+// caused the editor to scroll-jump; with H2 the native Ctrl+A runs, which
+// doesn't jump.) These helpers also migrate legacy H1 titles to H2 on save.
+function extractTitleHeading(body: string): string | null {
+  const m = body.match(/^##? (.+)$/m);
   return m ? m[1].trim() : null;
 }
 
-function replaceOrAddH1(body: string, title: string): string {
-  const h1 = `# ${title}`;
-  if (/^# .+$/m.test(body)) {
-    return body.replace(/^# .+$/m, h1);
+function replaceOrAddTitleHeading(body: string, title: string): string {
+  const heading = `## ${title}`;
+  if (/^##? .+$/m.test(body)) {
+    return body.replace(/^##? .+$/m, heading);
   }
-  return body ? `${h1}\n\n${body}` : h1;
+  return body ? `${heading}\n\n${body}` : heading;
 }
 
 export default function EditorPane() {
-  const { activeNote, activeId, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings } =
+  const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote } =
     useNotes();
 
   const [title, setTitle] = useState("");
@@ -52,6 +56,17 @@ export default function EditorPane() {
   const editorRef = useRef<MilkdownEditorHandle>(null);
   const prevBodyRef = useRef("");
   const ownSaveCountRef = useRef(0);
+
+  // Stable identity for the editor's AI config so the Milkdown editor only
+  // rebuilds when the AI settings actually change, not on every render.
+  const aiConfig = useMemo(
+    () => ({
+      baseUrl: settings.aiBaseUrl,
+      apiKey: settings.aiApiKey,
+      model: settings.aiModel,
+    }),
+    [settings.aiBaseUrl, settings.aiApiKey, settings.aiModel],
+  );
 
   useEffect(() => {
     if (!activeNote) {
@@ -91,9 +106,9 @@ export default function EditorPane() {
       return;
     }
     setBody(markdown);
-    const h1 = extractH1(markdown);
-    if (h1) {
-      setTitle(h1);
+    const heading = extractTitleHeading(markdown);
+    if (heading) {
+      setTitle(heading);
     }
   }, []);
 
@@ -173,7 +188,7 @@ export default function EditorPane() {
     if (!editingTitle) return;
     const t = titleDraft.trim() || "Untitled";
     if (t !== title && activeId) {
-      const newBody = replaceOrAddH1(body, t);
+      const newBody = replaceOrAddTitleHeading(body, t);
       setTitle(t);
       setBody(newBody);
       prevBodyRef.current = newBody;
@@ -308,7 +323,7 @@ export default function EditorPane() {
 
       {/* Editor — the wrapper scrolls (native page-style scrollbar) */}
       <div
-        className="nexote-editor-scroll min-h-0 flex-1 flex flex-col overflow-y-auto"
+        className="nexote-editor-scroll min-h-0 flex-1 overflow-y-auto"
         style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
       >
         <MilkdownEditorWrapper
@@ -316,6 +331,9 @@ export default function EditorPane() {
           key={`${activeNote.id}-${bodyKey}`}
           defaultValue={activeNote.body}
           onChange={handleEditorChange}
+          aiConfig={aiConfig}
+          vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
+          noteId={activeNote.id}
         />
       </div>
     </main>

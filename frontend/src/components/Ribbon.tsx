@@ -6,6 +6,7 @@ import {
   Clock,
   FileStack,
   Hash,
+  Images,
   ListTodo,
   Settings,
   Star,
@@ -21,11 +22,13 @@ export type SidebarView =
   | "bookmarks"
   | "journal"
   | "tags"
-  | "tasks";
+  | "tasks"
+  | "images";
 
 type RibbonProps = {
   activeView: SidebarView;
   onSelectView: (view: SidebarView) => void;
+  onOpenDaily: () => void;
   onCommandPalette: () => void;
   onOpenSettings: () => void;
 };
@@ -33,6 +36,7 @@ type RibbonProps = {
 export default function Ribbon({
   activeView,
   onSelectView,
+  onOpenDaily,
   onCommandPalette,
   onOpenSettings,
 }: RibbonProps) {
@@ -40,6 +44,7 @@ export default function Ribbon({
     icon: typeof FileStack;
     label: string;
     view: SidebarView;
+    daily?: boolean;
   }[] = [
     { icon: FileStack, label: "Notetree", view: "tree" },
     { icon: Clock, label: "Recent", view: "recent" },
@@ -47,7 +52,8 @@ export default function Ribbon({
     { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
     { icon: Hash, label: "Tags", view: "tags" },
     { icon: ListTodo, label: "Tasks", view: "tasks" },
-    { icon: CalendarDays, label: "Daily notes", view: "journal" },
+    { icon: Images, label: "Images", view: "images" },
+    { icon: CalendarDays, label: "Daily notes", view: "journal", daily: true },
   ];
 
   return (
@@ -63,7 +69,14 @@ export default function Ribbon({
             type="button"
             aria-label={it.label}
             title={it.label}
-            onClick={() => onSelectView(it.view)}
+            onClick={() => {
+              if (it.daily) {
+                onSelectView(it.view);
+                onOpenDaily();
+                return;
+              }
+              onSelectView(it.view);
+            }}
             className="flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-white/5"
             style={
               active

@@ -479,6 +479,23 @@ body {
   background-clip: content-box;
 }
 
+/* Inline #hashtags — subtle pill (clickable → opens Tags view) */
+.milkdown .ProseMirror .nexote-tag {
+  color: var(--crepe-color-primary);
+  font-weight: 600;
+  background: color-mix(in oklab, var(--crepe-color-primary) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--crepe-color-primary) 30%, transparent);
+  border-radius: 9999px;
+  padding: 0 0.35em;
+  margin: 0 0.05em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+}
+.milkdown .ProseMirror .nexote-tag:hover {
+  background: color-mix(in oklab, var(--crepe-color-primary) 22%, transparent);
+}
+
 .milkdown .ProseMirror h1 {
   font-size: 38px;
   font-weight: 700;
@@ -592,4 +609,69 @@ body {
 }
 .milkdown .milkdown-toolbar {
   z-index: 25;
+}
+
+/*
+ * Mobile shell — /m route. The editor background must match the mobile shell
+ * background (--mob-bg) instead of the desktop theme's --background, so the
+ * editor and the chrome feel seamless. These overrides are scoped to the
+ * .mob-shell-root ancestor so they never affect the desktop / route.
+ */
+.mob-shell-root {
+  --background: var(--mob-bg);
+  --crepe-color-background: var(--mob-bg);
+  --crepe-color-on-background: var(--mob-text);
+  --crepe-color-surface: var(--mob-surface);
+  --crepe-color-on-surface: var(--mob-text);
+  --crepe-color-on-surface-variant: var(--mob-muted);
+  --crepe-color-outline: var(--mob-muted);
+  --foreground: var(--mob-text);
+  --muted-foreground: var(--mob-muted);
+  --border: var(--mob-surface);
+  --sidebar: var(--mob-bg);
+  --icon-rail: var(--mob-bg);
+  --tab-active: var(--mob-surface);
+  color: var(--mob-text);
+}
+
+/* Mobile sidebar (FileTree inside the slide-in panel): larger fonts and
+ * the mobile palette so notes/folders are easy to tap. */
+.mob-shell-root .nexote-sidebar,
+.mob-shell-root .nexote-sidebar * {
+  font-size: 17px;
+}
+.mob-shell-root .nexote-sidebar li > div,
+.mob-shell-root .nexote-sidebar button {
+  min-height: 44px;
+}
+
+/* Mobile command palette: bigger touch targets, taller results, no
+ * keyboard-hint footer (touch devices don't use ↑↓/↵). */
+.mob-shell-root [aria-label="Command palette"] {
+  max-width: 100%;
+}
+.mob-shell-root [aria-label="Command palette"] ul {
+  max-height: 60vh;
+}
+.mob-shell-root [aria-label="Command palette"] li button {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  font-size: 15px;
+}
+.mob-shell-root [aria-label="Command palette"] .kbd-hints {
+  display: none;
+}
+
+/* Fullscreen editor: the .ProseMirror padding is reduced on mobile so the
+ * text sits close to the title and fills the screen. Extra top padding
+ * accounts for the fixed top bar (sidebar toggle + overflow) that floats
+ * over the editor. */
+.mob-shell-root .milkdown .ProseMirror {
+  max-width: 100%;
+  padding: 70px 20px 120px;
+}
+.mob-shell-root .milkdown,
+.mob-shell-root [data-milkdown-root] {
+  min-height: 100%;
+  background: var(--mob-bg);
 }

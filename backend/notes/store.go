@@ -158,7 +158,7 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 			CreatedAt: now,
 			UpdatedAt: now,
 		},
-		Body: fmt.Sprintf("# %s\n\n", title),
+		Body: fmt.Sprintf("## %s\n\n", title),
 	}
 	if err := s.write(doc); err != nil {
 		return Document{}, err
@@ -222,6 +222,21 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	if in.Path != nil {
 		doc.Meta.Path = sanitizePath(*in.Path)
 	}
+
+	// When the note moves to a different folder, physically move any image
+	// files it references and rewrite the image URLs in the body.
+	if doc.Meta.Path != oldPath {
+		body := in.Body
+		if body == "" {
+			body = doc.Body
+		}
+		migrated, err := s.MigrateImagesForBody(body, oldPath, doc.Meta.Path)
+		if err != nil {
+			return Document{}, err
+		}
+		in.Body = migrated
+	}
+
 	doc.Body = in.Body
 	doc.Meta.UpdatedAt = time.Now().UTC()
 
