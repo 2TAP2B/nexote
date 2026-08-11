@@ -9,6 +9,7 @@ import WelcomeDashboard from "@/components/WelcomeDashboard";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
 import { useScrollHideChrome } from "./useScrollHideChrome";
+import { useVirtualKeyboardInset } from "./useVirtualKeyboardInset";
 
 const MilkdownEditorWrapper = dynamic<
   React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
@@ -40,6 +41,12 @@ export default function MobileNoteView({
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
     useNotes();
+
+  // Height of the on-screen keyboard (0 when hidden). The editor scroll area
+  // shrinks by this amount while typing so the caret never scrolls underneath
+  // the keyboard — ProseMirror keeps the cursor in view within the smaller
+  // viewport.
+  const kbdInset = useVirtualKeyboardInset();
 
   const aiConfig = useMemo<AIConfig>(
     () => ({
@@ -105,6 +112,24 @@ export default function MobileNoteView({
     if (heading) setTitle(heading);
   }, []);
 
+  // When the keyboard opens the editor viewport shrinks; bring the caret into
+  // view once the new height has had a chance to apply (ProseMirror only
+  // re-scrolls on the next selection change).
+  useEffect(() => {
+    if (kbdInset <= 0) return;
+    const t = setTimeout(() => {
+      const sel = window.getSelection();
+      const cont = document.querySelector<HTMLElement>(".mob-editor-scroll");
+      if (!sel || !cont || sel.rangeCount === 0) return;
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      const bottomLimit = (window.visualViewport?.height ?? window.innerHeight) - 24;
+      if (rect.bottom > bottomLimit) {
+        cont.scrollTop += rect.bottom - bottomLimit;
+      }
+    }, 160);
+    return () => clearTimeout(t);
+  }, [kbdInset]);
+
   useEffect(() => {
     setDraft({ title, body });
   }, [title, body, setDraft]);
@@ -147,10 +172,17 @@ export default function MobileNoteView({
       <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
 
       {/* Editor — fullscreen, fills the entire area behind the top bar. The
-       * H2 note name is the first line inside the editor (editable). */}
+       * H2 note name is the first line inside the editor (editable). While the
+       * touch keyboard is open the scrollport shrinks so the caret stays
+       * visible above it. */}
       <div
         className="mob-editor-scroll h-full overflow-y-auto"
-        style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
+        style={
+          {
+            "--editor-font-size": `${settings.editorFontSize}px`,
+            height: kbdInset > 0 ? `calc(100% - ${kbdInset + 24}px)` : undefined,
+          } as React.CSSProperties
+        }
       >
         <MilkdownEditorWrapper
           key={`${activeNote.id}-${bodyKey}`}

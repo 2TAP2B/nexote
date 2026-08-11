@@ -197,7 +197,15 @@ export default function MobileApp() {
   return (
     <div
       className="flex h-[100dvh] w-full flex-col overflow-hidden"
-      style={{ ...mobileShellVars, background: "var(--mob-bg)" } as React.CSSProperties}
+      style={
+        {
+          ...mobileShellVars,
+          background: "var(--mob-bg)",
+          // Let the swipe hook receive horizontal drags (open/close sidebar)
+          // while still allowing native vertical scrolling in lists/editor.
+          touchAction: "pan-y",
+        } as React.CSSProperties
+      }
     >
       <MobileNoteView
         activeNote={activeNote}

@@ -86,6 +86,14 @@ function emptyTree(): TreeNode {
   return { name: "", path: "", children: new Map(), notes: [] };
 }
 
+// True on primary input devices that don't have a fine pointer (phones,
+// tablets) — used to disable native HTML5 drag-and-drop on note rows, since a
+// `draggable` row eats the first tap on touch screens.
+const isCoarsePointer =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches;
+
 function buildTree(
   notes: { id: string; title: string; path: string }[],
   folders: { path: string; name: string }[],
@@ -1598,7 +1606,11 @@ function NoteItem(
     <li>
       <div
         data-note-id={note.id}
-        draggable
+        // Native HTML5 dragging (drag a note onto a folder) only works with a
+        // mouse. On touch devices `draggable` hijacks the first tap as a drag
+        // start and suppresses the click, so a note can't be opened — disable
+        // it there.
+        draggable={!isCoarsePointer}
         onDragStart={() => onNoteDragStart(note.id)}
         onMouseEnter={() => setTreeSelectedNav?.(`note:${note.id}`)}
         onClick={() => !isRenaming && onOpen(note.id)}

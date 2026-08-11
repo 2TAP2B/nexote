@@ -12,7 +12,7 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
@@ -52,6 +52,22 @@ export default function MobileSidebar({
 }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [colorScheme, setColorScheme] = useState("default");
+  const fileTreeBox = useRef<HTMLDivElement>(null);
+
+  // Selecting a note in the tree should open it AND dismiss the sidebar. The
+  // parent already closes on activeId change, but tapping the already-active
+  // note keeps the sidebar open — so close on any tap that lands on a note row.
+  useEffect(() => {
+    const el = fileTreeBox.current;
+    if (!el) return;
+    const onTapNote = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest("[data-note-id]")) {
+        onClose();
+      }
+    };
+    el.addEventListener("click", onTapNote, true);
+    return () => el.removeEventListener("click", onTapNote, true);
+  }, [onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -146,6 +162,7 @@ export default function MobileSidebar({
 
         {/* FileTree — renders the selected view. */}
         <div
+          ref={fileTreeBox}
           className="min-h-0 flex-1 overflow-y-auto"
           style={{ color: "var(--mob-text)" }}
         >
