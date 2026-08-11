@@ -128,6 +128,21 @@ export default function MobileApp() {
     setSidebarOpen(false);
   }, [activeId]);
 
+  // The shared CommandPalette dispatches nexote:select-view and
+  // nexote:toggle-sidebar events for its "Go to …" / "Toggle sidebar"
+  // commands. On mobile these open the sidebar (the sidebar is the primary
+  // navigation surface; view-specific switching isn't available on mobile).
+  useEffect(() => {
+    const onSelectView = () => setSidebarOpen(true);
+    const onToggleSidebar = () => setSidebarOpen((v) => !v);
+    window.addEventListener("nexote:select-view", onSelectView);
+    window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
+    return () => {
+      window.removeEventListener("nexote:select-view", onSelectView);
+      window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
+    };
+  }, []);
+
   // Execute a move chosen in the MoveToDialog. Within the active vault uses
   // moveNote (path change); to another vault uses moveNoteToVault.
   const performMoveTo = useCallback(

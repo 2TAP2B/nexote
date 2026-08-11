@@ -78,7 +78,7 @@ export default function MobileSidebar({ onClose, onControlsReady }: Props) {
         </div>
 
         <div
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="nexote-sidebar min-h-0 flex-1 overflow-y-auto"
           style={{ color: "var(--mob-text)" }}
         >
           <FileTree

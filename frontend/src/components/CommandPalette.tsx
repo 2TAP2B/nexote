@@ -416,7 +416,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </ul>
 
         {/* Footer with hints */}
-        <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground/70">
+        <div className="kbd-hints flex items-center gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground/70">
           <span className="flex items-center gap-1">
             <kbd className="rounded border border-border px-1 py-0.5">↑↓</kbd>
             navigate

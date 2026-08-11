@@ -628,7 +628,38 @@ body {
   --foreground: var(--mob-text);
   --muted-foreground: var(--mob-muted);
   --border: var(--mob-surface);
+  --sidebar: var(--mob-bg);
+  --icon-rail: var(--mob-bg);
+  --tab-active: var(--mob-surface);
   color: var(--mob-text);
+}
+
+/* Mobile sidebar (FileTree inside the slide-in panel): larger fonts and
+ * the mobile palette so notes/folders are easy to tap. */
+.mob-shell-root .nexote-sidebar,
+.mob-shell-root .nexote-sidebar * {
+  font-size: 15px;
+}
+.mob-shell-root .nexote-sidebar li > div,
+.mob-shell-root .nexote-sidebar button {
+  min-height: 40px;
+}
+
+/* Mobile command palette: bigger touch targets, taller results, no
+ * keyboard-hint footer (touch devices don't use ↑↓/↵). */
+.mob-shell-root [aria-label="Command palette"] {
+  max-width: 100%;
+}
+.mob-shell-root [aria-label="Command palette"] ul {
+  max-height: 60vh;
+}
+.mob-shell-root [aria-label="Command palette"] li button {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  font-size: 15px;
+}
+.mob-shell-root [aria-label="Command palette"] .kbd-hints {
+  display: none;
 }
 
 /* Fullscreen editor: the .ProseMirror padding is reduced on mobile so the
