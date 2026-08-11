@@ -10,12 +10,12 @@ type TopBarProps = {
   onOpenDashboard: () => void;
 };
 
-function replaceOrAddH1(body: string, title: string): string {
-  const h1 = `# ${title}`;
-  if (/^# .+$/m.test(body)) {
-    return body.replace(/^# .+$/m, h1);
+function replaceOrAddTitleHeading(body: string, title: string): string {
+  const heading = `## ${title}`;
+  if (/^##? .+$/m.test(body)) {
+    return body.replace(/^##? .+$/m, heading);
   }
-  return body ? `${h1}\n\n${body}` : h1;
+  return body ? `${heading}\n\n${body}` : heading;
 }
 
 export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) {
@@ -58,7 +58,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
     const t = titleDraft.trim() || "Untitled";
     const note = notesById[renamingId];
     if (t !== note?.title && note) {
-      void save(renamingId, { title: t, body: replaceOrAddH1(note.body, t) });
+      void save(renamingId, { title: t, body: replaceOrAddTitleHeading(note.body, t) });
     }
     setRenamingId(null);
   };

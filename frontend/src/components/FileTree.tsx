@@ -21,6 +21,9 @@ import {
   Hash,
   Heart,
   Home,
+  Image as ImageIcon,
+  LayoutGrid,
+  List,
   ListTodo,
   Music,
   Settings2,
@@ -30,21 +33,22 @@ import {
   Star,
   Tag as TagIcon,
   Trash2,
+  X,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
-import { type FolderMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 
 import { type SidebarView } from "./Ribbon";
 
-function replaceOrAddH1(body: string, title: string): string {
-  const h1 = `# ${title}`;
-  if (/^# .+$/m.test(body)) {
-    return body.replace(/^# .+$/m, h1);
+function replaceOrAddTitleHeading(body: string, title: string): string {
+  const heading = `## ${title}`;
+  if (/^##? .+$/m.test(body)) {
+    return body.replace(/^##? .+$/m, heading);
   }
-  return body ? `${h1}\n\n${body}` : h1;
+  return body ? `${heading}\n\n${body}` : heading;
 }
 
 const iconMap: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
@@ -156,11 +160,13 @@ export type TreeControls = {
 type FileTreeProps = {
   collapsed: boolean;
   view?: SidebarView;
+  selectedTag?: string | null;
+  onSelectTagConsumed?: () => void;
   onControlsReady?: (c: TreeControls) => void;
   onSelectView?: (view: SidebarView) => void;
 };
 
-export default function FileTree({ collapsed, view = "tree", onControlsReady, onSelectView }: FileTreeProps) {
+export default function FileTree({ collapsed, view = "tree", selectedTag, onSelectTagConsumed, onControlsReady, onSelectView }: FileTreeProps) {
   const {
     notes,
     folders,
@@ -226,6 +232,7 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
     journal: "journal",
     tags: "tags",
     tasks: "tasks",
+    images: "images",
   };
 
   // Shortcuts nav list (sorted by updatedAt desc to match the detailed view)
@@ -366,6 +373,10 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
     open: boolean;
     parentPath?: string;
   }>({ open: false });
+
+  // Move-to dialog state: the note being moved. The dialog lets the user pick
+  // a destination folder (in any vault) or another vault entirely.
+  const [moveTo, setMoveTo] = useState<{ noteId: string } | null>(null);
 
   // Vault icon picker state
   const [vaultIconPicker, setVaultIconPicker] = useState<{
@@ -768,7 +779,7 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
       if (!cached) return;
       await save(id, {
         title: newTitle,
-        body: replaceOrAddH1(cached.body, newTitle),
+        body: replaceOrAddTitleHeading(cached.body, newTitle),
       });
     },
     [notesById, save, renameVault],
@@ -780,6 +791,28 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
       void moveNote(id, path);
     },
     [moveNote],
+  );
+
+  // Open the Move-to dialog from a note's context menu.
+  const handleMoveTo = useCallback((id: string) => {
+    setMoveTo({ noteId: id });
+  }, []);
+
+  // Execute the move chosen in the dialog. Moving within the active vault uses
+  // moveNote (path change); moving to another vault uses moveNoteToVault.
+  const performMoveTo = useCallback(
+    async (dstVaultId: string, dstPath: string) => {
+      const id = moveTo?.noteId;
+      if (!id) return;
+      setMoveTo(null);
+      if (dstVaultId === (activeVault?.id ?? "")) {
+        await moveNote(id, dstPath);
+      } else {
+        if (activeVault?.id) switchVault(activeVault.id);
+        await moveNoteToVault(id, dstVaultId);
+      }
+    },
+    [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
   );
 
   // Delete a folder via context, then refresh.
@@ -927,6 +960,8 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
               vaults={vaults}
               activeId={activeId}
               notesById={notesById}
+              initialSelectedTag={selectedTag}
+              onInitialTagConsumed={onSelectTagConsumed}
               treeSelectedNav={treeSelectedNav}
               setTreeSelectedNav={setTreeSelectedNav}
               onOpenNote={openNoteInVault}
@@ -943,6 +978,12 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
               setTreeSelectedNav={setTreeSelectedNav}
               onOpenNote={openNoteInVault}
               onToggle={toggleTaskItem}
+            />
+          ) : view === "images" ? (
+            <ImagesView
+              vaults={vaults}
+              onOpenNote={openNoteInVault}
+              onOpenJournalNote={openJournalNote}
             />
           ) : view === "tree" && drillPath !== null && treeMode !== "advanced" ? (
             <DrillView
@@ -963,6 +1004,7 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
               setRenaming={setRenaming}
               onRename={handleRename}
               onMoveNote={handleMoveNote}
+              onMoveTo={handleMoveTo}
               onBack={() => setDrillPath(null)}
               onDrillInto={setDrillPath}
             />
@@ -995,6 +1037,7 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
                 setRenaming={setRenaming}
                 onRename={handleRename}
                 onMoveNote={handleMoveNote}
+                onMoveTo={handleMoveTo}
                 onDeleteFolder={handleDeleteFolder}
                 onNewNoteInFolder={(path) => void create({ path })}
                 onNewFolderInFolder={(path) => openFolderDialog(path)}
@@ -1083,6 +1126,7 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
                         setRenaming={setRenaming}
                         onRename={handleRename}
                         onMoveNote={handleMoveNote}
+                        onMoveTo={handleMoveTo}
                         onDeleteFolder={handleDeleteFolder}
                         onNewNoteInFolder={(path) => void create({ path })}
                         onNewFolderInFolder={(path) => openFolderDialog(path)}
@@ -1136,6 +1180,7 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
                           switchVault(vault.id);
                           void moveNote(id, path);
                         }}
+                        onMoveTo={handleMoveTo}
                         onDeleteFolder={(path) => {
                           switchVault(vault.id);
                           void removeFolder(path);
@@ -1259,6 +1304,15 @@ export default function FileTree({ collapsed, view = "tree", onControlsReady, on
         onCreate={handleCreateFolder}
       />
 
+      <MoveToDialog
+        open={moveTo !== null}
+        vaults={vaults}
+        allVaultData={allVaultData}
+        activeVaultId={activeVault?.id ?? ""}
+        onClose={() => setMoveTo(null)}
+        onMove={performMoveTo}
+      />
+
       {ctxMenu && (
         <ContextMenu
           x={ctxMenu.x}
@@ -1341,6 +1395,7 @@ type TreeChildProps = {
   setRenaming: (r: { id: string; value: string } | null) => void;
   onRename: (id: string, title: string) => void;
   onMoveNote: (id: string, path: string) => void;
+  onMoveTo?: (id: string) => void;
   onDeleteFolder: (path: string) => void;
   onNewNoteInFolder: (path: string) => void;
   onNewFolderInFolder: (path: string) => void;
@@ -1530,9 +1585,8 @@ function NoteItem(
     setRenaming,
     onRename,
     onMoveNote,
+    onMoveTo,
     onAddTag,
-    onRemoveTag,
-    noteTags,
   } = props;
 
   const isRenaming = renaming?.id === note.id;
@@ -1563,11 +1617,13 @@ function NoteItem(
               icon: <Copy className="h-4 w-4" />,
               onClick: () => onCopy(note.id),
             },
-            {
-              label: "Move to root",
-              icon: <FolderInput className="h-4 w-4" />,
-              onClick: () => onMoveNote(note.id, ""),
-            },
+            ...(onMoveTo
+              ? [{
+                  label: "Move to…",
+                  icon: <FolderInput className="h-4 w-4" />,
+                  onClick: () => onMoveTo(note.id),
+                }]
+              : []),
             {
               label: isShortcut ? "Remove shortcut" : "Add shortcut",
               icon: isShortcut
@@ -1587,15 +1643,6 @@ function NoteItem(
               icon: <Hash className="h-4 w-4" />,
               onClick: () => onAddTag(note.id),
             });
-          }
-          if (onRemoveTag && noteTags) {
-            for (const tag of noteTags(note.id)) {
-              items.push({
-                label: `Remove #${tag}`,
-                icon: <TagIcon className="h-4 w-4" />,
-                onClick: () => onRemoveTag(note.id, tag),
-              });
-            }
           }
           items.push(
             { label: "", onClick: () => {}, separator: true },
@@ -1712,6 +1759,7 @@ function BookmarksList({
   setRenaming,
   onRename,
   onMoveNote,
+  onMoveTo,
 }: {
   notes: { id: string; title: string; path: string }[];
   activeId: string | null;
@@ -1730,6 +1778,7 @@ function BookmarksList({
   setRenaming: (r: { id: string; value: string } | null) => void;
   onRename: (id: string, title: string) => void;
   onMoveNote: (id: string, path: string) => void;
+  onMoveTo?: (id: string) => void;
 }) {
   const sorted = [...notes].sort((a, b) =>
     a.title.localeCompare(b.title),
@@ -1764,6 +1813,7 @@ function BookmarksList({
           setRenaming={setRenaming}
           onRename={onRename}
           onMoveNote={onMoveNote}
+          onMoveTo={onMoveTo}
           isFolderOpen={() => false}
           setOpenMap={() => {}}
           sorted={false}
@@ -2301,6 +2351,7 @@ function DrillView({
   setRenaming,
   onRename,
   onMoveNote,
+  onMoveTo,
   onBack,
   onDrillInto,
 }: {
@@ -2321,6 +2372,7 @@ function DrillView({
   setRenaming: (r: { id: string; value: string } | null) => void;
   onRename: (id: string, title: string) => void;
   onMoveNote: (id: string, path: string) => void;
+  onMoveTo: (id: string) => void;
   onBack: () => void;
   onDrillInto: (path: string) => void;
 }) {
@@ -2419,19 +2471,20 @@ function DrillView({
             onContextMenu={onContextMenu}
             renaming={renaming}
             setRenaming={setRenaming}
-            onRename={onRename}
-            onMoveNote={onMoveNote}
-            isFolderOpen={() => false}
-            setOpenMap={() => {}}
-            sorted={false}
-            onFolderDragOver={() => {}}
-            onFolderDrop={() => {}}
-            dragOverPath={null}
-            onDeleteFolder={() => {}}
-            onNewNoteInFolder={() => {}}
-            onNewFolderInFolder={() => {}}
-            onDrillInto={() => {}}
-          />
+          onRename={onRename}
+          onMoveNote={onMoveNote}
+          onMoveTo={onMoveTo}
+          isFolderOpen={() => false}
+          setOpenMap={() => {}}
+          sorted={false}
+          onFolderDragOver={() => {}}
+          onFolderDrop={() => {}}
+          dragOverPath={null}
+          onDeleteFolder={() => {}}
+          onNewNoteInFolder={() => {}}
+          onNewFolderInFolder={() => {}}
+          onDrillInto={() => {}}
+        />
         ))}
         {folderNotes.length === 0 && subFolders.length === 0 && (
           <li className="px-3 py-2 text-xs text-muted-foreground/50">
@@ -2586,6 +2639,7 @@ function RecentFilesList({
   setRenaming,
   onRename,
   onMoveNote,
+  onMoveTo,
 }: {
   notes: { id: string; title: string; path: string; updatedAt: string }[];
   activeId: string | null;
@@ -2604,6 +2658,7 @@ function RecentFilesList({
   setRenaming: (r: { id: string; value: string } | null) => void;
   onRename: (id: string, title: string) => void;
   onMoveNote: (id: string, path: string) => void;
+  onMoveTo: (id: string) => void;
 }) {
   const recent = [...notes]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -2635,6 +2690,7 @@ function RecentFilesList({
           setRenaming={setRenaming}
           onRename={onRename}
           onMoveNote={onMoveNote}
+          onMoveTo={onMoveTo}
           isFolderOpen={() => false}
           setOpenMap={() => {}}
           sorted={false}
@@ -2659,6 +2715,8 @@ function TagsView({
   vaults,
   activeId,
   notesById,
+  initialSelectedTag,
+  onInitialTagConsumed,
   treeSelectedNav,
   setTreeSelectedNav,
   onOpenNote,
@@ -2672,6 +2730,8 @@ function TagsView({
   vaults: VaultMeta[];
   activeId: string | null;
   notesById: Record<string, { body?: string; title?: string }>;
+  initialSelectedTag?: string | null;
+  onInitialTagConsumed?: () => void;
   treeSelectedNav?: string | null;
   setTreeSelectedNav?: (nav: string | null) => void;
   onOpenNote: (vaultId: string, noteId: string) => void;
@@ -2702,6 +2762,15 @@ function TagsView({
   }, [tagsByVault, vaults]);
 
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  // Apply a tag selected from outside (e.g. clicking a #tag pill in the
+  // editor) once, then let the parent clear the pending request.
+  useEffect(() => {
+    if (initialSelectedTag) {
+      setSelectedTag(initialSelectedTag);
+      onInitialTagConsumed?.();
+    }
+  }, [initialSelectedTag, onInitialTagConsumed]);
 
   const matchingNotes = useMemo(() => {
     if (!selectedTag) return [];
@@ -3007,6 +3076,432 @@ function TasksView({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// --- Images view ---
+// A gallery of every image across all vaults, newest-first. Tiles open a
+// lightbox with insert/copy/open/delete actions. Refreshes on activation and
+// when the editor dispatches nexote:image-uploaded.
+type ImageItem = { vaultId: string; vaultName: string; meta: ImageMeta };
+
+function ImagesView({
+  vaults,
+  onOpenNote,
+  onOpenJournalNote,
+}: {
+  vaults: VaultMeta[];
+  onOpenNote: (vaultId: string, noteId: string) => void;
+  onOpenJournalNote: (noteId: string) => void;
+}) {
+  const [items, setItems] = useState<ImageItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState<ImageItem | null>(null);
+  const [mode, setMode] = useState<"gallery" | "list">(() => {
+    if (typeof window === "undefined") return "gallery";
+    return window.localStorage.getItem("nexote-images-view") === "list" ? "list" : "gallery";
+  });
+
+  // Persist the gallery/list choice across view switches and reloads.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("nexote-images-view", mode);
+    } catch {
+      // storage unavailable — ignore
+    }
+  }, [mode]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const all: ImageItem[] = [];
+    // Journal images use the "journal" pseudo-vault (see backend resolveStore).
+    const queries = [
+      ...vaults.map(async (v) => {
+        const res = await api.listImages(v.id);
+        for (const meta of res.images ?? []) {
+          all.push({ vaultId: v.id, vaultName: v.name, meta });
+        }
+      }),
+      api.listImages("journal").then((res) => {
+        for (const meta of res.images ?? []) {
+          all.push({ vaultId: "journal", vaultName: "Journal", meta });
+        }
+      }),
+    ];
+    await Promise.all(
+      queries.map((p) => p.catch((err) => console.error("[nexote-images]", err))),
+    );
+    all.sort((a, b) => b.meta.updatedAt.localeCompare(a.meta.updatedAt));
+    setItems(all);
+    setLoading(false);
+  }, [vaults]);
+
+  useEffect(() => {
+    void load();
+    const onUploaded = () => void load();
+    window.addEventListener("nexote:image-uploaded", onUploaded);
+    return () => window.removeEventListener("nexote:image-uploaded", onUploaded);
+  }, [load]);
+
+  const insertImage = (item: ImageItem) => {
+    window.dispatchEvent(
+      new CustomEvent("nexote:insert-image", { detail: { url: item.meta.url } }),
+    );
+  };
+
+  const copyMarkdown = async (item: ImageItem) => {
+    try {
+      await navigator.clipboard.writeText(`![${item.meta.name}](${item.meta.url})`);
+    } catch {
+      // clipboard unavailable — ignore
+    }
+  };
+
+  const deleteImage = async (item: ImageItem) => {
+    if (!window.confirm(`Delete ${item.meta.name}?`)) return;
+    try {
+      const rel = item.meta.path ? `${item.meta.path}/${item.meta.name}` : item.meta.name;
+      await api.removeImage(item.vaultId, rel);
+      if (preview?.meta.name === item.meta.name) setPreview(null);
+      void load();
+    } catch (err) {
+      console.error("[nexote-images]", err);
+    }
+  };
+
+  const buttonClass =
+    "inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50";
+
+  const viewToggle = (
+    <div className="mb-1 flex items-center justify-end px-1">
+      <div className="flex overflow-hidden rounded-md border border-border/70">
+        <button
+          type="button"
+          aria-label="Gallery view"
+          title="Gallery view"
+          onClick={() => setMode("gallery")}
+          className="flex h-6 w-7 items-center justify-center transition-colors hover:bg-white/5"
+          style={
+            mode === "gallery"
+              ? { color: "var(--primary)", background: "color-mix(in oklab, var(--primary) 12%, transparent)" }
+              : { color: "var(--muted-foreground)", opacity: 0.7 }
+          }
+        >
+          <LayoutGrid size={13} />
+        </button>
+        <button
+          type="button"
+          aria-label="List view"
+          title="List view"
+          onClick={() => setMode("list")}
+          className="flex h-6 w-7 items-center justify-center transition-colors hover:bg-white/5"
+          style={
+            mode === "list"
+              ? { color: "var(--primary)", background: "color-mix(in oklab, var(--primary) 12%, transparent)" }
+              : { color: "var(--muted-foreground)", opacity: 0.7 }
+          }
+        >
+          <List size={13} />
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="pt-1">
+      {!loading && items.length > 0 && viewToggle}
+      {loading ? (
+        <div className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
+          Loading images…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+          <ImageIcon size={20} style={{ color: "var(--muted-foreground)", opacity: 0.6 }} />
+          <div className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+            No images yet. Paste or upload an image into a note and it will
+            appear here.
+          </div>
+        </div>
+      ) : mode === "gallery" ? (
+        <div className="grid grid-cols-2 gap-1 px-1">
+          {items.map((item) => (
+            <button
+              key={`${item.vaultId}:${item.meta.name}`}
+              type="button"
+              onClick={() => setPreview(item)}
+              className="group relative overflow-hidden rounded-md border border-border/60 bg-muted/20 transition-colors hover:border-border"
+              title={`${item.meta.name} · ${item.vaultName}`}
+            >
+              <img
+                src={item.meta.url}
+                alt={item.meta.name}
+                className="aspect-square w-full object-cover"
+                loading="lazy"
+              />
+              <span
+                className="absolute inset-x-0 bottom-0 truncate bg-black/50 px-1.5 py-0.5 text-left text-[10px] text-white"
+              >
+                {item.vaultName}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <ul>
+          {items.map((item) => (
+            <li key={`${item.vaultId}:${item.meta.name}`}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setPreview(item)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setPreview(item);
+                  }
+                }}
+                className="group flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 transition-colors hover:bg-white/5"
+              >
+                <img
+                  src={item.meta.url}
+                  alt={item.meta.name}
+                  className="h-10 w-10 shrink-0 rounded border border-border/60 object-cover"
+                  loading="lazy"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-medium text-foreground">
+                    {item.meta.name}
+                  </div>
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {item.vaultName} · {item.meta.path || "root"} ·{" "}
+                    {formatTime(item.meta.updatedAt)}
+                    {item.meta.usedBy && item.meta.usedBy.length > 0
+                      ? ` · in ${item.meta.usedBy.length} note${item.meta.usedBy.length === 1 ? "" : "s"}`
+                      : ""}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    title="Insert into note"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      insertImage(item);
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+                  >
+                    <SquareArrowOutUpRight size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Copy markdown link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyMarkdown(item);
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteImage(item);
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex-1 overflow-auto bg-black/10 p-2">
+              <img
+                src={preview.meta.url}
+                alt={preview.meta.name}
+                className="mx-auto max-h-[55vh] max-w-full object-contain"
+              />
+            </div>
+            <div className="shrink-0 border-t border-border px-3 py-2">
+              <div className="truncate text-xs font-medium text-foreground">
+                {preview.meta.name}
+              </div>
+              <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                {preview.vaultName} · {preview.meta.path || "root"} ·{" "}
+                {formatTime(preview.meta.updatedAt)}
+                {preview.meta.usedBy && preview.meta.usedBy.length > 0
+                  ? ` · in ${preview.meta.usedBy.length} note${preview.meta.usedBy.length === 1 ? "" : "s"}`
+                  : " · not in any note"}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" onClick={() => insertImage(preview)} className={buttonClass}>
+                  <SquareArrowOutUpRight size={13} />
+                  Insert into note
+                </button>
+                <button type="button" onClick={() => copyMarkdown(preview)} className={buttonClass}>
+                  <Copy size={13} />
+                  Copy link
+                </button>
+                {preview.meta.usedBy?.[0] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const note = preview.meta.usedBy![0];
+                      setPreview(null);
+                      if (preview.vaultId === "journal") {
+                        onOpenJournalNote(note.noteId);
+                      } else {
+                        onOpenNote(preview.vaultId, note.noteId);
+                      }
+                    }}
+                    className={buttonClass}
+                  >
+                    <FileText size={13} />
+                    Open note
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => deleteImage(preview)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10"
+                >
+                  <Trash2 size={13} />
+                  Delete
+                </button>
+                <button type="button" onClick={() => setPreview(null)} className={buttonClass}>
+                  <X size={13} />
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Move To Dialog ---
+// Lets the user move a note to a folder (in any vault) or to another vault.
+// Lists each vault with its folders as a collapsible tree of destinations.
+export function MoveToDialog({
+  open,
+  vaults,
+  allVaultData,
+  activeVaultId,
+  onClose,
+  onMove,
+}: {
+  open: boolean;
+  vaults: VaultMeta[];
+  allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
+  activeVaultId: string;
+  onClose: () => void;
+  onMove: (dstVaultId: string, dstPath: string) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const buttonBase =
+    "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/60";
+
+  const renderVault = (v: VaultMeta) => {
+    const data = allVaultData[v.id];
+    const folders = (data?.folders ?? []).slice().sort((a, b) =>
+      a.path.localeCompare(b.path),
+    );
+    return (
+      <div key={v.id} className="mb-1">
+        <div className="px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {v.name}
+        </div>
+        <button
+          type="button"
+          className={buttonBase}
+          onClick={() => onMove(v.id, "")}
+        >
+          <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="text-foreground">Root</span>
+          {v.id === activeVaultId && (
+            <span className="ml-auto text-[10px] text-muted-foreground">current</span>
+          )}
+        </button>
+        {folders.map((f) => (
+          <button
+            key={f.path}
+            type="button"
+            className={buttonBase}
+            style={{ paddingLeft: 24 + (f.path.split("/").length - 1) * 14 }}
+            onClick={() => onMove(v.id, f.path)}
+          >
+            <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-foreground">{f.path}</span>
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh] backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Move note to"
+        className="flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-border px-4 py-3">
+          <h2 className="text-base font-semibold text-foreground">Move note to…</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Pick a folder or vault.
+          </p>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {vaults.length === 0 && (
+            <div className="px-2 py-3 text-sm text-muted-foreground">
+              No vaults available.
+            </div>
+          )}
+          {vaults.map(renderVault)}
+        </div>
+        <div className="flex shrink-0 justify-end border-t border-border px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

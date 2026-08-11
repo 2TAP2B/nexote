@@ -18,12 +18,18 @@ export type AppSettings = {
   autosave: boolean;
   defaultTitle: string;
   editorFontSize: number;
+  aiBaseUrl: string;
+  aiApiKey: string;
+  aiModel: string;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
   autosave: true,
   defaultTitle: "Untitled",
   editorFontSize: 16,
+  aiBaseUrl: "",
+  aiApiKey: "",
+  aiModel: "",
 };
 
 type NotesContextValue = {
@@ -83,6 +89,7 @@ type NotesContextValue = {
   toggleTaskItem: (vaultId: string, noteId: string, line: number, checked: boolean) => Promise<void>;
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
   openJournalNote: (id: string) => Promise<void>;
+  isJournalNote: (id: string) => boolean;
   treeMode: "simple" | "advanced";
   setTreeMode: (mode: "simple" | "advanced") => void;
   settings: AppSettings;
@@ -90,6 +97,17 @@ type NotesContextValue = {
 };
 
 export const DASHBOARD_ID = "__dashboard__";
+
+// Append a tab id to the open-tab list, keeping the dashboard pinned first.
+// Dedupes inside the updater so concurrent opens (e.g. the daily note opened
+// twice in quick succession) can never produce two tabs for the same note.
+// Returns the same array reference when the id is already present.
+function appendOpenTab(tabs: string[], id: string): string[] {
+  if (tabs.includes(id)) return tabs;
+  return tabs[0] === DASHBOARD_ID
+    ? [tabs[0], id, ...tabs.slice(1)]
+    : [...tabs, id];
+}
 
 const NotesContext = createContext<NotesContextValue | null>(null);
 
@@ -296,11 +314,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
       if (!activeVaultId) return;
       setActiveId(id);
-      setOpenTabs((prev) =>
-        prev[0] === DASHBOARD_ID
-          ? [prev[0], id, ...prev.slice(1)]
-          : [...prev, id],
-      );
+      setOpenTabs((prev) => appendOpenTab(prev, id));
       if (!notesById[id]) {
         try {
           const note = await api.get(activeVaultId, id);
@@ -322,13 +336,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           const note = await api.get(vaultId, noteId);
           requestAnimationFrame(() => {
             setNotesById((prev) => ({ ...prev, [noteId]: note }));
-            setOpenTabs((prev) =>
-              prev.includes(noteId)
-                ? prev
-                : prev[0] === DASHBOARD_ID
-                  ? [prev[0], noteId, ...prev.slice(1)]
-                  : [...prev, noteId],
-            );
+            setOpenTabs((prev) => appendOpenTab(prev, noteId));
             setActiveId(noteId);
           });
         } catch (e) {
@@ -346,11 +354,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       journalIdsRef.current.add(id);
       setActiveId(id);
-      setOpenTabs((prev) =>
-        prev[0] === DASHBOARD_ID
-          ? [prev[0], id, ...prev.slice(1)]
-          : prev.includes(id) ? prev : [...prev, id],
-      );
+      setOpenTabs((prev) => appendOpenTab(prev, id));
       if (!notesById[id]) {
         try {
           const note = await api.journalGet(id);
@@ -392,11 +396,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         });
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
-        setOpenTabs((prev) =>
-          prev[0] === DASHBOARD_ID
-            ? [prev[0], note.id, ...prev.slice(1)]
-            : [...prev, note.id],
-        );
+        setOpenTabs((prev) => appendOpenTab(prev, note.id));
         setActiveId(note.id);
         window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
       } catch (e) {
@@ -415,11 +415,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const note = await api.copy(activeVaultId, id);
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
-        setOpenTabs((prev) =>
-          prev[0] === DASHBOARD_ID
-            ? [prev[0], note.id, ...prev.slice(1)]
-            : [...prev, note.id],
-        );
+        setOpenTabs((prev) => appendOpenTab(prev, note.id));
         setActiveId(note.id);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to copy note");
@@ -627,18 +623,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       journalIdsRef.current.add(note.id);
       setNotesById((prev) => ({ ...prev, [note.id]: note }));
       void refreshJournal();
-      if (!openTabs.includes(note.id)) {
-        setOpenTabs((prev) =>
-          prev[0] === DASHBOARD_ID
-            ? [prev[0], note.id, ...prev.slice(1)]
-            : [...prev, note.id],
-        );
-      }
+      setOpenTabs((prev) => appendOpenTab(prev, note.id));
       setActiveId(note.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to open daily journal");
     }
-  }, [openTabs]);
+  }, [refreshJournal]);
 
   const remove = useCallback(
     async (id: string) => {
@@ -793,6 +783,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       toggleTaskItem,
       openNoteInVault,
       openJournalNote,
+      isJournalNote: (id: string) => journalIdsRef.current.has(id),
       treeMode,
       setTreeMode,
       settings,

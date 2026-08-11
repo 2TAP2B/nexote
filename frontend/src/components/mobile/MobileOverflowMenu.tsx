@@ -1,0 +1,102 @@
+"use client";
+
+import {
+  Bookmark,
+  BookmarkCheck,
+  Copy,
+  Edit3,
+  FolderInput,
+  Hash,
+  SquareArrowOutUpRight,
+  Star,
+  Trash2,
+} from "lucide-react";
+
+import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
+import { useNotes } from "@/lib/notes-context";
+
+type Props = {
+  x: number;
+  y: number;
+  noteId: string;
+  onClose: () => void;
+  onDelete: (id: string) => void;
+  onMoveTo: (id: string) => void;
+  onRename: (id: string) => void;
+};
+
+// The ⋮ overflow menu for the currently open note. Mirrors the desktop
+// note-row context menu, dispatching to the same NotesProvider actions.
+export default function MobileOverflowMenu({
+  x,
+  y,
+  noteId,
+  onClose,
+  onDelete,
+  onMoveTo,
+  onRename,
+}: Props) {
+  const {
+    bookmarks,
+    shortcuts,
+    toggleBookmark,
+    toggleShortcut,
+    copyNote,
+    openTab,
+  } = useNotes();
+
+  const isBookmarked = bookmarks.has(noteId);
+  const isShortcut = shortcuts.has(noteId);
+
+  const items: MenuItem[] = [
+    {
+      label: "Open in new tab",
+      icon: <SquareArrowOutUpRight className="h-4 w-4" />,
+      onClick: () => void openTab(noteId),
+    },
+    { label: "", onClick: () => {}, separator: true },
+    {
+      label: "Make a copy",
+      icon: <Copy className="h-4 w-4" />,
+      onClick: () => void copyNote(noteId),
+    },
+    {
+      label: "Move to…",
+      icon: <FolderInput className="h-4 w-4" />,
+      onClick: () => onMoveTo(noteId),
+    },
+    {
+      label: isShortcut ? "Remove shortcut" : "Add shortcut",
+      icon: isShortcut ? <BookmarkCheck className="h-4 w-4" /> : <Star className="h-4 w-4" />,
+      onClick: () => toggleShortcut(noteId),
+    },
+    {
+      label: isBookmarked ? "Remove from bookmarks" : "Add to bookmarks",
+      icon: <Bookmark className="h-4 w-4" />,
+      onClick: () => toggleBookmark(noteId),
+    },
+    {
+      label: "Add tag…",
+      icon: <Hash className="h-4 w-4" />,
+      onClick: () => {
+        // Tag input deferred — close for now; can wire later.
+      },
+    },
+    { label: "", onClick: () => {}, separator: true },
+    {
+      label: "Rename",
+      icon: <Edit3 className="h-4 w-4" />,
+      onClick: () => onRename(noteId),
+    },
+    {
+      label: "Delete",
+      icon: <Trash2 className="h-4 w-4" />,
+      danger: true,
+      onClick: () => onDelete(noteId),
+    },
+  ];
+
+  return (
+    <ContextMenu x={x} y={y} items={items} onClose={onClose} />
+  );
+}

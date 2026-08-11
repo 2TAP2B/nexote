@@ -7,8 +7,11 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"nexote/notes"
@@ -55,6 +58,12 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/vaults/{vaultId}/folders", h.createFolder)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/folders/{path...}", h.deleteFolder)
 
+	// Vault-scoped image routes
+	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/{id}/images", h.uploadImage)
+	mux.HandleFunc("GET /api/vaults/{vaultId}/images", h.listImages)
+	mux.HandleFunc("GET /api/vaults/{vaultId}/images/{path...}", h.getImage)
+	mux.HandleFunc("DELETE /api/vaults/{vaultId}/images/{path...}", h.deleteImage)
+
 	// Vault-scoped bookmark routes
 	mux.HandleFunc("GET /api/vaults/{vaultId}/bookmarks", h.listBookmarks)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/bookmarks", h.addBookmark)
@@ -83,6 +92,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/tasks", h.listTasks)
 	mux.HandleFunc("PUT /api/tasks", h.toggleTask)
 
+	// AI proxy routes (vault-independent, forward to OpenAI-compatible APIs)
+	mux.HandleFunc("POST /api/ai/chat", h.aiChat)
+	mux.HandleFunc("POST /api/ai/test", h.aiTest)
+
 	return h.cors(mux)
 }
 
@@ -104,6 +117,15 @@ func (h *Handler) cors(next http.Handler) http.Handler {
 // resolveStore returns the store + bookmarks for the vault in the path.
 func (h *Handler) resolveStore(r *http.Request) (*notes.Store, *notes.Bookmarks, error) {
 	vaultId := r.PathValue("vaultId")
+	// The journal is a vault-independent store. It uses the pseudo-vault id
+	// "journal" so the image routes (which need a vault id for URLs) work for
+	// journal notes too. Real vault ids never collide with this literal.
+	if vaultId == "journal" {
+		if h.JournalStore == nil {
+			return nil, nil, notes.ErrNotFound
+		}
+		return h.JournalStore, nil, nil
+	}
 	store, err := h.Registry.Store(vaultId)
 	if err != nil {
 		return nil, nil, err
@@ -343,6 +365,114 @@ func (h *Handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	folderPath := r.PathValue("path")
 	if err := store.DeleteFolder(folderPath); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Images ---
+
+// maxImageBytes caps uploads at 20MB.
+const maxImageBytes = 20 << 20
+
+// imageMimeByExt maps image extensions to their Content-Type. Used as a
+// fallback when http.DetectContentType can't identify the format (e.g. svg).
+var imageMimeByExt = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".avif": "image/avif",
+	".svg":  "image/svg+xml",
+	".bmp":  "image/bmp",
+}
+
+func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes)
+	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid upload: %w", err))
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("missing file: %w", err))
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(data) == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("empty file"))
+		return
+	}
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(header.Filename)), ".")
+	if ext == "" {
+		writeError(w, http.StatusBadRequest, errors.New("file has no extension"))
+		return
+	}
+	meta, err := store.SaveImage(r.PathValue("id"), ext, r.PathValue("vaultId"), data)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, meta)
+}
+
+func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	images, err := store.ListImages(r.PathValue("vaultId"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]notes.ImageMeta{"images": images})
+}
+
+func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	data, err := store.ReadImage(r.PathValue("path"))
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	mime := http.DetectContentType(data)
+	if !strings.HasPrefix(mime, "image/") {
+		if m, ok := imageMimeByExt[strings.ToLower(filepath.Ext(r.PathValue("path")))]; ok {
+			mime = m
+		} else {
+			mime = "application/octet-stream"
+		}
+	}
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(data)
+}
+
+func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	if err := store.DeleteImage(r.PathValue("path")); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

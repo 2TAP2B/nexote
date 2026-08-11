@@ -29,6 +29,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
+import { api } from "@/lib/api";
 
 type Props = {
   open: boolean;
@@ -37,7 +38,7 @@ type Props = {
   onColorSchemeChange?: (scheme: string) => void;
 };
 
-type CategoryId = "appearance" | "vaults" | "editor" | "shortcuts" | "about";
+type CategoryId = "appearance" | "vaults" | "editor" | "ai" | "shortcuts" | "about";
 
 const CATEGORIES: {
   id: CategoryId;
@@ -47,6 +48,7 @@ const CATEGORIES: {
   { id: "appearance", label: "Appearance", icon: <Palette className="h-4 w-4" /> },
   { id: "vaults", label: "Vaults", icon: <FolderPlus className="h-4 w-4" /> },
   { id: "editor", label: "Editor", icon: <PenLine className="h-4 w-4" /> },
+  { id: "ai", label: "AI", icon: <Zap className="h-4 w-4" /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard className="h-4 w-4" /> },
   { id: "about", label: "About", icon: <Info className="h-4 w-4" /> },
 ];
@@ -85,6 +87,8 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [aiTestState, setAiTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [aiTestMessage, setAiTestMessage] = useState("");
 
   useEffect(() => setMounted(true), []);
 
@@ -112,6 +116,28 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
     await createVault(name, newVaultIcon);
     setNewVaultName("");
     setNewVaultIcon("Database");
+  };
+
+  const handleTestAI = async () => {
+    setAiTestState("testing");
+    setAiTestMessage("");
+    try {
+      const result = await api.testAI({
+        baseUrl: settings.aiBaseUrl,
+        apiKey: settings.aiApiKey,
+        model: settings.aiModel,
+      });
+      if (result.ok) {
+        setAiTestState("ok");
+        setAiTestMessage("Connection successful");
+      } else {
+        setAiTestState("error");
+        setAiTestMessage(result.error ?? "Connection failed");
+      }
+    } catch (err) {
+      setAiTestState("error");
+      setAiTestMessage(err instanceof Error ? err.message : "Connection failed");
+    }
   };
 
   const handleRename = async (id: string) => {
@@ -365,6 +391,82 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                     }
                     className="mt-2 w-full accent-[var(--primary)]"
                   />
+                </div>
+              </div>
+            )}
+
+            {activeCategory === "ai" && (
+              <div className="flex flex-col gap-3 p-4">
+                <SectionHeader icon={<Zap className="h-4 w-4" />} title="AI" />
+
+                <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                  Connect any OpenAI-compatible API (OpenAI, OpenRouter, Ollama,
+                  LM Studio…) to power the editor AI button. When no base URL is
+                  set the AI button is hidden.
+                </div>
+
+                {/* Base URL */}
+                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">API base URL</span>
+                  <span className="text-xs text-muted-foreground">
+                    e.g. https://api.openai.com/v1 or http://localhost:11434/v1
+                  </span>
+                  <input
+                    value={settings.aiBaseUrl}
+                    onChange={(e) => updateSettings({ aiBaseUrl: e.target.value })}
+                    placeholder="https://api.openai.com/v1"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                  />
+                </label>
+
+                {/* API key */}
+                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">API key</span>
+                  <span className="text-xs text-muted-foreground">
+                    Optional for local servers like Ollama
+                  </span>
+                  <input
+                    type="password"
+                    value={settings.aiApiKey}
+                    onChange={(e) => updateSettings({ aiApiKey: e.target.value })}
+                    placeholder="sk-…"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                  />
+                </label>
+
+                {/* Model */}
+                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">Model</span>
+                  <span className="text-xs text-muted-foreground">
+                    e.g. gpt-4o-mini, claude-sonnet-4, llama3.2
+                  </span>
+                  <input
+                    value={settings.aiModel}
+                    onChange={(e) => updateSettings({ aiModel: e.target.value })}
+                    placeholder="gpt-4o-mini"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                  />
+                </label>
+
+                {/* Test connection */}
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleTestAI()}
+                    disabled={aiTestState === "testing" || !settings.aiBaseUrl.trim()}
+                    className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {aiTestState === "testing" ? "Testing…" : "Test connection"}
+                  </button>
+                  {aiTestMessage && (
+                    <span
+                      className={`text-xs ${
+                        aiTestState === "ok" ? "text-green-500" : "text-red-500"
+                      }`}
+                    >
+                      {aiTestMessage}
+                    </span>
+                  )}
                 </div>
               </div>
             )}

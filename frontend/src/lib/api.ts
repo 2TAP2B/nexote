@@ -55,6 +55,20 @@ export type TaskItem = {
   updatedAt: string;
 };
 
+export type ImageNote = {
+  noteId: string;
+  title: string;
+};
+
+export type ImageMeta = {
+  name: string;
+  path: string;
+  url: string;
+  size: number;
+  updatedAt: string;
+  usedBy?: ImageNote[];
+};
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -219,5 +233,41 @@ export const api = {
     request<Note>("/api/tasks", {
       method: "PUT",
       body: JSON.stringify({ vaultId, noteId, line, checked }),
+    }),
+
+  // --- Images (vault-scoped) ---
+  uploadImage: async (vaultId: string, noteId: string, file: File) => {
+    // Multipart upload — the browser sets the boundary, so no Content-Type
+    // header is sent (request() forces application/json).
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${vaultBase(vaultId)}/notes/${noteId}/images`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body?.error) message = body.error;
+      } catch {
+        // ignore json parse errors
+      }
+      throw new ApiError(res.status, message);
+    }
+    return (await res.json()) as ImageMeta;
+  },
+  listImages: (vaultId: string) =>
+    request<{ images: ImageMeta[] }>(`${vaultBase(vaultId)}/images`),
+  removeImage: (vaultId: string, relPath: string) =>
+    request<void>(`${vaultBase(vaultId)}/images/${relPath}`, {
+      method: "DELETE",
+    }),
+
+  // --- AI (proxied through the backend to avoid CORS + key leakage) ---
+  testAI: (config: { baseUrl: string; apiKey: string; model: string }) =>
+    request<{ ok: boolean; error?: string }>("/api/ai/test", {
+      method: "POST",
+      body: JSON.stringify(config),
     }),
 };

@@ -276,6 +276,14 @@ func (r *VaultRegistry) MoveNote(srcVaultId, noteId, dstVaultId string) (Documen
 	newDoc.Meta.CreatedAt = now
 	newDoc.Meta.UpdatedAt = now
 
+	// Move any referenced image files into the destination vault and rewrite
+	// the image URLs to use the destination vault id.
+	migrated, err := srcStore.MigrateImagesTo(newDoc.Body, dstStore, dstVaultId)
+	if err != nil {
+		return Document{}, err
+	}
+	newDoc.Body = migrated
+
 	if err := dstStore.write(newDoc); err != nil {
 		return Document{}, err
 	}
