@@ -638,11 +638,11 @@ body {
  * the mobile palette so notes/folders are easy to tap. */
 .mob-shell-root .nexote-sidebar,
 .mob-shell-root .nexote-sidebar * {
-  font-size: 15px;
+  font-size: 17px;
 }
 .mob-shell-root .nexote-sidebar li > div,
 .mob-shell-root .nexote-sidebar button {
-  min-height: 40px;
+  min-height: 44px;
 }
 
 /* Mobile command palette: bigger touch targets, taller results, no

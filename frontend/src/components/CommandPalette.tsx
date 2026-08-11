@@ -279,7 +279,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         break;
       case "tag":
         window.dispatchEvent(
-          new CustomEvent("nexote:select-view", { detail: "tags" }),
+          new CustomEvent("nexote:select-tag", { detail: item.name }),
         );
         break;
     }

@@ -6,6 +6,7 @@ import CommandPalette from "@/components/CommandPalette";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
+import type { SidebarView } from "@/components/Ribbon";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
@@ -44,6 +45,11 @@ export default function MobileApp() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [treeControls, setTreeControls] = useState<TreeControls | null>(null);
   const [moveTo, setMoveTo] = useState<string | null>(null);
+  // Sidebar view + selected tag — lifted here so the CommandPalette can switch
+  // the view BEFORE the sidebar mounts (the event arrives while the sidebar is
+  // closed; we set the view then open the sidebar).
+  const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   // --- Navigation history stack (browser-like back/forward across notes) ---
   // past: notes visited before the current one (oldest first).
@@ -129,16 +135,28 @@ export default function MobileApp() {
   }, [activeId]);
 
   // The shared CommandPalette dispatches nexote:select-view and
-  // nexote:toggle-sidebar events for its "Go to …" / "Toggle sidebar"
-  // commands. On mobile these open the sidebar (the sidebar is the primary
-  // navigation surface; view-specific switching isn't available on mobile).
+  // nexote:select-tag events for its "Go to …" / "Toggle sidebar" commands.
+  // On mobile: set the sidebar view/tag FIRST, then open the sidebar so the
+  // correct view is already showing when the panel slides in.
   useEffect(() => {
-    const onSelectView = () => setSidebarOpen(true);
+    const onSelectView = (e: Event) => {
+      const detail = (e as CustomEvent).detail as SidebarView;
+      if (detail) setSidebarView(detail);
+      setSidebarOpen(true);
+    };
+    const onSelectTag = (e: Event) => {
+      const detail = (e as CustomEvent).detail as string;
+      if (detail) setSelectedTag(detail);
+      setSidebarView("tags");
+      setSidebarOpen(true);
+    };
     const onToggleSidebar = () => setSidebarOpen((v) => !v);
-    window.addEventListener("nexote:select-view", onSelectView);
+    window.addEventListener("nexote:select-view", onSelectView as EventListener);
+    window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     return () => {
-      window.removeEventListener("nexote:select-view", onSelectView);
+      window.removeEventListener("nexote:select-view", onSelectView as EventListener);
+      window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
     };
   }, []);
@@ -209,6 +227,10 @@ export default function MobileApp() {
           onClose={() => setSidebarOpen(false)}
           onControlsReady={setTreeControls}
           treeControls={treeControls}
+          view={sidebarView}
+          selectedTag={selectedTag}
+          onSelectView={setSidebarView}
+          onSelectTagConsumed={() => setSelectedTag(null)}
         />
       )}
 

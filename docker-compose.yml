@@ -1,0 +1,25 @@
+services:
+  nexote:
+    build: .
+    image: nexote:latest
+    container_name: nexote
+    ports:
+      # Single public port — Next proxies /api/* to the backend inside the
+      # container, so only 3000 needs to be mapped. Uncomment 8080 to hit the
+      # Go API directly.
+      - "3000:3000"
+      # - "8080:8080"
+    volumes:
+      # Notes are stored under NEXOTE_HOME (/data/nexote). Persist across
+      # container recreations. If the data dir must be owned by a specific UID,
+      # override user: -UUID -GUID alongside a bind mount we create and chown.
+      - nexote-data:/data/nexote
+    environment:
+      NEXOTE_HOME: /data/nexote
+      NEXOTE_PORT: "8080"
+      NEXOTE_BACKEND_URL: http://127.0.0.1:8080
+      PORT: "3000"
+    restart: unless-stopped
+
+volumes:
+  nexote-data:

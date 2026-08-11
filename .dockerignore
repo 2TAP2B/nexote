@@ -1,0 +1,19 @@
+# build context exclusion (keep it small; frontend/backend copied selectively)
+.git
+.direnv
+.next
+node_modules
+.notes-dev
+backend/nexote
+backend/nexote-backend
+backend/.notes-dev
+*.log
+.env
+.env.*
+.DS_Store
+result
+result-*
+README.md
+overview.md
+Dockerfile
+docker-compose.yml
