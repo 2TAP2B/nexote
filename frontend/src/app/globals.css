@@ -749,3 +749,25 @@ body {
 .mob-sidebar-backdrop[data-open="1"] {
   opacity: 1;
 }
+
+/* Mobile settings — inset divider lines between rows inside a group card.
+ * The divider is indented to align with the text start (past the icon). */
+.mob-settings-group > * + * {
+  border-top: 1px solid color-mix(in oklab, var(--mob-muted) 15%, transparent);
+  margin-left: 48px;
+  padding-left: 0;
+}
+/* Counteract the margin so the row content still spans full width. */
+.mob-settings-group > * + * {
+  margin-left: 0;
+  padding-left: 0;
+  position: relative;
+}
+.mob-settings-group > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 48px;
+  right: 0;
+  border-top: 1px solid color-mix(in oklab, var(--mob-muted) 15%, transparent);
+}

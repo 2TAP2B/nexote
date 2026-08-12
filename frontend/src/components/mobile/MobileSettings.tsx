@@ -616,8 +616,11 @@ function Group({ label, children }: { label?: string; children: React.ReactNode 
         </div>
       )}
       <div
-        className="overflow-hidden rounded-xl"
-        style={{ background: "var(--mob-card)" }}
+        className="mob-settings-group overflow-hidden rounded-xl"
+        style={{
+          background: "color-mix(in oklab, var(--mob-card) 60%, var(--mob-bg))",
+          border: "1px solid color-mix(in oklab, var(--mob-muted) 18%, transparent)",
+        }}
       >
         {children}
       </div>
