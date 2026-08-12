@@ -76,7 +76,7 @@ export default function MobileSidebar({
         aria-label="Close sidebar"
         onClick={onClose}
         className="absolute inset-0"
-        style={{ background: "rgba(0,0,0,0.5)" }}
+        style={{ background: "rgba(0,0,0,0.5)", touchAction: "none" }}
       />
 
       {/* Sidebar panel — slides in from the left. */}
