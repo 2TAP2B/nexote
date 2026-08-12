@@ -739,3 +739,13 @@ body {
 .mob-sidebar-panel[data-open="1"] {
   transform: translateX(0);
 }
+
+/* Backdrop opacity driven by data-open so the swipe hook can set
+ * style.opacity directly without React clobbering it. */
+.mob-sidebar-backdrop {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+.mob-sidebar-backdrop[data-open="1"] {
+  opacity: 1;
+}

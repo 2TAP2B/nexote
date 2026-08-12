@@ -79,11 +79,10 @@ export default function MobileSidebar({
       {/* Backdrop */}
       <div
         className="mob-sidebar-backdrop absolute inset-0"
+        data-open={open ? "1" : "0"}
         onClick={onClose}
         style={{
           background: "rgba(0,0,0,0.5)",
-          opacity: open ? 1 : 0,
-          transition: "opacity 0.28s ease",
           pointerEvents: open ? "auto" : "none",
           touchAction: "none",
         }}
