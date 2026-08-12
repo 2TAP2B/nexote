@@ -248,9 +248,13 @@ function RootPage({
   return (
     <Group label="General">
       <NavRow icon={<Palette size={18} />} label="Appearance" value={`${schemeLabel} · ${resolvedTheme}`} onClick={() => onNavigate("appearance")} />
+      <Divider />
       <NavRow icon={<FolderPlus size={18} />} label="Vaults" onClick={() => onNavigate("vaults")} />
+      <Divider />
       <NavRow icon={<PenLine size={18} />} label="Editor" onClick={() => onNavigate("editor")} />
+      <Divider />
       <NavRow icon={<Zap size={18} />} label="AI" onClick={() => onNavigate("ai")} />
+      <Divider />
       <NavRow icon={<Info size={18} />} label="About" onClick={() => onNavigate("about")} />
     </Group>
   );
@@ -272,14 +276,16 @@ function AppearancePage({
   return (
     <>
       <Group label="Color scheme">
-        {SCHEMES.map((s) => (
-          <SelectRow
-            key={s.value}
-            label={s.label}
-            selected={(colorScheme ?? "default") === s.value}
-            onSelect={() => onColorSchemeChange(s.value)}
-            swatch={s.swatch}
-          />
+        {SCHEMES.map((s, i) => (
+          <div key={s.value}>
+            {i > 0 && <Divider />}
+            <SelectRow
+              label={s.label}
+              selected={(colorScheme ?? "default") === s.value}
+              onSelect={() => onColorSchemeChange(s.value)}
+              swatch={s.swatch}
+            />
+          </div>
         ))}
       </Group>
       <Group label="Mode">
@@ -287,14 +293,16 @@ function AppearancePage({
           { value: "light", label: "Light", icon: <Sun size={18} /> },
           { value: "dark", label: "Dark", icon: <Moon size={18} /> },
           { value: "system", label: "System", icon: <Monitor size={18} /> },
-        ] as const).map((opt) => (
-          <SelectRow
-            key={opt.value}
-            label={opt.label}
-            icon={opt.icon}
-            selected={resolvedTheme === opt.value}
-            onSelect={() => onThemeChange(opt.value)}
-          />
+        ] as const).map((opt, i) => (
+          <div key={opt.value}>
+            {i > 0 && <Divider />}
+            <SelectRow
+              label={opt.label}
+              icon={opt.icon}
+              selected={resolvedTheme === opt.value}
+              onSelect={() => onThemeChange(opt.value)}
+            />
+          </div>
         ))}
       </Group>
     </>
@@ -339,8 +347,9 @@ function VaultsPage({
   return (
     <>
       <Group label="Your vaults">
-        {vaults.map((vault) => (
+        {vaults.map((vault, i) => (
           <div key={vault.id}>
+            {i > 0 && <Divider />}
             <div
               className="flex items-center gap-3 px-4"
               style={{ minHeight: 52 }}
@@ -549,6 +558,7 @@ function AIPage({
           onChange={(v) => updateSettings({ aiBaseUrl: v })}
           placeholder="https://api.openai.com/v1"
         />
+        <Divider />
         <FieldInput
           label="API key"
           hint="Optional for local servers like Ollama"
@@ -557,6 +567,7 @@ function AIPage({
           placeholder="sk-…"
           password
         />
+        <Divider />
         <FieldInput
           label="Model"
           hint="e.g. gpt-4o-mini, claude-sonnet-4, llama3.2"
@@ -596,7 +607,9 @@ function AboutPage() {
   return (
     <Group label="Info">
       <InfoRow label="App" value="Nexote" />
+      <Divider />
       <InfoRow label="Data location" value="~/.nexote" />
+      <Divider />
       <InfoRow label="Vaults directory" value="~/.nexote/vaults" />
     </Group>
   );
@@ -626,6 +639,10 @@ function Group({ label, children }: { label?: string; children: React.ReactNode 
       </div>
     </div>
   );
+}
+
+function Divider() {
+  return <div className="mob-settings-divider" />;
 }
 
 function NavRow({

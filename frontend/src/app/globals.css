@@ -750,12 +750,11 @@ body {
   opacity: 1;
 }
 
-/* Mobile settings — inset divider lines between rows inside a group card.
- * The divider is indented to align with the text start (past the icon). */
-.mob-settings-group > * + * {
-  border-top: 1px solid color-mix(in oklab, var(--mob-muted) 15%, transparent);
+/* Mobile settings — inset divider lines between rows inside a group card. */
+.mob-settings-divider {
+  height: 1px;
   margin-left: 48px;
-  padding-left: 0;
+  background: color-mix(in oklab, var(--mob-muted) 15%, transparent);
 }
 /* Counteract the margin so the row content still spans full width. */
 .mob-settings-group > * + * {
