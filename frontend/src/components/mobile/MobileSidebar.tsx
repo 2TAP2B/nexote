@@ -182,23 +182,25 @@ export default function MobileSidebar({
         </div>
 
         {/* Bottom toolbar — new note, new folder, expand/collapse folders,
-         * expand/collapse all vaults, settings */}
+         * expand/collapse all vaults, settings. Matches the top ribbon's
+         * design: same button size, colors, and active states. */}
         {view === "tree" && (
           <div
-            className="flex shrink-0 items-center gap-1 px-3 py-2"
+            className="shrink-0 flex items-center gap-1 overflow-x-auto no-scrollbar px-2"
             style={{
-              borderTop: "1px solid var(--mob-surface)",
+              paddingTop: 8,
               paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
+              borderTop: "1px solid var(--mob-surface)",
             }}
           >
-            <ToolButton label="New note" onClick={newNote}>
+            <RibbonBtn label="New note" onClick={newNote}>
               <FilePlus size={20} />
-            </ToolButton>
-            <ToolButton label="New folder" onClick={newFolder}>
+            </RibbonBtn>
+            <RibbonBtn label="New folder" onClick={newFolder}>
               <FolderPlus size={20} />
-            </ToolButton>
+            </RibbonBtn>
             <div className="flex-1" />
-            <ToolButton
+            <RibbonBtn
               label={
                 treeControls?.allExpanded
                   ? "Collapse all folders"
@@ -212,8 +214,8 @@ export default function MobileSidebar({
                   transform: treeControls?.allExpanded ? "none" : "rotate(180deg)",
                 }}
               />
-            </ToolButton>
-            <ToolButton
+            </RibbonBtn>
+            <RibbonBtn
               label={
                 treeControls?.allSectionsExpanded
                   ? "Collapse all vaults"
@@ -222,15 +224,15 @@ export default function MobileSidebar({
               onClick={() => treeControls?.toggleSectionsCollapse()}
             >
               <Expand size={20} />
-            </ToolButton>
-            <ToolButton
+            </RibbonBtn>
+            <RibbonBtn
               label="Settings"
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("nexote:open-settings"))
               }
             >
               <Settings size={20} />
-            </ToolButton>
+            </RibbonBtn>
           </div>
         )}
       </div>
@@ -238,7 +240,7 @@ export default function MobileSidebar({
   );
 }
 
-function ToolButton({
+function RibbonBtn({
   children,
   label,
   onClick,
@@ -253,8 +255,12 @@ function ToolButton({
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="flex h-11 w-11 items-center justify-center rounded-lg transition-colors active:scale-95"
-      style={{ color: "var(--mob-text)", background: "var(--mob-surface)" }}
+      className="flex shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95"
+      style={{
+        width: 38,
+        height: 38,
+        color: "var(--mob-muted)",
+      }}
     >
       {children}
     </button>
