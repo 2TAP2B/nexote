@@ -770,8 +770,8 @@ function ToggleRow({
         }}
       >
         <span
-          className="absolute top-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform"
-          style={{ transform: checked ? "translateX(26px)" : "translateX(2px)" }}
+          className="absolute left-0.5 top-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform"
+          style={{ transform: checked ? "translateX(24px)" : "translateX(0)" }}
         />
       </button>
     </div>
