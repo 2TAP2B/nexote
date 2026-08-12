@@ -152,11 +152,11 @@ export default function MobileSettings({
     >
       {/* Header */}
       <div
-        className="flex shrink-0 items-center justify-between px-4"
+        className="flex shrink-0 items-center justify-between px-3"
         style={{
           paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
           paddingBottom: 12,
-          borderBottom: "1px solid var(--mob-surface)",
+          borderBottom: "1px solid color-mix(in oklab, var(--mob-muted) 20%, transparent)",
         }}
       >
         {page !== "root" ? (
@@ -351,8 +351,8 @@ function VaultsPage({
           <div key={vault.id}>
             {i > 0 && <Divider />}
             <div
-              className="flex items-center gap-3 px-4"
-              style={{ minHeight: 52 }}
+              className="flex items-center gap-3 px-3"
+              style={{ minHeight: 56 }}
             >
               <IconPicker value={vault.icon ?? "Database"} onChange={(icon) => void setVaultIcon(vault.id, icon)} />
               {renamingId === vault.id ? (
@@ -418,7 +418,7 @@ function VaultsPage({
       </Group>
 
       <Group label="Create new vault">
-        <div className="flex flex-col gap-3 px-4 py-3">
+        <div className="flex flex-col gap-3 px-3 py-3">
           <div className="flex items-center gap-2">
             <IconPicker value={newVaultIcon} onChange={setNewVaultIcon} />
             <input
@@ -448,7 +448,7 @@ function VaultsPage({
           </button>
         </div>
       </Group>
-      <div className="px-4 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
+      <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
         Double-tap a vault name to rename. Tap to switch active vault.
       </div>
     </>
@@ -475,7 +475,7 @@ function EditorPage({
         />
       </Group>
       <Group label="New-note title template">
-        <div className="flex flex-col gap-2 px-4 py-3">
+        <div className="flex flex-col gap-2 px-3 py-3">
           <input
             value={settings.titleTemplate}
             onChange={(e) => updateSettings({ titleTemplate: e.target.value })}
@@ -507,7 +507,7 @@ function EditorPage({
         </div>
       </Group>
       <Group label="Typography">
-        <div className="px-4 py-3">
+        <div className="px-3 py-3">
           <div className="flex items-center justify-between">
             <span className="text-[15px]" style={{ color: "var(--mob-text)" }}>Editor font size</span>
             <span className="text-xs" style={{ color: "var(--mob-muted)" }}>{settings.editorFontSize}px</span>
@@ -546,7 +546,7 @@ function AIPage({
   return (
     <>
       <Group label="Connection">
-        <div className="px-4 py-3 text-xs" style={{ color: "var(--mob-muted)" }}>
+        <div className="px-3 py-3 text-xs" style={{ color: "var(--mob-muted)" }}>
           Connect any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, LM Studio…) to power the editor AI button.
         </div>
       </Group>
@@ -577,7 +577,7 @@ function AIPage({
         />
       </Group>
       <Group label="Test">
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 px-3 py-3">
           <button
             type="button"
             onClick={onTest}
@@ -619,20 +619,21 @@ function AboutPage() {
 
 function Group({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div className="px-4 pt-4">
+    <div className="px-4 pt-5">
       {label && (
         <div
-          className="mb-1.5 px-1 text-xs font-medium uppercase tracking-wide"
+          className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider"
           style={{ color: "var(--mob-muted)" }}
         >
           {label}
         </div>
       )}
       <div
-        className="mob-settings-group overflow-hidden rounded-xl"
+        className="overflow-hidden rounded-2xl"
         style={{
-          background: "color-mix(in oklab, var(--mob-card) 60%, var(--mob-bg))",
-          border: "1px solid color-mix(in oklab, var(--mob-muted) 18%, transparent)",
+          background: "color-mix(in oklab, var(--mob-surface) 50%, var(--mob-bg))",
+          border: "1px solid color-mix(in oklab, var(--mob-muted) 25%, transparent)",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
         }}
       >
         {children}
@@ -642,7 +643,15 @@ function Group({ label, children }: { label?: string; children: React.ReactNode 
 }
 
 function Divider() {
-  return <div className="mob-settings-divider" />;
+  return (
+    <div
+      style={{
+        height: 1,
+        marginLeft: 56,
+        background: "color-mix(in oklab, var(--mob-muted) 22%, transparent)",
+      }}
+    />
+  );
 }
 
 function NavRow({
@@ -660,11 +669,19 @@ function NavRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 transition-colors active:bg-white/5"
-      style={{ minHeight: 52 }}
+      className="flex w-full items-center gap-3 px-3 transition-colors active:bg-white/8"
+      style={{ minHeight: 56 }}
     >
-      <span className="shrink-0" style={{ color: "var(--mob-accent)" }}>{icon}</span>
-      <span className="flex-1 text-left text-[15px]" style={{ color: "var(--mob-text)" }}>{label}</span>
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+        style={{
+          background: "color-mix(in oklab, var(--mob-accent) 15%, transparent)",
+          color: "var(--mob-accent)",
+        }}
+      >
+        {icon}
+      </span>
+      <span className="flex-1 text-left text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>{label}</span>
       {value && (
         <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>{value}</span>
       )}
@@ -690,29 +707,37 @@ function SelectRow({
     <button
       type="button"
       onClick={onSelect}
-      className="flex w-full items-center gap-3 px-4 transition-colors active:bg-white/5"
-      style={{ minHeight: 52 }}
+      className="flex w-full items-center gap-3 px-3 transition-colors active:bg-white/8"
+      style={{ minHeight: 56 }}
     >
       {swatch ? (
         <span
-          className="h-5 w-5 shrink-0 rounded-full border"
+          className="h-7 w-7 shrink-0 rounded-full border-2"
           style={{
             background: selected ? "var(--mob-bg)" : swatch,
-            borderColor: "var(--mob-surface)",
+            borderColor: selected ? "var(--mob-accent)" : "color-mix(in oklab, var(--mob-muted) 30%, transparent)",
           }}
         />
       ) : icon ? (
-        <span className="shrink-0" style={{ color: "var(--mob-accent)" }}>{icon}</span>
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          style={{
+            background: "color-mix(in oklab, var(--mob-accent) 15%, transparent)",
+            color: "var(--mob-accent)",
+          }}
+        >
+          {icon}
+        </span>
       ) : (
-        <span className="w-5 shrink-0" />
+        <span className="w-8 shrink-0" />
       )}
-      <span className="flex-1 text-left text-[15px]" style={{ color: "var(--mob-text)" }}>{label}</span>
+      <span className="flex-1 text-left text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>{label}</span>
       {selected && (
         <span
-          className="flex h-5 w-5 items-center justify-center rounded-full"
+          className="flex h-6 w-6 items-center justify-center rounded-full"
           style={{ background: "var(--mob-accent)" }}
         >
-          <span style={{ color: "#fff", fontSize: 12, lineHeight: 1 }}>✓</span>
+          <span style={{ color: "#fff", fontSize: 13, fontWeight: 700, lineHeight: 1 }}>✓</span>
         </span>
       )}
     </button>
@@ -731,20 +756,22 @@ function ToggleRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center gap-3 px-4" style={{ minHeight: 52 }}>
+    <div className="flex items-center gap-3 px-3" style={{ minHeight: 56 }}>
       <div className="flex flex-1 flex-col">
-        <span className="text-[15px]" style={{ color: "var(--mob-text)" }}>{label}</span>
+        <span className="text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>{label}</span>
         {desc && <span className="text-xs" style={{ color: "var(--mob-muted)" }}>{desc}</span>}
       </div>
       <button
         type="button"
         onClick={() => onChange(!checked)}
-        className="relative h-7 w-12 shrink-0 rounded-full transition-colors"
-        style={{ background: checked ? "var(--mob-accent)" : "var(--mob-surface)" }}
+        className="relative h-8 w-14 shrink-0 rounded-full transition-colors"
+        style={{
+          background: checked ? "var(--mob-accent)" : "color-mix(in oklab, var(--mob-muted) 30%, transparent)",
+        }}
       >
         <span
-          className="absolute top-0.5 h-6 w-6 rounded-full bg-white transition-transform"
-          style={{ transform: checked ? "translateX(22px)" : "translateX(2px)" }}
+          className="absolute top-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform"
+          style={{ transform: checked ? "translateX(26px)" : "translateX(2px)" }}
         />
       </button>
     </div>
@@ -767,19 +794,19 @@ function FieldInput({
   password?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1 px-4 py-3">
-      <span className="text-sm" style={{ color: "var(--mob-text)" }}>{label}</span>
+    <div className="flex flex-col gap-1.5 px-3 py-3">
+      <span className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>{label}</span>
       {hint && <span className="text-xs" style={{ color: "var(--mob-muted)" }}>{hint}</span>}
       <input
         type={password ? "password" : "text"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none"
+        className="mt-0.5 w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors"
         style={{
           background: "var(--mob-bg)",
           color: "var(--mob-text)",
-          borderColor: "var(--mob-surface)",
+          borderColor: "color-mix(in oklab, var(--mob-muted) 25%, transparent)",
         }}
       />
     </div>
@@ -788,9 +815,9 @@ function FieldInput({
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between px-4" style={{ minHeight: 52 }}>
+    <div className="flex items-center justify-between px-3" style={{ minHeight: 56 }}>
       <span className="text-[15px]" style={{ color: "var(--mob-muted)" }}>{label}</span>
-      <span className="text-[15px]" style={{ color: "var(--mob-text)" }}>{value}</span>
+      <span className="text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>{value}</span>
     </div>
   );
 }
@@ -800,8 +827,11 @@ function CircleBtn({ children, onClick }: { children: React.ReactNode; onClick: 
     <button
       type="button"
       onClick={onClick}
-      className="flex h-10 w-10 items-center justify-center rounded-full"
-      style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+      className="flex h-10 w-10 items-center justify-center rounded-full transition-colors active:scale-95"
+      style={{
+        background: "color-mix(in oklab, var(--mob-surface) 80%, transparent)",
+        color: "var(--mob-text)",
+      }}
     >
       {children}
     </button>

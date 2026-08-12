@@ -749,13 +749,6 @@ body {
 .mob-sidebar-backdrop[data-open="1"] {
   opacity: 1;
 }
-
-/* Mobile settings — inset divider lines between rows inside a group card. */
-.mob-settings-divider {
-  height: 1px;
-  margin-left: 48px;
-  background: color-mix(in oklab, var(--mob-muted) 15%, transparent);
-}
 /* Counteract the margin so the row content still spans full width. */
 .mob-settings-group > * + * {
   margin-left: 0;
