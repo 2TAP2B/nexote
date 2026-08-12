@@ -55,7 +55,7 @@ export default function MobileFormatBar({
     >
       <div
         onPointerDown={(e) => e.preventDefault()}
-        className="pointer-events-auto flex items-center gap-1 overflow-x-auto rounded-full px-2"
+        className="pointer-events-auto flex items-center gap-1 overflow-x-auto rounded-full px-2 no-scrollbar"
         style={{
           height: 48,
           background: "var(--mob-surface)",
