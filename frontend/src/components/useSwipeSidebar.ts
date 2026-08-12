@@ -32,6 +32,14 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
   });
 
   useEffect(() => {
+    // Only set up the edge strip on touch devices — on desktop the invisible
+    // strip would intercept mouse clicks on the left ribbon / sidebar buttons.
+    const isTouch =
+      typeof window !== "undefined" &&
+      (window.matchMedia?.("(pointer: coarse)").matches ||
+        "ontouchstart" in window);
+    if (!isTouch) return;
+
     // Create an invisible edge strip that captures touch-starts near the
     // left edge with touch-action:none so the browser doesn't steal them.
     const edge = document.createElement("div");
