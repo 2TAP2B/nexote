@@ -330,34 +330,6 @@ export default function MobileApp() {
         colorScheme={colorScheme}
         onColorSchemeChange={setColorScheme}
       />
-
-      {/* "View desktop" affordance — small link at the very bottom of the shell. */}
-      <ViewDesktopLink />
     </div>
-  );
-}
-
-function ViewDesktopLink() {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    // Only show on touch devices; hidden on desktop browsers previewing /m.
-    setShow(typeof window !== "undefined" && "ontouchstart" in window);
-  }, []);
-  if (!show) return null;
-  return (
-    <a
-      href="/"
-      onClick={() => {
-        try {
-          localStorage.setItem("nexote-force-desktop", "1");
-        } catch {
-          // ignore
-        }
-      }}
-      className="fixed bottom-0 left-0 z-50 px-3 py-1 text-[10px]"
-      style={{ color: "var(--mob-muted)" }}
-    >
-      View desktop
-    </a>
   );
 }

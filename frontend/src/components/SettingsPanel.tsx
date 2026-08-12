@@ -629,7 +629,7 @@ function AppearanceSection({
       </div>
 
       {/* Note tree style */}
-      <div className="flex flex-col gap-1">
+      <div className="nexote-settings-tree-mode flex flex-col gap-1">
         <span className="text-sm text-foreground">Note tree style</span>
         <div className="flex flex-col gap-2">
           {(

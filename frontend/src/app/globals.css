@@ -724,3 +724,8 @@ body {
   flex: 1;
   min-height: 0;
 }
+/* Hide the "Note tree style" (simple/advanced) setting on mobile — the
+ * mobile sidebar always uses the advanced tree. */
+.mob-shell-root .nexote-settings-tree-mode {
+  display: none;
+}

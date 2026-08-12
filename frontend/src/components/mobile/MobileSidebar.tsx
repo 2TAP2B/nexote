@@ -3,12 +3,14 @@
 import {
   Bookmark,
   CalendarDays,
+  ChevronsDownUp,
   Clock,
+  FilePlus,
   FileStack,
+  FolderPlus,
   Hash,
   Images,
   ListTodo,
-  Settings,
   Star,
   X,
 } from "lucide-react";
@@ -27,11 +29,8 @@ type Props = {
   onSelectTagConsumed: () => void;
 };
 
-// The mobile sidebar's horizontal icon strip — same views as the desktop
-// Ribbon but laid out horizontally for the narrow panel. Tapping an icon
-// switches the FileTree's view.
 const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }[] = [
-  { icon: FileStack, label: "Notetree", view: "tree" },
+  { icon: FileStack, label: "Notes", view: "tree" },
   { icon: Clock, label: "Recent", view: "recent" },
   { icon: Star, label: "Shortcuts", view: "shortcuts" },
   { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
@@ -44,6 +43,7 @@ const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }
 export default function MobileSidebar({
   onClose,
   onControlsReady,
+  treeControls,
   view,
   selectedTag,
   onSelectView,
@@ -51,12 +51,6 @@ export default function MobileSidebar({
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
-  // Selecting a note in the tree should open it AND dismiss the sidebar. The
-  // parent already closes on activeId change, but tapping the already-active
-  // note keeps the sidebar open — so close on any tap that lands on a note row.
-  // The close is deferred to the next tick so the row's React onClick (which
-  // opens the note) fires first — calling onClose synchronously in the capture
-  // phase would unmount the tree before React processes the click at the target.
   useEffect(() => {
     const el = fileTreeBox.current;
     if (!el) return;
@@ -68,9 +62,13 @@ export default function MobileSidebar({
     return () => el.removeEventListener("click", onTapNote, true);
   }, [onClose]);
 
+  const activeLabel = RIBBON_ITEMS.find((r) => r.view === view)?.label ?? "Notes";
+
+  const newNote = () => document.getElementById("nexote-new-note-btn")?.click();
+  const newFolder = () => document.getElementById("nexote-new-folder-btn")?.click();
+
   return (
     <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
       <button
         type="button"
         aria-label="Close sidebar"
@@ -79,7 +77,6 @@ export default function MobileSidebar({
         style={{ background: "rgba(0,0,0,0.5)", touchAction: "none" }}
       />
 
-      {/* Sidebar panel — slides in from the left. */}
       <div
         className="nexote-sidebar relative flex h-full flex-col"
         style={{
@@ -90,7 +87,7 @@ export default function MobileSidebar({
           animation: "mobSlideInLeft 0.22s ease",
         }}
       >
-        {/* Header — title + settings + close */}
+        {/* Header — current view name + close */}
         <div
           className="flex shrink-0 items-center justify-between px-4"
           style={{
@@ -103,31 +100,20 @@ export default function MobileSidebar({
             className="text-lg font-semibold"
             style={{ color: "var(--mob-text)" }}
           >
-            Notes
+            {activeLabel}
           </span>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              aria-label="Settings"
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent("nexote:open-settings"))
-              }
-              style={{ color: "var(--mob-muted)" }}
-            >
-              <Settings size={22} />
-            </button>
-            <button
-              type="button"
-              aria-label="Close"
-              onClick={onClose}
-              style={{ color: "var(--mob-muted)" }}
-            >
-              <X size={24} />
-            </button>
-          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-lg"
+            style={{ color: "var(--mob-muted)" }}
+          >
+            <X size={22} />
+          </button>
         </div>
 
-        {/* Horizontal ribbon — view switcher icons. */}
+        {/* Horizontal ribbon — view switcher icons */}
         <div
           className="shrink-0 flex items-center gap-1 overflow-x-auto no-scrollbar px-2"
           style={{
@@ -161,7 +147,7 @@ export default function MobileSidebar({
           })}
         </div>
 
-        {/* FileTree — renders the selected view. */}
+        {/* FileTree */}
         <div
           ref={fileTreeBox}
           className="min-h-0 flex-1 overflow-y-auto"
@@ -176,9 +162,66 @@ export default function MobileSidebar({
             onSelectView={onSelectView}
           />
         </div>
+
+        {/* Bottom toolbar — new note, new folder, expand/collapse */}
+        {view === "tree" && (
+          <div
+            className="flex shrink-0 items-center gap-1 px-3 py-2"
+            style={{
+              borderTop: "1px solid var(--mob-surface)",
+              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
+            }}
+          >
+            <ToolButton label="New note" onClick={newNote}>
+              <FilePlus size={20} />
+            </ToolButton>
+            <ToolButton label="New folder" onClick={newFolder}>
+              <FolderPlus size={20} />
+            </ToolButton>
+            <div className="flex-1" />
+            <ToolButton
+              label={
+                treeControls?.allExpanded
+                  ? "Collapse all folders"
+                  : "Expand all folders"
+              }
+              onClick={() => treeControls?.toggleExpandCollapse()}
+            >
+              <ChevronsDownUp
+                size={20}
+                style={{
+                  transform: treeControls?.allExpanded ? "none" : "rotate(180deg)",
+                }}
+              />
+            </ToolButton>
+          </div>
+        )}
       </div>
 
       <style>{`@keyframes mobSlideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
     </div>
+  );
+}
+
+function ToolButton({
+  children,
+  label,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex h-11 w-11 items-center justify-center rounded-lg transition-colors active:scale-95"
+      style={{ color: "var(--mob-text)", background: "var(--mob-surface)" }}
+    >
+      {children}
+    </button>
   );
 }
