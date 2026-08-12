@@ -8,48 +8,55 @@ type SwipeHandlers = {
   open: boolean;
 };
 
-const EDGE = 28;
-const THRESHOLD = 56;
-const DRAG_X = 10;
+const EDGE = 32;
+const THRESHOLD = 80;
+const DRAG_X = 8;
 const VERTICAL_LIMIT = 1.5;
 
-// Horizontal swipe gesture for mobile sidebar open/close.
+// Drag-to-follow swipe for the mobile sidebar.
 //
-// In PWA standalone mode the OS can intercept edge swipes for system
-// navigation (Android back-gesture, iOS edge-swipe). To reliably receive
-// horizontal drags that start near the left edge we attach an invisible
-// strip with `touch-action: none` to the DOM — that tells the browser not
-// to consume the gesture, so pointermove events reach our handler. For
-// close-swipes (sidebar already open) we listen on the sidebar overlay
-// which already captures all touches.
+// Open:  touch starts within EDGE px of the left edge → the sidebar panel
+//        follows the finger rightward. Release past THRESHOLD → open.
+// Close: when the sidebar is open, any leftward drag on the backdrop/panel
+//        slides it left. Release past THRESHOLD → close.
+//
+// The sidebar panel and backdrop are tracked via CSS classes so we can
+// apply transforms in real-time without React re-renders.
 export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
   const handlers = useRef({ onOpen, onClose, open });
   handlers.current = { onOpen, onClose, open };
   const state = useRef({
     start: null as null | { x: number; y: number; id: number },
     horizontal: false,
+    dragging: false,
     lastSwipe: 0,
+    panelWidth: 380,
   });
 
   useEffect(() => {
-    // Only set up the edge strip on touch devices — on desktop the invisible
-    // strip would intercept mouse clicks on the left ribbon / sidebar buttons.
     const isTouch =
       typeof window !== "undefined" &&
       (window.matchMedia?.("(pointer: coarse)").matches ||
         "ontouchstart" in window);
     if (!isTouch) return;
 
-    // Create an invisible edge strip that captures touch-starts near the
-    // left edge with touch-action:none so the browser doesn't steal them.
     const edge = document.createElement("div");
     edge.style.cssText = `position:fixed;left:0;top:0;width:${EDGE}px;height:100%;z-index:5;touch-action:none;pointer-events:auto;`;
     document.body.appendChild(edge);
 
+    const getPanel = (): HTMLElement | null =>
+      document.querySelector(".mob-sidebar-panel");
+    const getBackdrop = (): HTMLElement | null =>
+      document.querySelector(".mob-sidebar-backdrop");
+
     const onStart = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
+      const panel = getPanel();
+      const panelWidth = panel?.getBoundingClientRect().width ?? 380;
       state.current.start = { x: e.clientX, y: e.clientY, id: e.pointerId };
       state.current.horizontal = false;
+      state.current.dragging = false;
+      state.current.panelWidth = panelWidth;
     };
 
     const onMove = (e: PointerEvent) => {
@@ -57,12 +64,42 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       if (!s || e.pointerId !== s.id) return;
       const dx = e.clientX - s.x;
       const dy = e.clientY - s.y;
-      if (
-        !state.current.horizontal &&
-        Math.abs(dx) > DRAG_X &&
-        Math.abs(dx) > Math.abs(dy)
-      ) {
-        state.current.horizontal = true;
+
+      if (!state.current.horizontal) {
+        if (Math.abs(dx) > DRAG_X && Math.abs(dx) > Math.abs(dy)) {
+          state.current.horizontal = true;
+        } else {
+          return;
+        }
+      }
+      if (Math.abs(dy) > Math.abs(dx) * VERTICAL_LIMIT) return;
+
+      // Begin dragging — disable transitions for smooth finger-following.
+      state.current.dragging = true;
+      const panel = getPanel();
+      const backdrop = getBackdrop();
+
+      if (panel) panel.style.transition = "none";
+      if (backdrop) backdrop.style.transition = "none";
+
+      const h = handlers.current;
+      const pw = state.current.panelWidth;
+
+      if (h.open) {
+        // Sidebar is open — drag left to close.
+        const offset = Math.min(0, dx); // only allow leftward
+        const progress = Math.max(0, 1 + offset / pw); // 1 → 0
+        if (panel) panel.style.transform = `translateX(${offset}px)`;
+        if (backdrop) backdrop.style.opacity = String(progress);
+      } else {
+        // Sidebar is closed — drag right to open.
+        const offset = Math.max(0, Math.min(dx, pw)); // clamp 0..panelWidth
+        const progress = offset / pw; // 0 → 1
+        if (panel) {
+          panel.style.transform = `translateX(${offset - pw}px)`;
+          panel.style.opacity = "1";
+        }
+        if (backdrop) backdrop.style.opacity = String(progress);
       }
     };
 
@@ -71,17 +108,56 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       state.current.start = null;
       if (!s || e.pointerId !== s.id) return;
       if (!state.current.horizontal) return;
+
       const dx = e.clientX - s.x;
       const dy = e.clientY - s.y;
-      if (Math.abs(dy) > Math.abs(dx) * VERTICAL_LIMIT) return;
-
       const h = handlers.current;
-      if (dx > THRESHOLD && (s.x <= EDGE || h.open)) {
+      const pw = state.current.panelWidth;
+
+      const panel = getPanel();
+      const backdrop = getBackdrop();
+
+      // Re-enable transitions for the snap animation.
+      if (panel) panel.style.transition = "";
+      if (backdrop) backdrop.style.transition = "";
+
+      if (state.current.dragging) {
+        state.current.dragging = false;
         state.current.lastSwipe = Date.now();
-        h.onOpen();
-      } else if (dx < -THRESHOLD && h.open) {
-        state.current.lastSwipe = Date.now();
-        h.onClose();
+
+        if (h.open) {
+          // Sidebar open — close if dragged left past threshold.
+          if (dx < -THRESHOLD) {
+            // Clear inline transform so React's style takes over for the
+            // unmount/transition. Then close.
+            if (panel) panel.style.transform = "";
+            if (backdrop) backdrop.style.opacity = "";
+            h.onClose();
+          } else {
+            // not far enough — snap back open
+            if (panel) panel.style.transform = "";
+            if (backdrop) backdrop.style.opacity = "";
+          }
+        } else {
+          // Sidebar closed — open if dragged right past threshold.
+          if (dx > THRESHOLD) {
+            if (panel) panel.style.transform = "";
+            if (panel) panel.style.opacity = "";
+            if (backdrop) backdrop.style.opacity = "";
+            h.onOpen();
+          } else {
+            // snap back closed
+            if (panel) {
+              panel.style.transform = "";
+              panel.style.opacity = "";
+            }
+            if (backdrop) backdrop.style.opacity = "";
+          }
+        }
+      } else {
+        // Horizontal but no drag happened (very small movement).
+        if (panel) panel.style.transform = "";
+        if (backdrop) backdrop.style.opacity = "";
       }
     };
 
@@ -92,18 +168,15 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
     };
 
-    // pointerdown on the edge strip (touch-action:none ensures we get it)
-    // for open-swipes, and on document for close-swipes (sidebar open).
     const onEdgeDown = (e: PointerEvent) => onStart(e);
     const onDocDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
       if (!handlers.current.open) return;
       onStart(e);
     };
+
     edge.addEventListener("pointerdown", onEdgeDown, { passive: true });
     document.addEventListener("pointerdown", onDocDown, { passive: true });
-    // pointermove/up on document so we track the finger even after it leaves
-    // the narrow edge strip.
     document.addEventListener("pointermove", onMove, { passive: true });
     document.addEventListener("pointerup", onUp, { passive: true });
     document.addEventListener("pointercancel", onUp, { passive: true });

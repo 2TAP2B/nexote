@@ -265,17 +265,16 @@ export default function MobileApp() {
         tabCount={openTabs.length}
       />
 
-      {sidebarOpen && (
-        <MobileSidebar
-          onClose={() => setSidebarOpen(false)}
-          onControlsReady={setTreeControls}
-          treeControls={treeControls}
-          view={sidebarView}
-          selectedTag={selectedTag}
-          onSelectView={setSidebarView}
-          onSelectTagConsumed={() => setSelectedTag(null)}
-        />
-      )}
+      <MobileSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onControlsReady={setTreeControls}
+        treeControls={treeControls}
+        view={sidebarView}
+        selectedTag={selectedTag}
+        onSelectView={setSidebarView}
+        onSelectTagConsumed={() => setSelectedTag(null)}
+      />
 
       {tabSwitcherOpen && (
         <MobileTabSwitcher

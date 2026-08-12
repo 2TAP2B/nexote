@@ -22,6 +22,7 @@ import FileTree, { type TreeControls } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
 
 type Props = {
+  open: boolean;
   onClose: () => void;
   onControlsReady?: (c: TreeControls) => void;
   treeControls?: TreeControls | null;
@@ -43,6 +44,7 @@ const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }
 ];
 
 export default function MobileSidebar({
+  open,
   onClose,
   onControlsReady,
   treeControls,
@@ -70,23 +72,33 @@ export default function MobileSidebar({
   const newFolder = () => document.getElementById("nexote-new-folder-btn")?.click();
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      <button
-        type="button"
-        aria-label="Close sidebar"
+    <div className="fixed inset-0 z-50">
+      {/* Backdrop */}
+      <div
+        className="mob-sidebar-backdrop absolute inset-0"
         onClick={onClose}
-        className="absolute inset-0"
-        style={{ background: "rgba(0,0,0,0.5)", touchAction: "none" }}
+        style={{
+          background: "rgba(0,0,0,0.5)",
+          opacity: open ? 1 : 0,
+          transition: "opacity 0.28s ease",
+          pointerEvents: open ? "auto" : "none",
+          touchAction: "none",
+        }}
       />
 
+      {/* Sidebar panel — slides in/out via transform */}
       <div
-        className="nexote-sidebar relative flex h-full flex-col"
+        className="mob-sidebar-panel nexote-sidebar absolute flex h-full flex-col"
         style={{
           width: "85vw",
           maxWidth: 380,
           background: "var(--mob-bg)",
           borderRight: "1px solid var(--mob-surface)",
-          animation: "mobSlideInLeft 0.22s ease",
+          transform: open ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 0.28s ease",
+          left: 0,
+          top: 0,
+          bottom: 0,
         }}
       >
         {/* Header — current view name + close */}
@@ -218,8 +230,6 @@ export default function MobileSidebar({
           </div>
         )}
       </div>
-
-      <style>{`@keyframes mobSlideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
     </div>
   );
 }
