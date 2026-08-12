@@ -53,14 +53,16 @@ export default function MobileApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [colorScheme, setColorScheme] = useState("default");
 
-  // Hydrate + sync the color scheme class on <html> — same logic as the
-  // desktop page so color themes (Nord, Dracula, …) apply on mobile too.
+  // Hydrate the saved color scheme from localStorage on mount. The effect
+  // below applies it + forces .dark on <html>.
   useEffect(() => {
     const saved = localStorage.getItem("nexote:color-scheme");
     if (saved) setColorScheme(saved);
   }, []);
   useEffect(() => {
     const el = document.documentElement;
+    // Always force dark on mobile so scheme dark variants match.
+    el.classList.add("dark");
     el.classList.forEach((c) => {
       if (c.startsWith("scheme-")) el.classList.remove(c);
     });
@@ -222,7 +224,7 @@ export default function MobileApp() {
 
   return (
     <div
-      className="mob-shell-root dark flex h-[100dvh] w-full flex-col overflow-hidden"
+      className="mob-shell-root flex h-[100dvh] w-full flex-col overflow-hidden"
       style={
         {
           background: "var(--mob-bg)",
