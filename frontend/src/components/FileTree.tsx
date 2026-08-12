@@ -3020,13 +3020,14 @@ function TasksView({
               e.stopPropagation();
               onToggle(t.vaultId, t.noteId, t.line, !t.checked);
             }}
-            className="mt-0.5 flex shrink-0 items-center justify-center rounded"
+            className="mt-0.5 flex shrink-0 items-center justify-center"
             style={{
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              border: t.checked ? "none" : "1.5px solid var(--muted-foreground)",
+              width: 20,
+              height: 20,
+              borderRadius: 5,
+              border: t.checked ? "2px solid var(--primary)" : "2px solid var(--muted-foreground)",
               background: t.checked ? "var(--primary)" : "transparent",
+              opacity: t.checked ? 1 : 0.5,
             }}
           >
             {t.checked && (
