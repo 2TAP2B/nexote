@@ -89,16 +89,18 @@ export default function MobileSidebar({
         }}
       />
 
-      {/* Sidebar panel — slides in/out via transform */}
+      {/* Sidebar panel — slides in/out via transform.
+          The transform is driven by a data attribute (not React inline
+          style) so the swipe hook can set style.transform directly on the
+          DOM without React clobbering it on re-render. */}
       <div
         className="mob-sidebar-panel nexote-sidebar absolute flex h-full flex-col"
+        data-open={open ? "1" : "0"}
         style={{
           width: "85vw",
           maxWidth: 380,
           background: "var(--mob-bg)",
           borderRight: "1px solid var(--mob-surface)",
-          transform: open ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 0.28s ease",
           left: 0,
           top: 0,
           bottom: 0,

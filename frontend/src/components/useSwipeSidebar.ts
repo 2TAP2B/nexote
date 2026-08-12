@@ -79,6 +79,14 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       const panel = getPanel();
       const backdrop = getBackdrop();
 
+      // Block pointer events on the editor so ProseMirror doesn't interpret
+      // the drag as a text selection (which would trigger a re-render and
+      // clobber the transform).
+      const editor = document.querySelector(".mob-editor-scroll");
+      if (editor && !editor.getAttribute("data-swipe-active")) {
+        editor.setAttribute("data-swipe-active", "1");
+      }
+
       if (panel) panel.style.transition = "none";
       if (backdrop) backdrop.style.transition = "none";
 
@@ -121,6 +129,10 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       if (panel) panel.style.transition = "";
       if (backdrop) backdrop.style.transition = "";
 
+      // Restore editor pointer events.
+      const editor = document.querySelector(".mob-editor-scroll");
+      editor?.removeAttribute("data-swipe-active");
+
       if (state.current.dragging) {
         state.current.dragging = false;
         state.current.lastSwipe = Date.now();
@@ -128,11 +140,14 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
         if (h.open) {
           // Sidebar open — close if dragged left past threshold.
           if (dx < -THRESHOLD) {
-            // Clear inline transform so React's style takes over for the
-            // unmount/transition. Then close.
-            if (panel) panel.style.transform = "";
-            if (backdrop) backdrop.style.opacity = "";
             h.onClose();
+            // After React updates data-open to "0", the CSS transform
+            // (translateX(-100%)) takes over. Clear the inline transform
+            // in the next frame so there's no flicker.
+            requestAnimationFrame(() => {
+              if (panel) panel.style.transform = "";
+              if (backdrop) backdrop.style.opacity = "";
+            });
           } else {
             // not far enough — snap back open
             if (panel) panel.style.transform = "";
@@ -141,10 +156,12 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
         } else {
           // Sidebar closed — open if dragged right past threshold.
           if (dx > THRESHOLD) {
-            if (panel) panel.style.transform = "";
-            if (panel) panel.style.opacity = "";
-            if (backdrop) backdrop.style.opacity = "";
             h.onOpen();
+            requestAnimationFrame(() => {
+              if (panel) panel.style.transform = "";
+              if (panel) panel.style.opacity = "";
+              if (backdrop) backdrop.style.opacity = "";
+            });
           } else {
             // snap back closed
             if (panel) {
