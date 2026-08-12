@@ -5,12 +5,14 @@ import {
   CalendarDays,
   ChevronsDownUp,
   Clock,
+  Expand,
   FilePlus,
   FileStack,
   FolderPlus,
   Hash,
   Images,
   ListTodo,
+  Settings,
   Star,
   X,
 } from "lucide-react";
@@ -163,7 +165,8 @@ export default function MobileSidebar({
           />
         </div>
 
-        {/* Bottom toolbar — new note, new folder, expand/collapse */}
+        {/* Bottom toolbar — new note, new folder, expand/collapse folders,
+         * expand/collapse all vaults, settings */}
         {view === "tree" && (
           <div
             className="flex shrink-0 items-center gap-1 px-3 py-2"
@@ -193,6 +196,24 @@ export default function MobileSidebar({
                   transform: treeControls?.allExpanded ? "none" : "rotate(180deg)",
                 }}
               />
+            </ToolButton>
+            <ToolButton
+              label={
+                treeControls?.allSectionsExpanded
+                  ? "Collapse all vaults"
+                  : "Expand all vaults"
+              }
+              onClick={() => treeControls?.toggleSectionsCollapse()}
+            >
+              <Expand size={20} />
+            </ToolButton>
+            <ToolButton
+              label="Settings"
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent("nexote:open-settings"))
+              }
+            >
+              <Settings size={20} />
             </ToolButton>
           </div>
         )}

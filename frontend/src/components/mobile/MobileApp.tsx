@@ -34,7 +34,13 @@ export default function MobileApp() {
     switchVault,
     allVaultData,
     vaults,
+    setTreeMode,
   } = useNotes();
+
+  // Always use the advanced tree on mobile so all vaults are listed.
+  useEffect(() => {
+    setTreeMode("advanced");
+  }, [setTreeMode]);
 
   // --- Screen / overlay state ---
   const [sidebarOpen, setSidebarOpen] = useState(false);
