@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FilePlus, FileText, Search, Sparkles } from "lucide-react";
+import { CalendarDays, FilePlus, FileText, Search } from "lucide-react";
 
 import { useNotes } from "@/lib/notes-context";
 
@@ -46,7 +46,7 @@ export default function MobileDashboard({
       <div className="flex w-full max-w-sm flex-col gap-2">
         <ActionRow icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />
         <ActionRow
-          icon={<Sparkles size={22} />}
+          icon={<CalendarDays size={22} />}
           label="Today's daily note"
           onClick={onOpenDaily}
         />

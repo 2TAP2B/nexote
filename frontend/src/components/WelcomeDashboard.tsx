@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   PanelLeftClose,
   Search,
-  Sparkles,
 } from "lucide-react";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
@@ -46,7 +45,7 @@ export default function WelcomeDashboard({ onOpenPalette }: Props) {
     {
       label: "Open today's daily note",
       hint: "Ctrl+D",
-      icon: <Sparkles className="h-5 w-5" />,
+      icon: <CalendarDays className="h-5 w-5" />,
       run: () => void openDaily(),
     },
     {
