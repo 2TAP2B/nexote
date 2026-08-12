@@ -9,6 +9,7 @@ export type NoteMeta = {
   createdAt: string;
   updatedAt: string;
   tags?: string[];
+  snippet?: string;
 };
 
 export type Note = NoteMeta & {

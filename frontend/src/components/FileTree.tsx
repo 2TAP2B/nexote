@@ -1522,7 +1522,13 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
         >
           <button
             type="button"
-            onClick={() => onDrillInto(node.path)}
+            onClick={() => {
+              if (isCoarsePointer) {
+                setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
+              } else {
+                onDrillInto(node.path);
+              }
+            }}
             className="flex items-center gap-2 min-w-0 flex-1"
             style={{ height: 33 }}
           >
@@ -1934,7 +1940,7 @@ function DetailedNoteList({
   bookmarks,
   shortcuts,
 }: {
-  notes: { id: string; title: string; updatedAt: string }[];
+  notes: { id: string; title: string; updatedAt: string; snippet?: string }[];
   notesById: Record<string, { body?: string }>;
   activeId: string | null;
   activeSource: string | null;
@@ -1983,7 +1989,7 @@ function DetailedNoteList({
               {items.map((n) => {
                 const active = n.id === activeId && activeSource === sourceTag;
                 const navSelected = treeSelectedNav === `note:${n.id}`;
-                const snippet = makeSnippetAfterH1(notesById[n.id]?.body);
+                const snippet = n.snippet ?? makeSnippetAfterH1(notesById[n.id]?.body);
                 return (
                   <li key={n.id}>
                     <button
@@ -2115,7 +2121,7 @@ function FolderDetailView({
   onToggleSort,
 }: {
   path: string;
-  notes: { id: string; title: string; path: string; updatedAt: string }[];
+  notes: { id: string; title: string; path: string; updatedAt: string; snippet?: string }[];
   activeId: string | null;
   activeSource: string | null;
   notesById: Record<string, { body?: string }>;
@@ -2270,7 +2276,7 @@ function FolderDetailView({
                     const flatIndex = flatIds.indexOf(n.id);
                     const active = n.id === activeId && activeSource === "drill";
                     const selected = flatIndex === selectedIndex;
-                    const snippet = makeSnippetAfterH1(notesById[n.id]?.body);
+                    const snippet = n.snippet ?? makeSnippetAfterH1(notesById[n.id]?.body);
                     return (
                       <li key={n.id}>
                         <button
@@ -2786,13 +2792,13 @@ function TagsView({
 
   const matchingNotes = useMemo(() => {
     if (!selectedTag) return [];
-    const result: { vaultId: string; vaultName: string; id: string; title: string; updatedAt: string }[] = [];
+    const result: { vaultId: string; vaultName: string; id: string; title: string; updatedAt: string; snippet?: string }[] = [];
     for (const v of vaults) {
       const data = allVaultData[v.id];
       if (!data) continue;
       for (const n of data.notes) {
         if (n.tags?.includes(selectedTag)) {
-          result.push({ vaultId: v.id, vaultName: v.name, id: n.id, title: n.title, updatedAt: n.updatedAt });
+          result.push({ vaultId: v.id, vaultName: v.name, id: n.id, title: n.title, updatedAt: n.updatedAt, snippet: n.snippet });
         }
       }
     }
@@ -2826,7 +2832,7 @@ function TagsView({
           {matchingNotes.map((n) => {
             const active = n.id === activeId;
             const navSelected = treeSelectedNav === `note:${n.id}`;
-            const snippet = makeSnippetAfterH1(notesById[n.id]?.body);
+            const snippet = n.snippet ?? makeSnippetAfterH1(notesById[n.id]?.body);
             return (
               <li key={`${n.vaultId}:${n.id}`}>
                 <button

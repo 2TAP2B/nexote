@@ -38,6 +38,7 @@ type Entry struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 	Tags      []string  `json:"tags"`
+	Snippet   string    `json:"snippet"`
 }
 
 // FolderEntry represents an (possibly empty) folder in the tree.
@@ -95,6 +96,7 @@ func (s *Store) List() (ListResult, error) {
 			CreatedAt: doc.Meta.CreatedAt,
 			UpdatedAt: doc.Meta.UpdatedAt,
 			Tags:      doc.Meta.Tags,
+			Snippet:   makeSnippet(doc.Body, 150),
 		})
 		return nil
 	})
@@ -721,4 +723,42 @@ func sanitizePath(p string) string {
 		}
 	}
 	return p
+}
+
+// makeSnippet extracts a plain-text preview from a note body, skipping the
+// first heading line (which is the title) and stripping markdown syntax.
+// Returns at most max characters.
+func makeSnippet(body string, max int) string {
+	lines := strings.Split(body, "\n")
+	start := 0
+	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "#") {
+		start = 1
+	}
+	var parts []string
+	for _, line := range lines[start:] {
+		// Skip empty lines and frontmatter markers.
+		t := strings.TrimSpace(line)
+		if t == "" || t == "---" {
+			continue
+		}
+		// Strip markdown: HTML tags, headers, emphasis, code, links, images, list markers.
+		t = regexp.MustCompile(`<[^>]+>`).ReplaceAllString(t, " ")
+		t = regexp.MustCompile(`^#+\s*`).ReplaceAllString(t, "")
+		t = regexp.MustCompile(`[*_` + "`" + `~]`).ReplaceAllString(t, "")
+		t = regexp.MustCompile(`!\[.*?\]\(.*?\)`).ReplaceAllString(t, "")
+		t = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`).ReplaceAllString(t, "$1")
+		t = regexp.MustCompile(`^\s*[-+*]\s+`).ReplaceAllString(t, "")
+		t = regexp.MustCompile(`^\s*\d+\.\s+`).ReplaceAllString(t, "")
+		t = strings.TrimSpace(t)
+		if t != "" {
+			parts = append(parts, t)
+		}
+	}
+	text := strings.Join(parts, " ")
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	text = strings.TrimSpace(text)
+	if len(text) > max {
+		return text[:max] + "…"
+	}
+	return text
 }
