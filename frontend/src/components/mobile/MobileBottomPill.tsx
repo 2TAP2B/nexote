@@ -74,11 +74,12 @@ export default function MobileBottomPill({
           type="button"
           aria-label="Open tabs"
           onClick={onOpenTabs}
-          className="flex items-center justify-center rounded-lg"
+          className="flex items-center justify-center transition-transform active:scale-90"
           style={{
-            width: 30,
-            height: 30,
-            border: "1.5px solid var(--mob-text)",
+            width: 32,
+            height: 32,
+            borderRadius: 8,
+            border: "1.5px solid var(--mob-muted)",
             color: "var(--mob-text)",
             fontSize: 13,
             fontWeight: 600,

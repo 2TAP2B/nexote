@@ -168,6 +168,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [restoredTabs, setRestoredTabs] = useState(false);
   const [allVaultData, setAllVaultData] = useState<
     Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>
   >({});
@@ -183,6 +184,25 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setTreeModeState(stored);
     }
   }, []);
+
+  // Persist open tabs + active note across refreshes.
+  useEffect(() => {
+    if (!restoredTabs) return;
+    try {
+      localStorage.setItem("nexote:open-tabs", JSON.stringify(openTabs));
+    } catch {
+      // ignore
+    }
+  }, [openTabs, restoredTabs]);
+
+  useEffect(() => {
+    if (!restoredTabs) return;
+    try {
+      localStorage.setItem("nexote:active-id", activeId ?? "");
+    } catch {
+      // ignore
+    }
+  }, [activeId, restoredTabs]);
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
@@ -230,7 +250,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const stored = localStorage.getItem("nexote:active-vault");
         const pick =
           list.find((v) => v.id === stored)?.id ?? list[0]?.id ?? null;
-        if (pick) setActiveVaultId(pick);
+        if (pick) {
+          setActiveVaultId(pick);
+          if (!stored) localStorage.setItem("nexote:active-vault", pick);
+        }
         // Load notes/folders for ALL vaults (for the multi-vault tree view).
         const data: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }> = {};
         await Promise.all(
@@ -338,6 +361,38 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     })();
   }, [activeVaultId, refresh]);
+
+  // Restore open tabs + active note from localStorage after the first load.
+  useEffect(() => {
+    if (restoredTabs || loading || !activeVaultId) return;
+    try {
+      const storedTabs = localStorage.getItem("nexote:open-tabs");
+      const storedActive = localStorage.getItem("nexote:active-id");
+      if (storedTabs) {
+        const tabs = JSON.parse(storedTabs) as string[];
+        // Keep tabs that are the dashboard, exist in the current vault, or
+        // are journal notes.
+        const journalIds = new Set(journalNotes.map((n) => n.id));
+        const validTabs = tabs.filter(
+          (t) =>
+            t === DASHBOARD_ID ||
+            notes.some((n) => n.id === t) ||
+            journalIds.has(t),
+        );
+        if (validTabs.length > 0) {
+          setOpenTabs(validTabs);
+          if (storedActive && validTabs.includes(storedActive)) {
+            setActiveId(storedActive);
+          } else {
+            setActiveId(validTabs[0]);
+          }
+        }
+      }
+    } catch {
+      // ignore malformed stored state
+    }
+    setRestoredTabs(true);
+  }, [restoredTabs, loading, activeVaultId, notes, journalNotes]);
 
   const openTab = useCallback(
     async (id: string) => {
