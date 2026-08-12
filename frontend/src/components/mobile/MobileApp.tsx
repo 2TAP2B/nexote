@@ -215,6 +215,8 @@ export default function MobileApp() {
           setOverflowPos({ x, y });
           setOverflowOpen(true);
         }}
+        onSearch={() => setPaletteOpen(true)}
+        onNewNote={handleNewNote}
         openWithHistory={openWithHistory}
         openDaily={openDaily}
       />

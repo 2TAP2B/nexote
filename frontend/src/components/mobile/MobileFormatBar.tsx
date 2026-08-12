@@ -15,12 +15,11 @@ import {
 import { useEffect, useState, type RefObject } from "react";
 
 import type { FormatAction, MilkdownEditorHandle } from "@/components/MilkdownEditor";
-import { useScrollHideChrome } from "./useScrollHideChrome";
 
-// Fixed formatting bar for the mobile note view. Replaces the floating
-// Milkdown selection toolbar (which overlapped the selection and the native
-// copy/paste popup) with an always-visible touch-friendly bar pinned above the
-// virtual keyboard inset and above the floating bottom pill.
+// Formatting bar for the mobile note view. Replaces the floating Milkdown
+// selection toolbar (which overlapped the selection and the native copy/paste
+// popup) with a touch-friendly bar that appears only while text is selected,
+// pinned above the virtual keyboard inset and above the floating bottom pill.
 export default function MobileFormatBar({
   editorRef,
   aiAvailable,
@@ -34,14 +33,7 @@ export default function MobileFormatBar({
     editorRef.current?.format(action);
   };
 
-  // Same auto-hide-on-scroll behavior as the bottom pill / top bar, so the
-  // editing chrome shares one "intelligence": hide on scroll-down, reappear
-  // on scroll-up or at the top, while the text keeps its reading space.
-  const visible = useScrollHideChrome();
-
-  // While text is selected, keep the bar on screen even if the scroll-chrome
-  // logic would have hidden it (the user just tapped to select, so the bar
-  // must be reachable to format the selection).
+  // The bar is visible only while the user has text selected in the editor.
   const [hasSelection, setHasSelection] = useState(false);
   useEffect(() => {
     const onChange = (e: Event) => {
@@ -51,15 +43,13 @@ export default function MobileFormatBar({
     return () => window.removeEventListener("nexote:selection-change", onChange as EventListener);
   }, []);
 
-  const show = visible || hasSelection;
-
   return (
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center"
       style={{
         bottom: `calc(${kbdInset}px + env(safe-area-inset-bottom, 0px) + 78px)`,
-        transform: show ? "translateY(0)" : "translateY(150%)",
-        opacity: show ? 1 : 0,
+        transform: hasSelection ? "translateY(0)" : "translateY(150%)",
+        opacity: hasSelection ? 1 : 0,
         transition: "transform 0.25s ease, opacity 0.2s ease",
       }}
     >

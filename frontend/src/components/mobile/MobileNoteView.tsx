@@ -5,9 +5,9 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor";
-import WelcomeDashboard from "@/components/WelcomeDashboard";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
+import MobileDashboard from "./MobileDashboard";
 import MobileFormatBar from "./MobileFormatBar";
 import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVirtualKeyboardInset } from "./useVirtualKeyboardInset";
@@ -30,6 +30,8 @@ type Props = {
   isDashboard: boolean;
   onOpenSidebar: () => void;
   onOverflow: (x: number, y: number) => void;
+  onSearch: () => void;
+  onNewNote: () => void;
   openWithHistory: (id: string) => Promise<void>;
   openDaily: () => Promise<void>;
 };
@@ -39,6 +41,9 @@ export default function MobileNoteView({
   isDashboard,
   onOpenSidebar,
   onOverflow,
+  onSearch,
+  onNewNote,
+  openDaily,
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
     useNotes();
@@ -150,7 +155,7 @@ export default function MobileNoteView({
     return () => clearTimeout(t);
   }, [activeId, title, body, save, settings.autosave]);
 
-  // Dashboard: render the welcome screen (no editor).
+  // Dashboard: render the mobile welcome screen (no editor).
   if (isDashboard || !activeNote) {
     return (
       <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
@@ -159,7 +164,11 @@ export default function MobileNoteView({
           className="h-full overflow-y-auto"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 60px)" }}
         >
-          <WelcomeDashboard />
+          <MobileDashboard
+            onOpenSearch={onSearch}
+            onNewNote={onNewNote}
+            onOpenDaily={() => void openDaily()}
+          />
         </div>
       </div>
     );

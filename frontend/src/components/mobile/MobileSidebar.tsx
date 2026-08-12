@@ -57,13 +57,15 @@ export default function MobileSidebar({
   // Selecting a note in the tree should open it AND dismiss the sidebar. The
   // parent already closes on activeId change, but tapping the already-active
   // note keeps the sidebar open — so close on any tap that lands on a note row.
+  // The close is deferred to the next tick so the row's React onClick (which
+  // opens the note) fires first — calling onClose synchronously in the capture
+  // phase would unmount the tree before React processes the click at the target.
   useEffect(() => {
     const el = fileTreeBox.current;
     if (!el) return;
     const onTapNote = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).closest("[data-note-id]")) {
-        onClose();
-      }
+      if (!(e.target as HTMLElement).closest("[data-note-id]")) return;
+      setTimeout(onClose, 0);
     };
     el.addEventListener("click", onTapNote, true);
     return () => el.removeEventListener("click", onTapNote, true);
