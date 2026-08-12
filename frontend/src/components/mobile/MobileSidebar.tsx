@@ -72,7 +72,10 @@ export default function MobileSidebar({
   const newFolder = () => document.getElementById("nexote-new-folder-btn")?.click();
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div
+      className="fixed inset-0 z-50"
+      style={{ pointerEvents: open ? "auto" : "none" }}
+    >
       {/* Backdrop */}
       <div
         className="mob-sidebar-backdrop absolute inset-0"
