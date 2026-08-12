@@ -11,7 +11,6 @@ import SettingsPanel from "@/components/SettingsPanel";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
-import { mobileShellVars } from "./mobileTheme";
 import MobileBottomPill from "./MobileBottomPill";
 import MobileNoteView from "./MobileNoteView";
 import MobileOverflowMenu from "./MobileOverflowMenu";
@@ -53,6 +52,27 @@ export default function MobileApp() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [colorScheme, setColorScheme] = useState("default");
+
+  // Hydrate + sync the color scheme class on <html> — same logic as the
+  // desktop page so color themes (Nord, Dracula, …) apply on mobile too.
+  useEffect(() => {
+    const saved = localStorage.getItem("nexote:color-scheme");
+    if (saved) setColorScheme(saved);
+  }, []);
+  useEffect(() => {
+    const el = document.documentElement;
+    el.classList.forEach((c) => {
+      if (c.startsWith("scheme-")) el.classList.remove(c);
+    });
+    if (colorScheme && colorScheme !== "default") {
+      el.classList.add(`scheme-${colorScheme}`);
+    }
+    try {
+      localStorage.setItem("nexote:color-scheme", colorScheme);
+    } catch {
+      // ignore
+    }
+  }, [colorScheme]);
 
   // --- Navigation history stack (browser-like back/forward across notes) ---
   // past: notes visited before the current one (oldest first).
@@ -202,10 +222,9 @@ export default function MobileApp() {
 
   return (
     <div
-      className="flex h-[100dvh] w-full flex-col overflow-hidden"
+      className="mob-shell-root dark flex h-[100dvh] w-full flex-col overflow-hidden"
       style={
         {
-          ...mobileShellVars,
           background: "var(--mob-bg)",
           // Let the swipe hook receive horizontal drags (open/close sidebar)
           // while still allowing native vertical scrolling in lists/editor.

@@ -618,7 +618,18 @@ body {
  * .mob-shell-root ancestor so they never affect the desktop / route.
  */
 .mob-shell-root {
-  --background: var(--mob-bg);
+  /* Derive the mobile palette from the standard theme variables so color
+   * schemes (Nord, Dracula, …) propagate to the mobile shell. The mobile
+   * shell always uses the dark variant — .dark is forced on the root. */
+  --mob-bg: var(--background);
+  --mob-surface: var(--muted);
+  --mob-card: var(--sidebar);
+  --mob-text: var(--foreground);
+  --mob-muted: var(--muted-foreground);
+  --mob-accent: var(--primary);
+  --mob-fab: var(--primary);
+  --mob-done: var(--accent);
+
   --crepe-color-background: var(--mob-bg);
   --crepe-color-on-background: var(--mob-text);
   --crepe-color-surface: var(--mob-surface);

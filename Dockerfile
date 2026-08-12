@@ -47,6 +47,8 @@ COPY --from=backend-build /out/nexote-backend /usr/local/bin/nexote-backend
 COPY --from=frontend-build /app/.next/standalone ./
 # Static assets + server chunks are NOT traced into standalone; copy them over.
 COPY --from=frontend-build /app/.next/static ./.next/static
+# Public assets (PWA manifest, icons, service worker) — also not traced.
+COPY --from=frontend-build /app/public ./public
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
