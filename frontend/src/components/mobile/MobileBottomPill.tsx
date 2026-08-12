@@ -41,12 +41,13 @@ export default function MobileBottomPill({
       }}
     >
       <div
-        className="pointer-events-auto flex items-center gap-5 rounded-full px-5"
+        className="mob-bottom-pill pointer-events-auto flex items-center gap-5 rounded-full px-5"
         style={{
           height: 56,
           background: "var(--mob-surface)",
           // semi-opaque feel
           boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
+          touchAction: "none",
         }}
       >
         <PillIcon

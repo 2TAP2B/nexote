@@ -739,9 +739,3 @@ body {
 .mob-sidebar-panel[data-open="1"] {
   transform: translateX(0);
 }
-
-/* Disable editor pointer events during a sidebar swipe so ProseMirror
- * doesn't start a text selection that triggers a re-render. */
-.mob-editor-scroll[data-swipe-active] {
-  pointer-events: none;
-}

@@ -8,16 +8,15 @@ type SwipeHandlers = {
   open: boolean;
 };
 
-const EDGE = 32;
-const THRESHOLD = 80;
+const THRESHOLD = 60;
 const DRAG_X = 8;
 const VERTICAL_LIMIT = 1.5;
 
 // Drag-to-follow swipe for the mobile sidebar.
 //
-// Open:  touch starts within EDGE px of the left edge → the sidebar panel
+// Open:  drag right on the bottom navigation pill → the sidebar panel
 //        follows the finger rightward. Release past THRESHOLD → open.
-// Close: when the sidebar is open, any leftward drag on the backdrop/panel
+// Close: when the sidebar is open, drag left on the backdrop/panel →
 //        slides it left. Release past THRESHOLD → close.
 //
 // The sidebar panel and backdrop are tracked via CSS classes so we can
@@ -40,14 +39,12 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
         "ontouchstart" in window);
     if (!isTouch) return;
 
-    const edge = document.createElement("div");
-    edge.style.cssText = `position:fixed;left:0;top:0;width:${EDGE}px;height:100%;z-index:5;touch-action:none;pointer-events:auto;`;
-    document.body.appendChild(edge);
-
     const getPanel = (): HTMLElement | null =>
       document.querySelector(".mob-sidebar-panel");
     const getBackdrop = (): HTMLElement | null =>
       document.querySelector(".mob-sidebar-backdrop");
+    const getPill = (): HTMLElement | null =>
+      document.querySelector(".mob-bottom-pill");
 
     const onStart = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
@@ -74,35 +71,27 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
       if (Math.abs(dy) > Math.abs(dx) * VERTICAL_LIMIT) return;
 
-      // Begin dragging — disable transitions for smooth finger-following.
+      // Begin dragging.
       state.current.dragging = true;
       const panel = getPanel();
       const backdrop = getBackdrop();
-
-      // Block pointer events on the editor so ProseMirror doesn't interpret
-      // the drag as a text selection (which would trigger a re-render and
-      // clobber the transform).
-      const editor = document.querySelector(".mob-editor-scroll");
-      if (editor && !editor.getAttribute("data-swipe-active")) {
-        editor.setAttribute("data-swipe-active", "1");
-      }
-
-      if (panel) panel.style.transition = "none";
-      if (backdrop) backdrop.style.transition = "none";
-
       const h = handlers.current;
       const pw = state.current.panelWidth;
 
+      // Disable transitions for smooth finger-following.
+      if (panel) panel.style.transition = "none";
+      if (backdrop) backdrop.style.transition = "none";
+
       if (h.open) {
-        // Sidebar is open — drag left to close.
-        const offset = Math.min(0, dx); // only allow leftward
-        const progress = Math.max(0, 1 + offset / pw); // 1 → 0
+        // Sidebar open — drag left to close.
+        const offset = Math.min(0, dx);
+        const progress = Math.max(0, 1 + offset / pw);
         if (panel) panel.style.transform = `translateX(${offset}px)`;
         if (backdrop) backdrop.style.opacity = String(progress);
       } else {
-        // Sidebar is closed — drag right to open.
-        const offset = Math.max(0, Math.min(dx, pw)); // clamp 0..panelWidth
-        const progress = offset / pw; // 0 → 1
+        // Sidebar closed — drag right to open (from the bottom pill).
+        const offset = Math.max(0, Math.min(dx, pw));
+        const progress = offset / pw;
         if (panel) {
           panel.style.transform = `translateX(${offset - pw}px)`;
           panel.style.opacity = "1";
@@ -111,7 +100,7 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
     };
 
-    const onUp = (e: PointerEvent) => {
+    const finishDrag = (e: PointerEvent) => {
       const s = state.current.start;
       state.current.start = null;
       if (!s || e.pointerId !== s.id) return;
@@ -129,32 +118,22 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       if (panel) panel.style.transition = "";
       if (backdrop) backdrop.style.transition = "";
 
-      // Restore editor pointer events.
-      const editor = document.querySelector(".mob-editor-scroll");
-      editor?.removeAttribute("data-swipe-active");
-
       if (state.current.dragging) {
         state.current.dragging = false;
         state.current.lastSwipe = Date.now();
 
         if (h.open) {
-          // Sidebar open — close if dragged left past threshold.
           if (dx < -THRESHOLD) {
             h.onClose();
-            // After React updates data-open to "0", the CSS transform
-            // (translateX(-100%)) takes over. Clear the inline transform
-            // in the next frame so there's no flicker.
             requestAnimationFrame(() => {
               if (panel) panel.style.transform = "";
               if (backdrop) backdrop.style.opacity = "";
             });
           } else {
-            // not far enough — snap back open
             if (panel) panel.style.transform = "";
             if (backdrop) backdrop.style.opacity = "";
           }
         } else {
-          // Sidebar closed — open if dragged right past threshold.
           if (dx > THRESHOLD) {
             h.onOpen();
             requestAnimationFrame(() => {
@@ -163,7 +142,6 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
               if (backdrop) backdrop.style.opacity = "";
             });
           } else {
-            // snap back closed
             if (panel) {
               panel.style.transform = "";
               panel.style.opacity = "";
@@ -172,7 +150,6 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
           }
         }
       } else {
-        // Horizontal but no drag happened (very small movement).
         if (panel) panel.style.transform = "";
         if (backdrop) backdrop.style.opacity = "";
       }
@@ -185,28 +162,30 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
     };
 
-    const onEdgeDown = (e: PointerEvent) => onStart(e);
+    // Open swipe: pointerdown on the bottom pill.
+    const onPillDown = (e: PointerEvent) => onStart(e);
+    // Close swipe: pointerdown on document when sidebar is open.
     const onDocDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
       if (!handlers.current.open) return;
       onStart(e);
     };
 
-    edge.addEventListener("pointerdown", onEdgeDown, { passive: true });
+    const pill = getPill();
+    pill?.addEventListener("pointerdown", onPillDown, { passive: true });
     document.addEventListener("pointerdown", onDocDown, { passive: true });
     document.addEventListener("pointermove", onMove, { passive: true });
-    document.addEventListener("pointerup", onUp, { passive: true });
-    document.addEventListener("pointercancel", onUp, { passive: true });
+    document.addEventListener("pointerup", finishDrag, { passive: true });
+    document.addEventListener("pointercancel", finishDrag, { passive: true });
     document.addEventListener("click", onCaptureClick, true);
 
     return () => {
-      edge.removeEventListener("pointerdown", onEdgeDown);
+      pill?.removeEventListener("pointerdown", onPillDown);
       document.removeEventListener("pointerdown", onDocDown);
       document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      document.removeEventListener("pointercancel", onUp);
+      document.removeEventListener("pointerup", finishDrag);
+      document.removeEventListener("pointercancel", finishDrag);
       document.removeEventListener("click", onCaptureClick, true);
-      edge.remove();
     };
   }, []);
 }
