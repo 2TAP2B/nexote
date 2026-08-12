@@ -17,6 +17,7 @@ type Draft = { title: string; body: string };
 export type AppSettings = {
   autosave: boolean;
   defaultTitle: string;
+  titleTemplate: string;
   editorFontSize: number;
   aiBaseUrl: string;
   aiApiKey: string;
@@ -26,6 +27,7 @@ export type AppSettings = {
 export const DEFAULT_SETTINGS: AppSettings = {
   autosave: true,
   defaultTitle: "Untitled",
+  titleTemplate: "DAY DD-MM-YYYY HH:mm",
   editorFontSize: 16,
   aiBaseUrl: "",
   aiApiKey: "",
@@ -115,6 +117,41 @@ export function useNotes() {
   const ctx = useContext(NotesContext);
   if (!ctx) throw new Error("useNotes must be used within NotesProvider");
   return ctx;
+}
+
+// Replaces tokens in a title template with the current date/time.
+// Supported tokens:
+//   DAY   → full weekday name (Monday)
+//   DDD   → abbreviated weekday (Mon)
+//   DD    → day of month, zero-padded (12)
+//   MM    → month number, zero-padded (08)
+//   MMM   → abbreviated month name (Aug)
+//   YY    → 2-digit year (25)
+//   YYYY  → 4-digit year (2025)
+//   HH    → hours, zero-padded 24h (14)
+//   mm    → minutes, zero-padded (30)
+//   ss    → seconds, zero-padded (05)
+// Any literal text not matching a token is kept as-is.
+export function formatTitle(template: string, date = new Date()): string {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const daysShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const monthsShort = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  // Replace longest tokens first so "YYYY" doesn't partially match "YY".
+  return template
+    .replace(/DAY/g, days[date.getDay()])
+    .replace(/DDD/g, daysShort[date.getDay()])
+    .replace(/YYYY/g, String(date.getFullYear()))
+    .replace(/MMM/g, monthsShort[date.getMonth()])
+    .replace(/YY/g, pad(date.getFullYear() % 100))
+    .replace(/DD/g, pad(date.getDate()))
+    .replace(/MM/g, pad(date.getMonth() + 1))
+    .replace(/HH/g, pad(date.getHours()))
+    .replace(/mm/g, pad(date.getMinutes()))
+    .replace(/ss/g, pad(date.getSeconds()));
 }
 
 export function NotesProvider({ children }: { children: React.ReactNode }) {
@@ -390,8 +427,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (!activeVaultId) return;
       setCreating(true);
       try {
+        const title =
+          input?.title ??
+          formatTitle(settings.titleTemplate) ??
+          settings.defaultTitle;
         const note = await api.create(activeVaultId, {
-          title: input?.title ?? settings.defaultTitle,
+          title,
           path: input?.path,
         });
         await refresh();
@@ -405,7 +446,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, refresh, settings.defaultTitle],
+    [activeVaultId, refresh, settings.defaultTitle, settings.titleTemplate],
   );
 
   const copyNote = useCallback(

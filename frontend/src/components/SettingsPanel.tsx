@@ -28,7 +28,7 @@ import {
 import { useTheme } from "next-themes";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { useNotes } from "@/lib/notes-context";
+import { useNotes, formatTitle } from "@/lib/notes-context";
 import { api } from "@/lib/api";
 
 type Props = {
@@ -360,18 +360,47 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                   />
                 </label>
 
-                {/* Default new-note title */}
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">Default new-note title</span>
+                {/* New-note title template */}
+                <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">New-note title template</span>
                   <span className="text-xs text-muted-foreground">
-                    Used when creating a note with Ctrl+Shift+N
+                    Used when creating a new note. Supports date/time tokens
+                    that are replaced with the current value.
                   </span>
                   <input
-                    value={settings.defaultTitle}
-                    onChange={(e) => updateSettings({ defaultTitle: e.target.value })}
+                    value={settings.titleTemplate}
+                    onChange={(e) => updateSettings({ titleTemplate: e.target.value })}
+                    placeholder="DAY DD-MM-YYYY HH:mm"
                     className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                   />
-                </label>
+                  <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                    {[
+                      ["DAY", "Weekday (Monday)"],
+                      ["DDD", "Mon"],
+                      ["DD", "Day (12)"],
+                      ["MM", "Month (08)"],
+                      ["MMM", "Aug"],
+                      ["YYYY", "Year (2025)"],
+                      ["YY", "Year (25)"],
+                      ["HH", "Hour 24h (14)"],
+                      ["mm", "Min (30)"],
+                    ].map(([token, desc]) => (
+                      <span
+                        key={token}
+                        className="rounded border border-border px-1 py-0.5"
+                        title={desc}
+                      >
+                        {token} <span className="text-muted-foreground/60">{desc}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-1.5 text-xs">
+                    <span className="text-muted-foreground">Preview: </span>
+                    <span className="font-medium text-foreground">
+                      {formatTitle(settings.titleTemplate) || "Untitled"}
+                    </span>
+                  </div>
+                </div>
 
                 {/* Editor font size */}
                 <div className="rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
