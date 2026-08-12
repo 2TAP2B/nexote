@@ -7,13 +7,13 @@ import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
-import SettingsPanel from "@/components/SettingsPanel";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
 import MobileBottomPill from "./MobileBottomPill";
 import MobileNoteView from "./MobileNoteView";
 import MobileOverflowMenu from "./MobileOverflowMenu";
+import MobileSettings from "./MobileSettings";
 import MobileSidebar from "./MobileSidebar";
 import MobileTabSwitcher from "./MobileTabSwitcher";
 
@@ -329,7 +329,7 @@ export default function MobileApp() {
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
-      <SettingsPanel
+      <MobileSettings
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         colorScheme={colorScheme}
