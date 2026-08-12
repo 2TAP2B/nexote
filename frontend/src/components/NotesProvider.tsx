@@ -381,10 +381,41 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         );
         if (validTabs.length > 0) {
           setOpenTabs(validTabs);
-          if (storedActive && validTabs.includes(storedActive)) {
-            setActiveId(storedActive);
-          } else {
-            setActiveId(validTabs[0]);
+          const activeToRestore =
+            storedActive && validTabs.includes(storedActive)
+              ? storedActive
+              : validTabs[0];
+          setActiveId(activeToRestore);
+
+          // Load note bodies for restored tabs that aren't the dashboard.
+          const noteTabs = validTabs.filter(
+            (t) => t !== DASHBOARD_ID && !notesById[t],
+          );
+          if (noteTabs.length > 0) {
+            (async () => {
+              const loaded: Record<string, Note> = {};
+              await Promise.all(
+                noteTabs.map(async (id) => {
+                  try {
+                    // Check if it's a journal note.
+                    if (journalIds.has(id)) {
+                      const jn = journalNotes.find((n) => n.id === id);
+                      if (jn) {
+                        const full = await api.journalGet(id);
+                        loaded[id] = full;
+                      }
+                    } else {
+                      loaded[id] = await api.get(activeVaultId, id);
+                    }
+                  } catch {
+                    // skip notes that fail to load
+                  }
+                }),
+              );
+              if (Object.keys(loaded).length > 0) {
+                setNotesById((prev) => ({ ...prev, ...loaded }));
+              }
+            })();
           }
         }
       }
@@ -402,6 +433,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
       if (openTabs.includes(id)) {
         setActiveId(id);
+        // Load the note body if it's not cached (e.g. after a refresh).
+        if (!notesById[id] && activeVaultId) {
+          try {
+            const note = await api.get(activeVaultId, id);
+            setNotesById((prev) => ({ ...prev, [id]: note }));
+          } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to load note");
+          }
+        }
         return;
       }
       if (!activeVaultId) return;
