@@ -161,7 +161,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
-        className="flex h-[84vh] w-[768px] max-w-none flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
+        className="nexote-settings-dialog flex h-[84vh] w-[768px] max-w-none flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -180,10 +180,10 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1">
+        <div className="nexote-settings-body flex min-h-0 flex-1">
           {/* Category sidebar */}
           <nav
-            className="flex w-48 shrink-0 flex-col gap-1 border-r border-border p-2"
+            className="nexote-settings-nav flex w-48 shrink-0 flex-col gap-1 border-r border-border p-2"
             aria-label="Settings categories"
           >
             {CATEGORIES.map((cat) => {
@@ -192,6 +192,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                 <button
                   key={cat.id}
                   type="button"
+                  data-settings-cat={cat.id}
                   onClick={() => setActiveCategory(cat.id)}
                   className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
                   style={
@@ -214,7 +215,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
           </nav>
 
           {/* Content pane */}
-          <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="nexote-settings-content min-w-0 flex-1 overflow-y-auto">
             {activeCategory === "appearance" && (
               <AppearanceSection
                 theme={resolvedTheme}

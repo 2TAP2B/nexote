@@ -12,11 +12,10 @@ import {
   Star,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
-import SettingsPanel from "@/components/SettingsPanel";
 
 type Props = {
   onClose: () => void;
@@ -50,8 +49,6 @@ export default function MobileSidebar({
   onSelectView,
   onSelectTagConsumed,
 }: Props) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [colorScheme, setColorScheme] = useState("default");
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
   // Selecting a note in the tree should open it AND dismiss the sidebar. The
@@ -112,7 +109,9 @@ export default function MobileSidebar({
             <button
               type="button"
               aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() =>
+                window.dispatchEvent(new CustomEvent("nexote:open-settings"))
+              }
               style={{ color: "var(--mob-muted)" }}
             >
               <Settings size={22} />
@@ -178,13 +177,6 @@ export default function MobileSidebar({
           />
         </div>
       </div>
-
-      <SettingsPanel
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        colorScheme={colorScheme}
-        onColorSchemeChange={setColorScheme}
-      />
 
       <style>{`@keyframes mobSlideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }`}</style>
     </div>

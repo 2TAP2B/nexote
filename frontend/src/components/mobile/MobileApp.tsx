@@ -7,6 +7,7 @@ import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
+import SettingsPanel from "@/components/SettingsPanel";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
@@ -50,6 +51,8 @@ export default function MobileApp() {
   // closed; we set the view then open the sidebar).
   const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [colorScheme, setColorScheme] = useState("default");
 
   // --- Navigation history stack (browser-like back/forward across notes) ---
   // past: notes visited before the current one (oldest first).
@@ -151,13 +154,16 @@ export default function MobileApp() {
       setSidebarOpen(true);
     };
     const onToggleSidebar = () => setSidebarOpen((v) => !v);
+    const onOpenSettings = () => setSettingsOpen(true);
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
+    window.addEventListener("nexote:open-settings", onOpenSettings);
     return () => {
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
+      window.removeEventListener("nexote:open-settings", onOpenSettings);
     };
   }, []);
 
@@ -296,6 +302,13 @@ export default function MobileApp() {
       />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        colorScheme={colorScheme}
+        onColorSchemeChange={setColorScheme}
+      />
 
       {/* "View desktop" affordance — small link at the very bottom of the shell. */}
       <ViewDesktopLink />

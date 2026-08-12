@@ -13,6 +13,7 @@ import {
   ListTodo,
   PanelLeftClose,
   Search,
+  Settings,
   Sparkles,
   Star,
   Sun,
@@ -187,6 +188,13 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
           else if (current === "dark") setTheme("system");
           else setTheme("light");
         },
+      },
+      {
+        id: "settings",
+        label: "Open settings",
+        icon: <Settings className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(new CustomEvent("nexote:open-settings")),
       },
     ],
     [create, openDaily, openTab, theme, setTheme],
