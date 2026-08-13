@@ -8,7 +8,7 @@ import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
 import MobileDashboard from "./MobileDashboard";
-import MobileFormatBar from "./MobileFormatBar";
+import MobileEditorToolbar from "./MobileEditorToolbar";
 import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVirtualKeyboardInset } from "./useVirtualKeyboardInset";
 
@@ -208,10 +208,10 @@ export default function MobileNoteView({
         />
       </div>
 
-      {/* Pinned formatting bar — always visible, replaces the floating
-       * Milkdown selection toolbar. Sits above the keyboard and above the
-       * bottom pill. */}
-      <MobileFormatBar
+      {/* Bottom toolbar — appears when the caret is in the editor or text is
+       * selected, replaces the floating Milkdown selection toolbar. Sits above
+       * the keyboard and above the bottom pill; hides on scroll-down. */}
+      <MobileEditorToolbar
         editorRef={editorRef}
         aiAvailable={Boolean(aiConfig.baseUrl)}
         kbdInset={kbdInset}

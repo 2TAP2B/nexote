@@ -16,6 +16,7 @@ import {
   toggleStrongCommand,
   wrapInBlockTypeCommand,
 } from "@milkdown/kit/preset/commonmark";
+import { insertTableCommand } from "@milkdown/kit/preset/gfm";
 import { DOMParser, DOMSerializer, type NodeType } from "@milkdown/kit/prose/model";
 import { streamingPluginKey } from "@milkdown/kit/plugin/streaming";
 import { $prose, replaceAll } from "@milkdown/kit/utils";
@@ -181,6 +182,7 @@ export type MilkdownEditorHandle = {
   selectHeading: () => void;
   focusEnd: () => void;
   format: (action: FormatAction) => void;
+  insertImageFile: (file: File) => void;
   askAI: () => void;
 };
 
@@ -193,7 +195,8 @@ export type FormatAction =
   | "bullet-list"
   | "ordered-list"
   | "quote"
-  | "code-block";
+  | "code-block"
+  | "table";
 
 export type AIConfig = {
   baseUrl: string;
@@ -679,6 +682,19 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             }
             return false;
           },
+          // Mobile bottom toolbar: announce when the caret enters or leaves
+          // the editor so the bar knows whether to show. Return false so the
+          // default focus/blur handling is untouched.
+          handleDOMEvents: {
+            focus: () => {
+              if (mobile) window.dispatchEvent(new CustomEvent("nexote:editor-focus"));
+              return false;
+            },
+            blur: () => {
+              if (mobile) window.dispatchEvent(new CustomEvent("nexote:editor-blur"));
+              return false;
+            },
+          },
         } as never);
       });
 
@@ -917,7 +933,25 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   nodeType: codeBlockSchema.type(ctx),
                 });
                 break;
+              case "table":
+                commands.call(insertTableCommand.key, { row: 3, col: 2 });
+                break;
             }
+          });
+        },
+        insertImageFile: (file: File) => {
+          if (!file) return;
+          void api.uploadImage(vaultId, noteId, file).then((meta) => {
+            window.dispatchEvent(
+              new CustomEvent("nexote:image-uploaded", { detail: meta.url }),
+            );
+            if (meta.url) {
+              window.dispatchEvent(
+                new CustomEvent("nexote:insert-image", { detail: { url: meta.url } }),
+              );
+            }
+          }).catch((err) => {
+            console.error("[nexote-image]", err);
           });
         },
         askAI: () => {
