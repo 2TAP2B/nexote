@@ -540,6 +540,25 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         };
       }
 
+      // On mobile there is no left gutter, so the default block handle
+      // (placed to the left of a block) renders off-screen. Show it at the
+      // block's right edge instead, clamped to stay inside the viewport.
+      if (mobile) {
+        featureConfigs[Crepe.Feature.BlockEdit] = {
+          blockHandle: {
+            getPlacement: () => "right",
+            getOffset: (derive) => {
+              const block = derive.active.el.getBoundingClientRect();
+              const size = derive.blockDom.getBoundingClientRect().width;
+              const naturalRight = block.right + 16;
+              const maxRight = window.innerWidth - 8;
+              if (naturalRight + size <= maxRight + 8) return 16;
+              return { mainAxis: maxRight - size - block.right };
+            },
+          },
+        };
+      }
+
       const crepe = new Crepe({
         root,
         defaultValue,
