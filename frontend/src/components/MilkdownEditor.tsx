@@ -4,7 +4,7 @@ import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import type { CrepeConfig } from "@milkdown/crepe";
 import type { AIPromptContext } from "@milkdown/crepe/feature/ai";
 import type { Ctx } from "@milkdown/kit/ctx";
-import { commandsCtx, editorViewCtx, serializerCtx } from "@milkdown/kit/core";
+import { commandsCtx, editorViewCtx, parserCtx, schemaCtx, serializerCtx } from "@milkdown/kit/core";
 import {
   blockquoteSchema,
   bulletListSchema,
@@ -16,7 +16,7 @@ import {
   toggleStrongCommand,
   wrapInBlockTypeCommand,
 } from "@milkdown/kit/preset/commonmark";
-import type { NodeType } from "@milkdown/kit/prose/model";
+import { DOMParser, DOMSerializer, type NodeType } from "@milkdown/kit/prose/model";
 import { streamingPluginKey } from "@milkdown/kit/plugin/streaming";
 import { $prose, replaceAll } from "@milkdown/kit/utils";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
@@ -152,6 +152,29 @@ const selectionWatchPlugin = $prose((ctx) =>
     },
   }),
 );
+
+// Structural tags that carry no formatting of their own. Mobile browsers wrap
+// copied plain text in a payload made up of these (plus <meta>), e.g. iOS
+// emits <meta charset='utf-8'><pre>text</pre> and Android wraps lines in
+// <div>s. Genuinely formatted clipboard content (bold, links, lists, images,
+// code blocks, …) contains other elements, so it is left to the normal
+// clipboard handling.
+const plainTextWrapperTags = new Set(["meta", "style", "head", "body", "pre", "div", "p", "span", "br"]);
+
+// True when the clipboard's HTML payload carries no formatting and just
+// wraps the same plain text. In that case the text/plain content should win
+// so the markdown parser can render it instead of inserting the source literally.
+function isPlainTextWrapper(html: string, text: string): boolean {
+  if (!html) return true;
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  const stripped = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+  if (stripped.length === 0 || stripped !== text.replace(/\s+/g, " ").trim()) return false;
+  for (const n of Array.from(el.querySelectorAll("*"))) {
+    if (!plainTextWrapperTags.has(n.tagName.toLowerCase())) return false;
+  }
+  return true;
+}
 
 export type MilkdownEditorHandle = {
   focus: () => void;
@@ -532,27 +555,57 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         const opts = ctx.get("editorViewOptions" as never) as Record<string, unknown>;
         ctx.set("editorViewOptions" as never, {
           ...opts,
-          handlePaste: (_view: EditorView, event: ClipboardEvent) => {
+          handlePaste: (view: EditorView, event: ClipboardEvent) => {
             // OS-clipboard image paste: the clipboard plugin only handles
             // text, so intercept image files, upload them into the note's
             // folder and insert the resulting URL as an inline image.
             const items = event.clipboardData?.items;
-            if (!items) return false;
-            for (const item of items) {
-              if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
-              const file = item.getAsFile();
-              if (!file) continue;
-              event.preventDefault();
-              void uploadImageFile(file).then((url) => {
-                if (!url) return;
-                const view = ctx.get("editorView" as never) as EditorView;
-                const type = view.state.schema.nodes.image;
-                if (!type) return;
-                const node = type.create({ src: url, alt: "" });
-                view.dispatch(view.state.tr.replaceSelectionWith(node));
-                view.focus();
-              });
-              return true;
+            if (items) {
+              for (const item of items) {
+                if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+                const file = item.getAsFile();
+                if (!file) continue;
+                event.preventDefault();
+                void uploadImageFile(file).then((url) => {
+                  if (!url) return;
+                  const type = view.state.schema.nodes.image;
+                  if (!type) return;
+                  const node = type.create({ src: url, alt: "" });
+                  view.dispatch(view.state.tr.replaceSelectionWith(node));
+                  view.focus();
+                });
+                return true;
+              }
+            }
+
+            // Markdown pastes: milkdown's clipboard plugin parses plain text
+            // as markdown only when the clipboard carries no HTML. Mobile
+            // browsers wrap copied plain text in an HTML payload that is just
+            // the same text with no formatting; in that case parse text/plain
+            // with the markdown parser so headings, lists, tasks and code
+            // blocks render instead of appearing as literal source.
+            if (view.state.selection.$from.node().type.spec.code) return false;
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            const html = event.clipboardData?.getData("text/html") ?? "";
+            if (html && text.trim() && isPlainTextWrapper(html, text)) {
+              try {
+                const doc = ctx.get(parserCtx)(text.replace(/\r\n?/g, "\n"));
+                if (doc && typeof doc !== "string") {
+                  const domParser = DOMParser.fromSchema(ctx.get(schemaCtx));
+                  const dom = DOMSerializer.fromSchema(ctx.get(schemaCtx)).serializeFragment(doc.content);
+                  const slice = domParser.parseSlice(dom);
+                  view.dispatch(
+                    view.state.tr
+                      .replaceSelection(slice)
+                      .scrollIntoView()
+                      .setMeta("paste", true)
+                      .setMeta("uiEvent", "paste"),
+                  );
+                  return true;
+                }
+              } catch {
+                // Fall through to the default clipboard handling.
+              }
             }
             return false;
           },
