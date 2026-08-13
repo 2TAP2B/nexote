@@ -527,6 +527,10 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         // On mobile the floating selection toolbar is disabled; a pinned
         // bottom bar (MobileFormatBar) drives the same commands instead.
         [Crepe.Feature.Toolbar]: !mobile,
+        // The block handle (+ button and drag grip) needs a mouse hover to
+        // appear; there is no room for it on a touch-only layout, so leave
+        // it off on mobile.
+        [Crepe.Feature.BlockEdit]: !mobile,
       };
       if (baseUrl) {
         features[Crepe.Feature.AI] = true;
@@ -536,25 +540,6 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           diffReviewOnEnd: false,
           onError: (error) => {
             console.error("[nexote-ai]", error.message);
-          },
-        };
-      }
-
-      // On mobile there is no left gutter, so the default block handle
-      // (placed to the left of a block) renders off-screen. Show it at the
-      // block's right edge instead, clamped to stay inside the viewport.
-      if (mobile) {
-        featureConfigs[Crepe.Feature.BlockEdit] = {
-          blockHandle: {
-            getPlacement: () => "right",
-            getOffset: (derive) => {
-              const block = derive.active.el.getBoundingClientRect();
-              const size = derive.blockDom.getBoundingClientRect().width;
-              const naturalRight = block.right + 16;
-              const maxRight = window.innerWidth - 8;
-              if (naturalRight + size <= maxRight + 8) return 16;
-              return { mainAxis: maxRight - size - block.right };
-            },
           },
         };
       }
@@ -826,35 +811,6 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       crepeRef.current = crepe;
       return crepe;
     }, [aiConfig, vaultId, noteId, mobile]);
-
-    // Mobile: the Crepe block handle (+ / drag grip) only appears in response
-    // to pointermove, which touch taps never fire. On a tap inside the editor,
-    // synthesize a pointermove at the editor's horizontal centre so the handle
-    // shows for the block the user just touched.
-    useEffect(() => {
-      if (!mobile) return;
-      const onPointerDown = (e: PointerEvent) => {
-        if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
-        const editor = crepeRef.current?.editor;
-        if (!editor) return;
-        editor.action((ctx) => {
-          const view = ctx.get(editorViewCtx);
-          const target = e.target as Node | null;
-          if (!target || !view.dom.contains(target)) return;
-          const rect = view.dom.getBoundingClientRect();
-          view.dom.dispatchEvent(
-            new PointerEvent("pointermove", {
-              bubbles: true,
-              cancelable: true,
-              clientX: rect.left + rect.width / 2,
-              clientY: e.clientY,
-            }),
-          );
-        });
-      };
-      document.addEventListener("pointerdown", onPointerDown, true);
-      return () => document.removeEventListener("pointerdown", onPointerDown, true);
-    }, [mobile, noteId, vaultId]);
 
     useImperativeHandle(
       ref,
