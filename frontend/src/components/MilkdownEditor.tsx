@@ -808,6 +808,35 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       return crepe;
     }, [aiConfig, vaultId, noteId, mobile]);
 
+    // Mobile: the Crepe block handle (+ / drag grip) only appears in response
+    // to pointermove, which touch taps never fire. On a tap inside the editor,
+    // synthesize a pointermove at the editor's horizontal centre so the handle
+    // shows for the block the user just touched.
+    useEffect(() => {
+      if (!mobile) return;
+      const onPointerDown = (e: PointerEvent) => {
+        if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+        const editor = crepeRef.current?.editor;
+        if (!editor) return;
+        editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          const target = e.target as Node | null;
+          if (!target || !view.dom.contains(target)) return;
+          const rect = view.dom.getBoundingClientRect();
+          view.dom.dispatchEvent(
+            new PointerEvent("pointermove", {
+              bubbles: true,
+              cancelable: true,
+              clientX: rect.left + rect.width / 2,
+              clientY: e.clientY,
+            }),
+          );
+        });
+      };
+      document.addEventListener("pointerdown", onPointerDown, true);
+      return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    }, [mobile, noteId, vaultId]);
+
     useImperativeHandle(
       ref,
       () => ({

@@ -604,6 +604,12 @@ body {
 .milkdown .milkdown-block-handle[data-show='true']:hover {
   opacity: 1;
 }
+/* Touch screens have no hover, so keep the revealed handle fully visible. */
+@media (hover: none) {
+  .milkdown .milkdown-block-handle[data-show='true'] {
+    opacity: 1;
+  }
+}
 .milkdown .milkdown-slash-menu {
   z-index: 30;
 }
