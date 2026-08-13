@@ -526,9 +526,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           input?.title ??
           formatTitle(settings.titleTemplate) ??
           settings.defaultTitle;
+        // When no explicit path is given, create the note in the same folder
+        // as the currently active note. Journal notes are skipped: they live
+        // in a separate store (one note per day) and create targets the vault.
+        const targetPath =
+          input?.path !== undefined
+            ? input.path
+            : activeId && activeId !== DASHBOARD_ID &&
+              !journalIdsRef.current.has(activeId)
+              ? (notesById[activeId]?.path || undefined)
+              : undefined;
         const note = await api.create(activeVaultId, {
           title,
-          path: input?.path,
+          path: targetPath,
         });
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
@@ -541,7 +551,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, refresh, settings.defaultTitle, settings.titleTemplate],
+    [activeVaultId, refresh, settings.defaultTitle, settings.titleTemplate, activeId, notesById],
   );
 
   const copyNote = useCallback(
