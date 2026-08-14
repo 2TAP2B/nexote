@@ -19,20 +19,20 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 
 import type { FormatAction, MilkdownEditorHandle } from "@/components/MilkdownEditor";
 import { useScrollHideChrome } from "./useScrollHideChrome";
+import { useVisualViewport } from "./useVirtualKeyboardInset";
 
 // Bottom toolbar for the mobile note view. Replaces the floating Milkdown
 // selection toolbar (which overlapped the selection and the native copy/paste
-// popup). Appears whenever the caret is in the editor or text is selected,
-// pinned above the virtual keyboard inset and above the floating bottom pill.
-// It hides on scroll-down (reading) and reappears on scroll-up.
+// popup). Appears only after the user taps the editor to set a cursor (or
+// selects text) and sits pinned to the top of the on-screen keyboard, right
+// where the caret is. It hides on scroll-down (reading) and reappears on
+// scroll-up.
 export default function MobileEditorToolbar({
   editorRef,
   aiAvailable,
-  kbdInset,
 }: {
   editorRef: RefObject<MilkdownEditorHandle | null>;
   aiAvailable: boolean;
-  kbdInset: number;
 }) {
   const run = (action: FormatAction) => () => {
     editorRef.current?.format(action);
@@ -48,9 +48,15 @@ export default function MobileEditorToolbar({
   const [forceShow, setForceShow] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const chromeVisible = useScrollHideChrome();
+  const vv = useVisualViewport();
   // While the on-screen keyboard is open the user is editing, so never let
   // scroll-hide dismiss the bar mid-typing.
-  const show = (hasSelection || hasFocus) && (chromeVisible || forceShow || kbdInset > 0);
+  const show = (hasSelection || hasFocus) && (chromeVisible || forceShow || vv.isKeyboardOpen);
+
+  // Gap between the bar and what's beneath it: 12px when the keyboard is open
+  // (hugging its top edge), or above the floating bottom pill otherwise.
+  const gap = vv.isKeyboardOpen ? 12 : 80;
+  const barTop = `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - ${gap + 48}px)`;
 
   useEffect(() => {
     const onChange = (e: Event) => {
@@ -90,10 +96,10 @@ export default function MobileEditorToolbar({
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center"
       style={{
-        bottom: `calc(${kbdInset}px + env(safe-area-inset-bottom, 0px) + 78px)`,
+        top: barTop,
         transform: show ? "translateY(0)" : "translateY(150%)",
         opacity: show ? 1 : 0,
-        transition: "transform 0.25s ease, opacity 0.2s ease",
+        transition: "transform 0.25s ease, opacity 0.2s ease, top 0.2s ease",
       }}
     >
       {menuOpen && (
@@ -150,31 +156,43 @@ export default function MobileEditorToolbar({
               bottom: "calc(100% + 10px)",
               left: "50%",
               transform: "translateX(-50%)",
-              width: "max(270px, calc(100vw - 48px))",
+              width: "max(272px, calc(100vw - 48px))",
             }}
           >
             <div
-              className="grid grid-cols-2 gap-1 rounded-2xl p-2 no-scrollbar"
+              className="no-scrollbar rounded-2xl p-2"
               style={{
                 background: "var(--mob-surface)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
-                maxHeight: "55vh",
+                boxShadow:
+                  "0 0 0 1px rgba(255,255,255,0.08), 0 8px 32px rgba(0,0,0,0.45)",
+                maxHeight: `calc(${Math.max(vv.height, 200)}px - env(safe-area-inset-bottom, 0px) - ${gap + 48 + 20}px)`,
                 overflowY: "auto",
               }}
             >
-              <MenuTile label="Heading 1" icon={<Heading1 size={22} />} onClick={run("h1")} />
-              <MenuTile label="Heading 2" icon={<Heading2 size={22} />} onClick={run("h2")} />
-              <MenuTile label="Heading 3" icon={<Heading3 size={22} />} onClick={run("h3")} />
-              <MenuTile label="Bullet list" icon={<List size={22} />} onClick={run("bullet-list")} />
-              <MenuTile label="Ordered list" icon={<ListOrdered size={22} />} onClick={run("ordered-list")} />
-              <MenuTile label="Quote" icon={<TextQuote size={22} />} onClick={run("quote")} />
-              <MenuTile label="Code block" icon={<Code2 size={22} />} onClick={run("code-block")} />
-              <MenuTile label="Table" icon={<Table size={22} />} onClick={run("table")} />
-              <MenuTile
-                label="Image"
-                icon={<ImageIcon size={22} />}
-                onClick={() => fileRef.current?.click()}
-              />
+              <div
+                className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider"
+                style={{ color: "var(--mob-muted)" }}
+              >
+                Insert
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <MenuTile label="Heading 1" icon={<Heading1 size={22} />} onClick={run("h1")} />
+                <MenuTile label="Heading 2" icon={<Heading2 size={22} />} onClick={run("h2")} />
+                <MenuTile label="Heading 3" icon={<Heading3 size={22} />} onClick={run("h3")} />
+                <MenuTile label="Bullet list" icon={<List size={22} />} onClick={run("bullet-list")} />
+                <MenuTile label="Ordered list" icon={<ListOrdered size={22} />} onClick={run("ordered-list")} />
+                <MenuTile label="Quote" icon={<TextQuote size={22} />} onClick={run("quote")} />
+                <MenuTile label="Code block" icon={<Code2 size={22} />} onClick={run("code-block")} />
+                <MenuTile label="Table" icon={<Table size={22} />} onClick={run("table")} />
+                <MenuTile
+                  label="Image"
+                  icon={<ImageIcon size={22} />}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    fileRef.current?.click();
+                  }}
+                />
+              </div>
             </div>
           </div>
         )}

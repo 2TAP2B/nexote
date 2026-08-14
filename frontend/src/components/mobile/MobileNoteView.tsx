@@ -208,13 +208,12 @@ export default function MobileNoteView({
         />
       </div>
 
-      {/* Bottom toolbar — appears when the caret is in the editor or text is
-       * selected, replaces the floating Milkdown selection toolbar. Sits above
-       * the keyboard and above the bottom pill; hides on scroll-down. */}
+      {/* Bottom toolbar — appears after the user taps the editor to set a
+       * cursor (or selects text), pinned right above the on-screen keyboard.
+       * Replaces the floating Milkdown selection toolbar. Hides on scroll. */}
       <MobileEditorToolbar
         editorRef={editorRef}
         aiAvailable={Boolean(aiConfig.baseUrl)}
-        kbdInset={kbdInset}
       />
     </div>
   );

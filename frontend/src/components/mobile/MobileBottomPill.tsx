@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, Plus, Search, SquareStack } from "lucide-react";
 
 import { useScrollHideChrome } from "./useScrollHideChrome";
+import { useVisualViewport } from "./useVirtualKeyboardInset";
 
 type Props = {
   canGoBack: boolean;
@@ -29,14 +30,18 @@ export default function MobileBottomPill({
   tabCount,
 }: Props) {
   const visible = useScrollHideChrome();
+  // Hide while the touch keyboard is open so the nav capsule never sits
+  // between the editor and the keyboard.
+  const vv = useVisualViewport();
+  const shown = visible && !vv.isKeyboardOpen;
 
   return (
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center"
       style={{
         bottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
-        transform: visible ? "translateY(0)" : "translateY(150%)",
-        opacity: visible ? 1 : 0,
+        transform: shown ? "translateY(0)" : "translateY(150%)",
+        opacity: shown ? 1 : 0,
         transition: "transform 0.25s ease, opacity 0.2s ease",
       }}
     >
