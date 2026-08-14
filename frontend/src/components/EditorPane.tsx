@@ -6,14 +6,21 @@ import {
   BookOpen,
   Bookmark,
   BookmarkCheck,
+  Copy,
+  Edit3,
   Ellipsis,
   FileText,
   Loader2,
+  Sparkles,
+  SquareArrowOutUpRight,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
+import { generateNoteTitle } from "@/lib/ai";
+import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
+import ContextMenu from "@/components/ContextMenu";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
 
@@ -23,25 +30,8 @@ const MilkdownEditorWrapper = dynamic<
   }
 >(() => import("@/components/MilkdownEditor"), { ssr: false });
 
-// The note title is written as an H2 (##) heading at the start of the body.
-// (H1 was avoided because a custom Ctrl+A handler that excluded the H1 title
-// caused the editor to scroll-jump; with H2 the native Ctrl+A runs, which
-// doesn't jump.) These helpers also migrate legacy H1 titles to H2 on save.
-function extractTitleHeading(body: string): string | null {
-  const m = body.match(/^##? (.+)$/m);
-  return m ? m[1].trim() : null;
-}
-
-function replaceOrAddTitleHeading(body: string, title: string): string {
-  const heading = `## ${title}`;
-  if (/^##? .+$/m.test(body)) {
-    return body.replace(/^##? .+$/m, heading);
-  }
-  return body ? `${heading}\n\n${body}` : heading;
-}
-
 export default function EditorPane() {
-  const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote } =
+  const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote, copyNote } =
     useNotes();
 
   const [title, setTitle] = useState("");
@@ -50,6 +40,7 @@ export default function EditorPane() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [bodyKey, setBodyKey] = useState(0);
+  const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
 
   const skipNextChange = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -198,6 +189,22 @@ export default function EditorPane() {
     setEditingTitle(false);
   };
 
+  const handleGenerateTitle = async () => {
+    if (!activeId) return;
+    try {
+      const aiTitle = await generateNoteTitle(aiConfig, body);
+      if (!aiTitle || aiTitle === title) return;
+      const newBody = replaceOrAddTitleHeading(body, aiTitle);
+      setTitle(aiTitle);
+      setBody(newBody);
+      prevBodyRef.current = newBody;
+      setBodyKey((k) => k + 1);
+      await save(activeId, { title: aiTitle, body: newBody }).catch(() => {});
+    } catch (e) {
+      console.error("[nexote-ai]", e instanceof Error ? e.message : String(e));
+    }
+  };
+
   if (isDashboardActive || !activeNote) {
     return <WelcomeDashboard />;
   }
@@ -314,12 +321,57 @@ export default function EditorPane() {
             type="button"
             aria-label="More actions"
             title="More actions"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              setOverflowMenu({ x: r.right, y: r.bottom + 4 });
+            }}
             className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
           >
             <Ellipsis size={15} />
           </button>
         </div>
       </div>
+
+      {overflowMenu && activeNote && (
+        <ContextMenu
+          x={overflowMenu.x}
+          y={overflowMenu.y}
+          onClose={() => setOverflowMenu(null)}
+          items={[
+            {
+              label: "Open in new tab",
+              icon: <SquareArrowOutUpRight className="h-4 w-4" />,
+              onClick: () => void openTab(activeNote.id),
+            },
+            { label: "", onClick: () => {}, separator: true },
+            {
+              label: "Make a copy",
+              icon: <Copy className="h-4 w-4" />,
+              onClick: () => void copyNote(activeNote.id),
+            },
+            {
+              label: bookmarks.has(activeNote.id) ? "Remove bookmark" : "Add bookmark",
+              icon: bookmarks.has(activeNote.id)
+                ? <BookmarkCheck className="h-4 w-4" />
+                : <Bookmark className="h-4 w-4" />,
+              onClick: () => void toggleBookmark(activeNote.id),
+            },
+            ...(settings.aiBaseUrl.trim()
+              ? [{
+                  label: "Generate AI title",
+                  icon: <Sparkles className="h-4 w-4" />,
+                  onClick: () => void handleGenerateTitle(),
+                }]
+              : []),
+            { label: "", onClick: () => {}, separator: true },
+            {
+              label: "Rename",
+              icon: <Edit3 className="h-4 w-4" />,
+              onClick: startEditingTitle,
+            },
+          ]}
+        />
+      )}
 
       {/* Editor — the wrapper scrolls (native page-style scrollbar) */}
       <div

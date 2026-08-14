@@ -40,16 +40,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
 import { api, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
-
-function replaceOrAddTitleHeading(body: string, title: string): string {
-  const heading = `## ${title}`;
-  if (/^##? .+$/m.test(body)) {
-    return body.replace(/^##? .+$/m, heading);
-  }
-  return body ? `${heading}\n\n${body}` : heading;
-}
 
 const iconMap: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   Database,

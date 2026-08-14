@@ -85,6 +85,20 @@ export default function MobileEditorToolbar({
     if (!chromeVisible) setForceShow(false);
   }, [chromeVisible]);
 
+  // When the on-screen keyboard closes the user is done editing — dismiss the
+  // bar and drop the focus/selection overrides so it doesn't linger floating
+  // above the content.
+  const prevKeyboardOpen = useRef(vv.isKeyboardOpen);
+  useEffect(() => {
+    if (prevKeyboardOpen.current && !vv.isKeyboardOpen) {
+      setHasFocus(false);
+      setHasSelection(false);
+      setForceShow(false);
+      setMenuOpen(false);
+    }
+    prevKeyboardOpen.current = vv.isKeyboardOpen;
+  }, [vv.isKeyboardOpen]);
+
   // Close the insert menu whenever the toolbar hides (scroll / blur).
   useEffect(() => {
     if (!show) setMenuOpen(false);

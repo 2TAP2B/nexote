@@ -7,12 +7,15 @@ import {
   Edit3,
   FolderInput,
   Hash,
+  Sparkles,
   SquareArrowOutUpRight,
   Star,
   Trash2,
 } from "lucide-react";
 
 import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
+import { generateNoteTitle } from "@/lib/ai";
+import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { useNotes } from "@/lib/notes-context";
 
 type Props = {
@@ -43,10 +46,35 @@ export default function MobileOverflowMenu({
     toggleShortcut,
     copyNote,
     openTab,
+    save,
+    settings,
+    notesById,
   } = useNotes();
 
   const isBookmarked = bookmarks.has(noteId);
   const isShortcut = shortcuts.has(noteId);
+
+  const handleGenerateTitle = async () => {
+    onClose();
+    const body = notesById[noteId]?.body ?? "";
+    if (!body.trim() || !settings.aiBaseUrl.trim()) return;
+    try {
+      const title = await generateNoteTitle(
+        {
+          baseUrl: settings.aiBaseUrl,
+          apiKey: settings.aiApiKey,
+          model: settings.aiModel,
+        },
+        body,
+      );
+      if (!title) return;
+      await save(noteId, { title, body: replaceOrAddTitleHeading(body, title) });
+    } catch (e) {
+      console.error("[nexote-ai]", e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const hasAI = Boolean(settings.aiBaseUrl.trim());
 
   const items: MenuItem[] = [
     {
@@ -60,6 +88,13 @@ export default function MobileOverflowMenu({
       icon: <Copy className="h-4 w-4" />,
       onClick: () => void copyNote(noteId),
     },
+    ...(hasAI
+      ? [{
+          label: "Generate AI title",
+          icon: <Sparkles className="h-4 w-4" />,
+          onClick: () => void handleGenerateTitle(),
+        }]
+      : []),
     {
       label: "Move to…",
       icon: <FolderInput className="h-4 w-4" />,
