@@ -16,7 +16,7 @@ import {
   toggleStrongCommand,
   wrapInBlockTypeCommand,
 } from "@milkdown/kit/preset/commonmark";
-import { insertTableCommand } from "@milkdown/kit/preset/gfm";
+import { insertTableCommand, toggleStrikethroughCommand } from "@milkdown/kit/preset/gfm";
 import { DOMParser, DOMSerializer, type NodeType } from "@milkdown/kit/prose/model";
 import { streamingPluginKey } from "@milkdown/kit/plugin/streaming";
 import { $prose, replaceAll } from "@milkdown/kit/utils";
@@ -27,6 +27,7 @@ import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection } from "pr
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
+import { cacheImage } from "@/lib/image-cache";
 
 import {
   bulletListIcon,
@@ -189,6 +190,7 @@ export type MilkdownEditorHandle = {
 export type FormatAction =
   | "bold"
   | "italic"
+  | "strike"
   | "h1"
   | "h2"
   | "h3"
@@ -431,6 +433,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       const uploadImageFile = async (file: File): Promise<string> => {
         try {
           const meta = await api.uploadImage(vaultId, noteId, file);
+          // Persist the bytes locally so the image survives a reload even
+          // before the body is saved or if the backend is unreachable.
+          void cacheImage(meta.url, file);
           window.dispatchEvent(
             new CustomEvent("nexote:image-uploaded", { detail: meta.url }),
           );
@@ -905,6 +910,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               case "italic":
                 commands.call(toggleEmphasisCommand.key);
                 break;
+              case "strike":
+                commands.call(toggleStrikethroughCommand.key);
+                break;
               case "h1":
               case "h2":
               case "h3":
@@ -942,6 +950,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         insertImageFile: (file: File) => {
           if (!file) return;
           void api.uploadImage(vaultId, noteId, file).then((meta) => {
+            void cacheImage(meta.url, file);
             window.dispatchEvent(
               new CustomEvent("nexote:image-uploaded", { detail: meta.url }),
             );

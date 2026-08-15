@@ -1,7 +1,11 @@
 // Nexote service worker — caches the app shell for offline launch.
-// API requests are NOT cached (they need the live backend).
-const CACHE = "nexote-v1";
+// Uploaded images are cached too (see the /images/ handler below) so they
+// survive reloads and offline use without needing the backend.
+const CACHE = "nexote-v2";
 const SHELL = ["/", "/m", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+
+// Matches image URLs stored in note bodies (/api/vaults/<id>/images/<path>).
+const IMAGE_PATH = /^\/api\/vaults\/[^/]+\/images\//;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
@@ -22,9 +26,31 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
-  // Never cache API calls or Next.js HMR chunks.
-  if (url.pathname.startsWith("/api/")) return;
+  // Never cache Next.js HMR chunks.
   if (url.pathname.startsWith("/_next/webpack-hmr")) return;
+
+  // Images are seeded into the cache when they're uploaded. Serve them
+  // cache-first so a just-uploaded image is still visible after a reload /
+  // offline, with a network backfill for images that were never cached.
+  if (IMAGE_PATH.test(url.pathname)) {
+    e.respondWith(
+      caches.match(req).then(
+        (cached) =>
+          cached ||
+          fetch(req).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+            }
+            return res;
+          }),
+      ),
+    );
+    return;
+  }
+
+  // Other API calls need the live backend — never cache them.
+  if (url.pathname.startsWith("/api/")) return;
 
   // Network-first for navigation requests, fall back to cache for offline.
   if (req.mode === "navigate") {
