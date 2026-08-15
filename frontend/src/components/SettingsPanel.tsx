@@ -75,8 +75,6 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
     renameVault,
     deleteVault,
     setVaultIcon,
-    treeMode,
-    setTreeMode,
     settings,
     updateSettings,
   } = useNotes();
@@ -220,8 +218,6 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
               <AppearanceSection
                 theme={resolvedTheme}
                 onThemeChange={setTheme}
-                treeMode={treeMode}
-                setTreeMode={setTreeMode}
                 colorScheme={colorScheme}
                 onColorSchemeChange={onColorSchemeChange}
               />
@@ -570,15 +566,11 @@ function SectionHeader({
 function AppearanceSection({
   theme,
   onThemeChange,
-  treeMode,
-  setTreeMode,
   colorScheme,
   onColorSchemeChange,
 }: {
   theme: string;
   onThemeChange: (t: "light" | "dark" | "system") => void;
-  treeMode: "simple" | "advanced";
-  setTreeMode: (mode: "simple" | "advanced") => void;
   colorScheme?: string;
   onColorSchemeChange?: (scheme: string) => void;
 }) {
@@ -654,51 +646,6 @@ function AppearanceSection({
               </button>
             );
           })}
-        </div>
-      </div>
-
-      {/* Note tree style */}
-      <div className="nexote-settings-tree-mode flex flex-col gap-1">
-        <span className="text-sm text-foreground">Note tree style</span>
-        <div className="flex flex-col gap-2">
-          {(
-            [
-              {
-                value: "advanced",
-                label: "Advanced",
-                desc: "Shortcuts, recent files, and all vaults",
-              },
-              {
-                value: "simple",
-                label: "Simple",
-                desc: "Only the active vault's folders",
-              },
-            ] as const
-          ).map((opt) => (
-            <label
-              key={opt.value}
-              className={[
-                "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition-colors",
-                treeMode === opt.value
-                  ? "border-primary/40 bg-primary/10"
-                  : "border-border hover:bg-muted/50",
-              ].join(" ")}
-            >
-              <input
-                type="radio"
-                name="tree-mode"
-                checked={treeMode === opt.value}
-                onChange={() => setTreeMode(opt.value)}
-                className="accent-[var(--primary)]"
-              />
-              <span className="flex flex-col">
-                <span className="text-sm text-foreground">{opt.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {opt.desc}
-                </span>
-              </span>
-            </label>
-          ))}
         </div>
       </div>
     </div>

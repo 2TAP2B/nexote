@@ -92,8 +92,6 @@ type NotesContextValue = {
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
   openJournalNote: (id: string) => Promise<void>;
   isJournalNote: (id: string) => boolean;
-  treeMode: "simple" | "advanced";
-  setTreeMode: (mode: "simple" | "advanced") => void;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
 };
@@ -175,7 +173,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [journalNotes, setJournalNotes] = useState<NoteMeta[]>([]);
   const [tagsByVault, setTagsByVault] = useState<Record<string, TagCount[]>>({});
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [treeMode, setTreeModeState] = useState<"simple" | "advanced">("advanced");
   const journalIdsRef = useRef<Set<string>>(new Set());
   // Mirrors of state for use inside the mount-once SSE effect (avoids stale
   // closures over notesById / activeId).
@@ -189,13 +186,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
-
-  useEffect(() => {
-    const stored = localStorage.getItem("nexote:tree-mode");
-    if (stored === "simple" || stored === "advanced") {
-      setTreeModeState(stored);
-    }
-  }, []);
 
   // Persist open tabs + active note across refreshes.
   useEffect(() => {
@@ -240,11 +230,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-  }, []);
-
-  const setTreeMode = useCallback((mode: "simple" | "advanced") => {
-    setTreeModeState(mode);
-    localStorage.setItem("nexote:tree-mode", mode);
   }, []);
 
   const activeVault = useMemo(
@@ -1016,8 +1001,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openNoteInVault,
       openJournalNote,
       isJournalNote: (id: string) => journalIdsRef.current.has(id),
-      treeMode,
-      setTreeMode,
       settings,
       updateSettings,
     }),
@@ -1072,8 +1055,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       toggleTaskItem,
       openNoteInVault,
       openJournalNote,
-      treeMode,
-      setTreeMode,
       settings,
       updateSettings,
     ],

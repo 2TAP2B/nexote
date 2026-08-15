@@ -724,11 +724,6 @@ body {
   flex: 1;
   min-height: 0;
 }
-/* Hide the "Note tree style" (simple/advanced) setting on mobile — the
- * mobile sidebar always uses the advanced tree. */
-.mob-shell-root .nexote-settings-tree-mode {
-  display: none;
-}
 
 /* Mobile sidebar panel — transform driven by data-open so the swipe hook
  * can set style.transform directly without React overwriting it. */

@@ -196,7 +196,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     switchVault,
     renameVault,
     setVaultIcon,
-    treeMode,
     journalNotes,
     tagsByVault,
     refreshTags,
@@ -719,7 +718,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       toggleExpandCollapse,
       allSectionsExpanded,
       toggleSectionsCollapse,
-      folderMode: view === "tree" && drillPath !== null && treeMode === "advanced",
+      folderMode: view === "tree" && drillPath !== null,
       folderName: drillPath ? (drillPath.split("/").pop() || drillPath) : "",
       folderViewMode,
       onToggleFolderViewMode: () => setFolderViewMode((m) => (m === "detailed" ? "compact" : "detailed")),
@@ -750,7 +749,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     toggleSectionsCollapse,
     drillPath,
     view,
-    treeMode,
     folderViewMode,
     folderSort,
     handleCreateHere,
@@ -862,7 +860,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     );
   }
 
-  const inFolderMode = view === "tree" && drillPath !== null && treeMode === "advanced";
+  const inFolderMode = view === "tree" && drillPath !== null;
 
   return (
     <div className="flex h-full flex-col">
@@ -986,65 +984,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
               onOpenNote={openNoteInVault}
               onOpenJournalNote={openJournalNote}
             />
-          ) : view === "tree" && drillPath !== null && treeMode !== "advanced" ? (
-            <DrillView
-              path={drillPath}
-              notes={notes}
-              folders={folders ?? []}
-              activeId={activeId}
-              activeSource={activeSource}
-              onOpen={(id) => openFromSection("drill", id)}
-              onDelete={setPendingDelete}
-              onCopy={copyNote}
-              onBookmark={toggleBookmark}
-              onShortcut={toggleShortcut}
-              bookmarks={bookmarks}
-              shortcuts={shortcuts}
-              onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-              renaming={renaming}
-              setRenaming={setRenaming}
-              onRename={handleRename}
-              onMoveNote={handleMoveNote}
-              onMoveTo={handleMoveTo}
-              onBack={() => setDrillPath(null)}
-              onDrillInto={setDrillPath}
-            />
-          ) : view === "tree" && treeMode === "simple" ? (
-            <div>
-              <TreeChildren
-                node={tree}
-                depth={0}
-                activeId={activeId}
-                activeSource={activeSource}
-                sectionTag="simple"
-                treeSelectedNav={treeSelectedNav}
-                setTreeSelectedNav={setTreeSelectedNav}
-                onOpen={(id) => openFromSection("simple", id)}
-                onDelete={setPendingDelete}
-                onCopy={copyNote}
-                onBookmark={toggleBookmark}
-                onShortcut={toggleShortcut}
-                bookmarks={bookmarks}
-                shortcuts={shortcuts}
-                isFolderOpen={isFolderOpen}
-                setOpenMap={setOpenMap}
-                sorted={sorted}
-                onNoteDragStart={handleNoteDragStart}
-                onFolderDragOver={setDragOverPath}
-                onFolderDrop={handleFolderDrop}
-                dragOverPath={dragOverPath}
-                onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-                renaming={renaming}
-                setRenaming={setRenaming}
-                onRename={handleRename}
-                onMoveNote={handleMoveNote}
-                onMoveTo={handleMoveTo}
-                onDeleteFolder={handleDeleteFolder}
-                onNewNoteInFolder={(path) => void create({ path })}
-                onNewFolderInFolder={(path) => openFolderDialog(path)}
-                onDrillInto={setDrillPath}
-              />
-            </div>
           ) : (
             <>
               {/* Vault sections */}
@@ -1215,7 +1154,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         </div>
 
         {/* Folder view panel — slides in from right */}
-        {view === "tree" && drillPath !== null && treeMode === "advanced" && (
+        {view === "tree" && drillPath !== null && (
           <div className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1 slide-in-right"
           >
             <FolderDetailView
@@ -1246,29 +1185,11 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         )}
       </div>
 
-      {/* Vault switcher + settings at the bottom (simple mode only shows the
-          vault picker; advanced mode has all vaults in the tree above) */}
+      {/* Settings at the bottom (the tree above already lists all vaults) */}
       <div
         className="flex shrink-0 items-center gap-2"
         style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderTop: "1px solid var(--border)" }}
       >
-        {treeMode === "simple" && (
-          <>
-            <Database size={12} className="shrink-0" style={{ color: "var(--muted-foreground)" }} />
-            <select
-              value={activeVault?.id ?? ""}
-              onChange={(e) => switchVault(e.target.value)}
-              className="min-w-0 flex-1 bg-transparent text-xs outline-none cursor-pointer"
-              style={{ appearance: "none", color: "var(--foreground)", fontSize: 13 }}
-            >
-              {vaults.map((v) => (
-                <option key={v.id} value={v.id} style={{ background: "var(--background)" }}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
         <div className="flex-1" />
         <button
           type="button"
@@ -2339,170 +2260,6 @@ function FolderDetailView({
           })
         )}
       </div>
-    </div>
-  );
-}
-
-// --- Drill-in view (shows contents of a specific folder) ---
-function DrillView({
-  path,
-  notes,
-  folders,
-  activeId,
-  activeSource,
-  onOpen,
-  onDelete,
-  onCopy,
-  onBookmark,
-  onShortcut,
-  bookmarks,
-  shortcuts,
-  onContextMenu,
-  renaming,
-  setRenaming,
-  onRename,
-  onMoveNote,
-  onMoveTo,
-  onBack,
-  onDrillInto,
-}: {
-  path: string;
-  notes: { id: string; title: string; path: string }[];
-  folders: { path: string; name: string }[];
-  activeId: string | null;
-  activeSource: string | null;
-  onOpen: (id: string) => void;
-  onDelete: (id: string) => void;
-  onCopy: (id: string) => void;
-  onBookmark: (id: string) => void;
-  onShortcut: (id: string) => void;
-  bookmarks: Set<string>;
-  shortcuts: Set<string>;
-  onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
-  renaming: { id: string; value: string } | null;
-  setRenaming: (r: { id: string; value: string } | null) => void;
-  onRename: (id: string, title: string) => void;
-  onMoveNote: (id: string, path: string) => void;
-  onMoveTo: (id: string) => void;
-  onBack: () => void;
-  onDrillInto: (path: string) => void;
-}) {
-  // Filter folders that are direct children of `path`.
-  const subFolders = folders.filter(
-    (f) => {
-      if (f.path === path) return false;
-      if (!f.path.startsWith(path + "/")) return false;
-      const rest = f.path.slice(path.length + 1);
-      return !rest.includes("/");
-    },
-  );
-  // Filter notes that are directly in `path`.
-  const folderNotes = notes.filter((n) => n.path === path);
-
-  const segments = path.split("/");
-
-  return (
-    <div>
-      {/* Back arrow + breadcrumb */}
-      <div className="flex items-center gap-2 mb-1" style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderBottom: "1px solid var(--border)" }}>
-        <button
-          type="button"
-          aria-label="Back to tree"
-          title="Back to tree"
-          onClick={onBack}
-          className="flex h-6 w-6 items-center justify-center rounded hover:bg-white/5"
-          style={{ color: "var(--muted-foreground)" }}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-        </button>
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden" style={{ fontSize: 12 }}>
-          {segments.map((seg, i) => {
-            const fullPath = segments.slice(0, i + 1).join("/");
-            const isLast = i === segments.length - 1;
-            return (
-              <span key={i} className="flex items-center gap-0.5 shrink-0">
-                {i > 0 && <span style={{ color: "var(--muted-foreground)" }}>/</span>}
-                <button
-                  type="button"
-                  onClick={() => !isLast && onDrillInto(fullPath)}
-                  className="truncate transition-colors"
-                  style={{
-                    color: isLast ? "var(--foreground)" : "var(--muted-foreground)",
-                    fontWeight: isLast ? 500 : 400,
-                  }}
-                >
-                  {seg}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Subfolders */}
-      <ul>
-        {subFolders.map((f) => (
-          <li key={f.path}>
-            <div
-              className="group flex w-full items-center gap-2 hover:bg-white/5 transition-colors"
-              style={{ height: 33, paddingLeft: 14, paddingRight: 14, borderRadius: 5 }}
-            >
-              <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--muted-foreground)" }} />
-              <button
-                type="button"
-                onClick={() => onDrillInto(f.path)}
-                className="min-w-0 flex-1 truncate text-left"
-                style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}
-              >
-                {f.name}
-              </button>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--muted-foreground)" }} />
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      {/* Notes in this folder */}
-      <ul>
-        {folderNotes.map((n) => (
-          <NoteItem
-            key={n.id}
-            note={n}
-            depth={0}
-            active={n.id === activeId && activeSource === "drill"}
-            activeId={activeId}
-            onOpen={onOpen}
-            onDelete={onDelete}
-            onCopy={onCopy}
-            onBookmark={onBookmark}
-            onShortcut={onShortcut}
-            bookmarks={bookmarks}
-            shortcuts={shortcuts}
-            onNoteDragStart={() => {}}
-            onContextMenu={onContextMenu}
-            renaming={renaming}
-            setRenaming={setRenaming}
-          onRename={onRename}
-          onMoveNote={onMoveNote}
-          onMoveTo={onMoveTo}
-          isFolderOpen={() => false}
-          setOpenMap={() => {}}
-          sorted={false}
-          onFolderDragOver={() => {}}
-          onFolderDrop={() => {}}
-          dragOverPath={null}
-          onDeleteFolder={() => {}}
-          onNewNoteInFolder={() => {}}
-          onNewFolderInFolder={() => {}}
-          onDrillInto={() => {}}
-        />
-        ))}
-        {folderNotes.length === 0 && subFolders.length === 0 && (
-          <li className="px-3 py-2 text-xs text-muted-foreground/50">
-            This folder is empty.
-          </li>
-        )}
-      </ul>
     </div>
   );
 }
