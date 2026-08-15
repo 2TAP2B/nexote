@@ -418,6 +418,16 @@ body {
   outline: none;
 }
 
+/* The raw markdown editor is a textarea; keep it clean without a visible
+ * scrollbar (scrolling still works). */
+.milkdown-raw-textarea {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.milkdown-raw-textarea::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .milkdown .ProseMirror {
     max-width: 100%;
@@ -425,7 +435,9 @@ body {
   }
   .milkdown-raw-textarea {
     max-width: 100% !important;
-    padding: 24px 16px 96px !important;
+    /* Clear the fixed top bar (sidebar toggle) so raw markdown never starts
+     * underneath it. */
+    padding: calc(env(safe-area-inset-top, 0px) + 72px) 16px 96px !important;
   }
 }
 

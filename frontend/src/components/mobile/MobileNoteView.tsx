@@ -11,7 +11,7 @@ import type { Note } from "@/lib/api";
 import MobileDashboard from "./MobileDashboard";
 import MobileEditorToolbar from "./MobileEditorToolbar";
 import { useScrollHideChrome } from "./useScrollHideChrome";
-import { useVirtualKeyboardInset } from "./useVirtualKeyboardInset";
+import { useVirtualKeyboardInset, useVisualViewport } from "./useVirtualKeyboardInset";
 
 const MilkdownEditorWrapper = dynamic<
   React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
@@ -56,6 +56,7 @@ export default function MobileNoteView({
   // the keyboard — ProseMirror keeps the cursor in view within the smaller
   // viewport.
   const kbdInset = useVirtualKeyboardInset();
+  const vv = useVisualViewport();
 
   const aiConfig = useMemo<AIConfig>(
     () => ({
@@ -207,11 +208,7 @@ export default function MobileNoteView({
   if (isDashboard || !activeNote) {
     return (
       <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
-        <MobileTopBar
-          onOpenSidebar={onOpenSidebar}
-          onOverflow={onOverflow}
-          showToggle={false}
-        />
+        <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
         <div
           className="h-full overflow-y-auto"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 60px)" }}
@@ -235,12 +232,7 @@ export default function MobileNoteView({
        * on scroll-up or at top. Transparent so the editor shows through.
        * In raw mode it stays pinned so the toggle-back button is always
        * reachable. */}
-      <MobileTopBar
-        onOpenSidebar={onOpenSidebar}
-        onOverflow={onOverflow}
-        rawMode={rawMode}
-        onToggleMode={() => (rawMode ? void toggleToRendered() : toggleToRaw())}
-      />
+      <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} rawMode={rawMode} />
 
       {/* Editor — fullscreen, fills the entire area behind the top bar. The
        * H2 note name is the first line inside the editor (editable). While the
@@ -283,6 +275,25 @@ export default function MobileNoteView({
         editorRef={editorRef}
         aiAvailable={Boolean(aiConfig.baseUrl)}
       />
+
+      {/* Raw/rendered toggle — floating button at the bottom right, above the
+       * keyboard (or above the bottom nav pill when the keyboard is closed).
+       * The top bar hides on scroll, so the toggle lives down here where it
+       * is always reachable while editing. */}
+      <div
+        className="pointer-events-auto fixed z-40"
+        style={{
+          right: 16,
+          top: `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - 132px)`,
+        }}
+      >
+        <CircleButton
+          ariaLabel={rawMode ? "Rendered view" : "Raw markdown"}
+          onClick={() => (rawMode ? void toggleToRendered() : toggleToRaw())}
+        >
+          {rawMode ? <BookOpen size={20} /> : <Braces size={20} />}
+        </CircleButton>
+      </div>
     </div>
   );
 }
@@ -291,14 +302,10 @@ function MobileTopBar({
   onOpenSidebar,
   onOverflow,
   rawMode = false,
-  onToggleMode,
-  showToggle = true,
 }: {
   onOpenSidebar: () => void;
   onOverflow: (x: number, y: number) => void;
   rawMode?: boolean;
-  onToggleMode?: () => void;
-  showToggle?: boolean;
 }) {
   const hideChrome = useScrollHideChrome();
   const visible = rawMode || hideChrome;
@@ -318,16 +325,6 @@ function MobileTopBar({
           <PanelLeft size={20} />
         </CircleButton>
       </div>
-      {showToggle && (
-        <div className="pointer-events-auto">
-          <CircleButton
-            ariaLabel={rawMode ? "Rendered view" : "Raw markdown"}
-            onClick={onToggleMode}
-          >
-            {rawMode ? <BookOpen size={20} /> : <Braces size={20} />}
-          </CircleButton>
-        </div>
-      )}
       <div className="pointer-events-auto">
         <CircleButton
           ariaLabel="More actions"
