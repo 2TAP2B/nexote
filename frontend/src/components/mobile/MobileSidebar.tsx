@@ -20,6 +20,7 @@ import { useEffect, useRef } from "react";
 
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
+import { useNotes } from "@/lib/notes-context";
 
 type Props = {
   open: boolean;
@@ -54,6 +55,8 @@ export default function MobileSidebar({
   onSelectTagConsumed,
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
+
+  const { openDaily } = useNotes();
 
   useEffect(() => {
     const el = fileTreeBox.current;
@@ -148,7 +151,14 @@ export default function MobileSidebar({
                 type="button"
                 aria-label={item.label}
                 title={item.label}
-                onClick={() => onSelectView(item.view)}
+                onClick={() => {
+                  if (item.view === "journal") {
+                    void openDaily();
+                    onClose();
+                    return;
+                  }
+                  onSelectView(item.view);
+                }}
                 className="flex shrink-0 items-center justify-center rounded-lg transition-colors"
                 style={{
                   width: 38,
