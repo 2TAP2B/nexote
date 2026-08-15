@@ -1062,26 +1062,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         </div>
       </div>
 
-      {/* Settings at the bottom (the tree above already lists all vaults) */}
-      <div
-        className="flex shrink-0 items-center gap-2"
-        style={{ height: 34, paddingLeft: 14, paddingRight: 14, borderTop: "1px solid var(--border)" }}
-      >
-        <div className="flex-1" />
-        <button
-          type="button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() =>
-            window.dispatchEvent(new CustomEvent("nexote:open-settings"))
-          }
-          className="flex h-6 w-6 items-center justify-center rounded hover:bg-white/5"
-          style={{ color: "var(--muted-foreground)" }}
-        >
-          <Settings2 size={12} />
-        </button>
-      </div>
-
       <DeleteConfirm
         open={pendingDelete !== null}
         noteId={pendingDelete}
