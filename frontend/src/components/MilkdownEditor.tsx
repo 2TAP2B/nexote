@@ -24,10 +24,23 @@ import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
 import type { EditorView } from "prosemirror-view";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection } from "prosemirror-state";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ComponentType } from "react";
+
+import {
+  Code2,
+  Heading1,
+  Heading2,
+  Heading3,
+  Image as ImageIcon,
+  List,
+  ListOrdered,
+  Table,
+  TextQuote,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 import { cacheImage } from "@/lib/image-cache";
+import { useVisualViewport } from "./mobile/useVirtualKeyboardInset";
 
 import {
   bulletListIcon,
@@ -205,6 +218,104 @@ export type AIConfig = {
   apiKey: string;
   model: string;
 };
+
+// A live "/command" being typed at the caret. from/to bound the "/query" text
+// in the document so selecting an item can strip it before applying the format.
+type SlashState = {
+  query: string;
+  from: number;
+  to: number;
+};
+
+// True when the caret sits in a plain paragraph whose text currently ends with
+// "/query" (query being letters/digits/hyphens). The trigger must be at the
+// start of the paragraph or right after whitespace so mid-phrase "/" (paths,
+// fractions, code) doesn't pop the menu.
+function computeSlashState(view: EditorView): SlashState | null {
+  const { state } = view;
+  const { empty, $from } = state.selection;
+  if (!empty || !view.hasFocus() || !view.editable) return null;
+  if ($from.depth === 0) return null;
+  const parent = $from.parent;
+  if (parent.type.name !== "paragraph") return null;
+  const prefix = parent.textContent.slice(0, $from.parentOffset);
+  const m = /(^|\s)\/([a-zA-Z0-9-]*)$/.exec(prefix);
+  if (!m) return null;
+  const slashStart = prefix.lastIndexOf("/");
+  return {
+    query: m[2],
+    from: $from.start() + slashStart,
+    to: $from.pos,
+  };
+}
+
+type SlashItem = {
+  id: FormatAction | "image";
+  label: string;
+  hint: string;
+  icon: ComponentType<{ size?: number }>;
+  keywords: string;
+};
+
+const SLASH_ITEMS: SlashItem[] = [
+  { id: "h1", label: "Heading 1", hint: "## ", icon: Heading1, keywords: "heading h1 title" },
+  { id: "h2", label: "Heading 2", hint: "### ", icon: Heading2, keywords: "heading h2" },
+  { id: "h3", label: "Heading 3", hint: "#### ", icon: Heading3, keywords: "heading h3" },
+  { id: "bullet-list", label: "Bullet list", hint: "- item", icon: List, keywords: "list bullet ul unordered" },
+  { id: "ordered-list", label: "Ordered list", hint: "1. item", icon: ListOrdered, keywords: "list ordered ol numbered" },
+  { id: "quote", label: "Quote", hint: "> ", icon: TextQuote, keywords: "quote blockquote" },
+  { id: "code-block", label: "Code block", hint: "```", icon: Code2, keywords: "code block" },
+  { id: "table", label: "Table", hint: "| a | b |", icon: Table, keywords: "table grid" },
+  { id: "image", label: "Image", hint: "![alt](url)", icon: ImageIcon, keywords: "image img picture" },
+];
+
+// Shared command dispatch for the mobile "format" handle and the slash menu so
+// both expose the exact same formatting set.
+function runFormatAction(ctx: Ctx, action: Exclude<FormatAction, "image">) {
+  const commands = ctx.get(commandsCtx);
+  switch (action) {
+    case "bold":
+      commands.call(toggleStrongCommand.key);
+      break;
+    case "italic":
+      commands.call(toggleEmphasisCommand.key);
+      break;
+    case "strike":
+      commands.call(toggleStrikethroughCommand.key);
+      break;
+    case "h1":
+    case "h2":
+    case "h3":
+      commands.call(setBlockTypeCommand.key, {
+        nodeType: headingSchema.type(ctx),
+        attrs: { level: Number(action[1]) },
+      });
+      break;
+    case "bullet-list":
+      commands.call(wrapInBlockTypeCommand.key, {
+        nodeType: bulletListSchema.type(ctx),
+      });
+      break;
+    case "ordered-list":
+      commands.call(wrapInBlockTypeCommand.key, {
+        nodeType: orderedListSchema.type(ctx),
+      });
+      break;
+    case "quote":
+      commands.call(wrapInBlockTypeCommand.key, {
+        nodeType: blockquoteSchema.type(ctx),
+      });
+      break;
+    case "code-block":
+      commands.call(setBlockTypeCommand.key, {
+        nodeType: codeBlockSchema.type(ctx),
+      });
+      break;
+    case "table":
+      commands.call(insertTableCommand.key, { row: 3, col: 2 });
+      break;
+  }
+}
 
 type MilkdownEditorProps = {
   defaultValue: string;
@@ -421,6 +532,87 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       window.addEventListener("nexote:insert-image", onInsertImage);
       return () => window.removeEventListener("nexote:insert-image", onInsertImage);
     }, [noteId]);
+
+    // Slash command menu (mobile). A ProseMirror watcher plumbs the live
+    // "/query" state up to React whenever the caret moves or the doc changes;
+    // the sheet itself is a fixed panel pinned just above the format bar so it
+    // can never sit under the on-screen keyboard. See computeSlashState.
+    const [slash, setSlash] = useState<SlashState | null>(null);
+    const slashRef = useRef<SlashState | null>(null);
+    const slashImageRef = useRef<HTMLInputElement | null>(null);
+    const vv = useVisualViewport();
+
+    const applySlash = (s: SlashState | null) => {
+      slashRef.current = s;
+      setSlash(s);
+    };
+
+    // The format bar dismisses itself when the on-screen keyboard closes;
+    // drop the slash panel too so it doesn't linger floating above content.
+    const prevKeyboardOpen = useRef(vv.isKeyboardOpen);
+    useEffect(() => {
+      if (prevKeyboardOpen.current && !vv.isKeyboardOpen) {
+        applySlash(null);
+      }
+      prevKeyboardOpen.current = vv.isKeyboardOpen;
+    }, [vv.isKeyboardOpen]);
+
+    const slashItems = slash
+      ? SLASH_ITEMS.filter((item) => {
+          const q = slash.query.trim().toLowerCase();
+          return (
+            !q ||
+            item.label.toLowerCase().includes(q) ||
+            item.keywords.toLowerCase().includes(q)
+          );
+        })
+      : [];
+
+    const gap = vv.isKeyboardOpen ? 12 : 80;
+    // Anchored to the bottom of the visual viewport, just above the format
+    // bar (which itself hugs the keyboard top when it's open). The sheet
+    // grows upward from this edge and its height is capped by the viewport.
+    const slashBottom = `calc(env(safe-area-inset-bottom, 0px) + ${gap + 52 + 12}px)`;
+    const slashMaxHeight = Math.max(140, vv.height - (gap + 52 + 12) - 24);
+
+    const uploadImageFile = (file: File) => {
+      if (!file) return;
+      void api.uploadImage(vaultId, noteId, file).then((meta) => {
+        void cacheImage(meta.url, file);
+        window.dispatchEvent(
+          new CustomEvent("nexote:image-uploaded", { detail: meta.url }),
+        );
+        if (meta.url) {
+          window.dispatchEvent(
+            new CustomEvent("nexote:insert-image", { detail: { url: meta.url } }),
+          );
+        }
+      }).catch((err) => {
+        console.error("[nexote-image]", err);
+      });
+    };
+
+    const selectSlashItem = (item: SlashItem) => {
+      const editor = crepeRef.current?.editor;
+      if (!editor) return;
+      const range = slashRef.current;
+      const action = item.id;
+      if (action === "image") {
+        applySlash(null);
+        slashImageRef.current?.click();
+        return;
+      }
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
+        runFormatAction(ctx, action);
+        view.focus();
+      });
+      applySlash(null);
+      editor.action((ctx) => {
+        ctx.get(editorViewCtx).focus();
+      });
+    };
 
     useEditor((root) => {
       const baseUrl = aiConfig.baseUrl
@@ -718,6 +910,50 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       // Emit selection empty/non-empty transitions for the mobile format bar.
       crepe.editor.use(selectionWatchPlugin);
 
+      // Mobile slash commands: track when the caret types "/query" and surface
+      // it to React (falling back to null when the trigger is gone), so the
+      // sheet can be rendered and dismissed from the same source of truth.
+      // Escape, scrolling, or leaving the editor closes it. Return values are
+      // always false so none of ProseMirror's default handling is bypassed.
+      if (mobile) {
+        const slashWatchPlugin = new Plugin<unknown>({
+          key: new PluginKey("nexote-slash-watch"),
+          view: (_view) => {
+            // Scroll doesn't bubble, but capture-phase on window sees every
+            // container's scroll, which reads/taps a floating sheet should
+            // dismiss. Close only if actually open to avoid re-render churn.
+            const onScroll = () => {
+              if (slashRef.current) applySlash(null);
+            };
+            window.addEventListener("scroll", onScroll, true);
+            return {
+              update: (view) => {
+                applySlash(computeSlashState(view));
+              },
+              destroy: () => {
+                window.removeEventListener("scroll", onScroll, true);
+              },
+            };
+          },
+          props: {
+            handleKeyDown: (_view, e) => {
+              if (e.key === "Escape") {
+                applySlash(null);
+                return true;
+              }
+              return false;
+            },
+            handleDOMEvents: {
+              blur: () => {
+                applySlash(null);
+                return false;
+              },
+            },
+          },
+        });
+        crepe.editor.use($prose(() => slashWatchPlugin));
+      }
+
       // Clicking a highlighted tag pill opens the Tags view with that tag
       // selected (the sidebar listens for this event and switches views).
       const onRootClick = (e: MouseEvent) => {
@@ -902,66 +1138,11 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           const editor = crepeRef.current?.editor;
           if (!editor) return;
           editor.action((ctx) => {
-            const commands = ctx.get(commandsCtx);
-            switch (action) {
-              case "bold":
-                commands.call(toggleStrongCommand.key);
-                break;
-              case "italic":
-                commands.call(toggleEmphasisCommand.key);
-                break;
-              case "strike":
-                commands.call(toggleStrikethroughCommand.key);
-                break;
-              case "h1":
-              case "h2":
-              case "h3":
-                commands.call(setBlockTypeCommand.key, {
-                  nodeType: headingSchema.type(ctx),
-                  attrs: { level: Number(action[1]) },
-                });
-                break;
-              case "bullet-list":
-                commands.call(wrapInBlockTypeCommand.key, {
-                  nodeType: bulletListSchema.type(ctx),
-                });
-                break;
-              case "ordered-list":
-                commands.call(wrapInBlockTypeCommand.key, {
-                  nodeType: orderedListSchema.type(ctx),
-                });
-                break;
-              case "quote":
-                commands.call(wrapInBlockTypeCommand.key, {
-                  nodeType: blockquoteSchema.type(ctx),
-                });
-                break;
-              case "code-block":
-                commands.call(setBlockTypeCommand.key, {
-                  nodeType: codeBlockSchema.type(ctx),
-                });
-                break;
-              case "table":
-                commands.call(insertTableCommand.key, { row: 3, col: 2 });
-                break;
-            }
+            runFormatAction(ctx, action);
           });
         },
         insertImageFile: (file: File) => {
-          if (!file) return;
-          void api.uploadImage(vaultId, noteId, file).then((meta) => {
-            void cacheImage(meta.url, file);
-            window.dispatchEvent(
-              new CustomEvent("nexote:image-uploaded", { detail: meta.url }),
-            );
-            if (meta.url) {
-              window.dispatchEvent(
-                new CustomEvent("nexote:insert-image", { detail: { url: meta.url } }),
-              );
-            }
-          }).catch((err) => {
-            console.error("[nexote-image]", err);
-          });
+          uploadImageFile(file);
         },
         askAI: () => {
           const editor = crepeRef.current?.editor;
@@ -998,6 +1179,83 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       return (
         <>
           <Milkdown />
+          {mobile && slash && (
+            <div
+              className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-3"
+              style={{
+                bottom: slashBottom,
+                opacity: 1,
+                transition: "opacity 0.15s ease",
+              }}
+            >
+              <div
+                onPointerDown={(e) => e.preventDefault()}
+                className="no-scrollbar w-full max-w-2xl overflow-y-auto rounded-2xl border px-1 py-1"
+                style={{
+                  maxHeight: slashMaxHeight,
+                  background: "var(--mob-surface)",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+                  borderColor: "color-mix(in srgb, var(--mob-text) 14%, transparent)",
+                }}
+              >
+                <div
+                  className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider"
+                  style={{ color: "var(--mob-muted)" }}
+                >
+                  Commands
+                </div>
+                {slashItems.length === 0 && (
+                  <div
+                    className="px-3 py-3 text-[13px]"
+                    style={{ color: "var(--mob-muted)" }}
+                  >
+                    No matching commands
+                  </div>
+                )}
+                {slashItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectSlashItem(item)}
+                    className="flex w-full shrink-0 items-center gap-3 rounded-xl px-3 py-2 text-left transition-opacity active:opacity-70"
+                  >
+                    <span
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                      style={{
+                        background: "color-mix(in srgb, var(--mob-text) 10%, transparent)",
+                        color: "var(--mob-accent)",
+                      }}
+                    >
+                      <item.icon size={18} />
+                    </span>
+                    <span
+                      className="flex-1 text-[13px] font-medium"
+                      style={{ color: "var(--mob-text)" }}
+                    >
+                      {item.label}
+                    </span>
+                    <span
+                      className="text-xs"
+                      style={{ color: "var(--mob-muted)" }}
+                    >
+                      {item.hint}
+                    </span>
+                  </button>
+                ))}
+                <input
+                  ref={slashImageRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadImageFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+          )}
           {aiReview && (
             <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh] backdrop-blur-sm">
               <div className="flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl">
