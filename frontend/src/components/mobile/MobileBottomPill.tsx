@@ -81,10 +81,11 @@ export default function MobileBottomPill({
           onClick={onOpenTabs}
           className="flex items-center justify-center transition-transform active:scale-90"
           style={{
-            width: 32,
-            height: 32,
+            width: 30,
+            height: 30,
             borderRadius: 8,
-            border: "1.5px solid var(--mob-muted)",
+            background: "color-mix(in srgb, var(--mob-text) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--mob-muted) 40%, transparent)",
             color: "var(--mob-text)",
             fontSize: 13,
             fontWeight: 600,
