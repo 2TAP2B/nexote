@@ -10,8 +10,8 @@ import {
   Italic,
   List,
   ListOrdered,
-  Plus,
   Sparkles,
+  Strikethrough,
   Table,
   TextQuote,
 } from "lucide-react";
@@ -25,8 +25,9 @@ import { useVisualViewport } from "./useVirtualKeyboardInset";
 // selection toolbar (which overlapped the selection and the native copy/paste
 // popup). Appears only after the user taps the editor to set a cursor (or
 // selects text) and sits pinned to the top of the on-screen keyboard, right
-// where the caret is. It hides on scroll-down (reading) and reappears on
-// scroll-up.
+// where the caret is. Every markdown tool is exposed directly as a button in
+// a horizontally scrollable bar (scrollbar hidden). It hides on scroll-down
+// (reading) and reappears on scroll-up.
 export default function MobileEditorToolbar({
   editorRef,
   aiAvailable,
@@ -36,7 +37,6 @@ export default function MobileEditorToolbar({
 }) {
   const run = (action: FormatAction) => () => {
     editorRef.current?.format(action);
-    setMenuOpen(false);
   };
 
   // Visible while the caret is in the editor or text is selected, and only
@@ -46,7 +46,6 @@ export default function MobileEditorToolbar({
   const [hasSelection, setHasSelection] = useState(false);
   const [hasFocus, setHasFocus] = useState(false);
   const [forceShow, setForceShow] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const chromeVisible = useScrollHideChrome();
   const vv = useVisualViewport();
   // While the on-screen keyboard is open the user is editing, so never let
@@ -56,7 +55,7 @@ export default function MobileEditorToolbar({
   // Gap between the bar and what's beneath it: 12px when the keyboard is open
   // (hugging its top edge), or above the floating bottom pill otherwise.
   const gap = vv.isKeyboardOpen ? 12 : 80;
-  const barTop = `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - ${gap + 48}px)`;
+  const barTop = `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - ${gap + 52}px)`;
 
   useEffect(() => {
     const onChange = (e: Event) => {
@@ -94,21 +93,15 @@ export default function MobileEditorToolbar({
       setHasFocus(false);
       setHasSelection(false);
       setForceShow(false);
-      setMenuOpen(false);
     }
     prevKeyboardOpen.current = vv.isKeyboardOpen;
   }, [vv.isKeyboardOpen]);
-
-  // Close the insert menu whenever the toolbar hides (scroll / blur).
-  useEffect(() => {
-    if (!show) setMenuOpen(false);
-  }, [show]);
 
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   return (
     <div
-      className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center"
+      className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center px-3"
       style={{
         top: barTop,
         transform: show ? "translateY(0)" : "translateY(150%)",
@@ -116,22 +109,14 @@ export default function MobileEditorToolbar({
         transition: "transform 0.25s ease, opacity 0.2s ease, top 0.2s ease",
       }}
     >
-      {menuOpen && (
-        <div
-          className="pointer-events-auto fixed inset-0 z-50 bg-black/40"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
-      <div className="pointer-events-auto relative">
+      <div className="pointer-events-auto w-full max-w-2xl">
         <div
           onPointerDown={(e) => e.preventDefault()}
-          className="flex items-center gap-1 overflow-x-auto rounded-full px-2 no-scrollbar"
+          className="no-scrollbar flex items-center gap-1 overflow-x-auto rounded-2xl px-2"
           style={{
             height: 48,
             background: "var(--mob-surface)",
             boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
-            maxWidth: "calc(100vw - 24px)",
-            WebkitOverflowScrolling: "touch",
           }}
         >
           <BarButton label="Bold" onClick={run("bold")}>
@@ -140,13 +125,37 @@ export default function MobileEditorToolbar({
           <BarButton label="Italic" onClick={run("italic")}>
             <Italic size={20} />
           </BarButton>
+          <BarButton label="Strikethrough" onClick={run("strike")}>
+            <Strikethrough size={20} />
+          </BarButton>
           <BarDivider />
-          <BarButton
-            label={menuOpen ? "Close insert menu" : "Insert block"}
-            onClick={() => setMenuOpen((open) => !open)}
-            accent
-          >
-            <Plus size={22} />
+          <BarButton label="Heading 1" onClick={run("h1")}>
+            <Heading1 size={20} />
+          </BarButton>
+          <BarButton label="Heading 2" onClick={run("h2")}>
+            <Heading2 size={20} />
+          </BarButton>
+          <BarButton label="Heading 3" onClick={run("h3")}>
+            <Heading3 size={20} />
+          </BarButton>
+          <BarDivider />
+          <BarButton label="Bullet list" onClick={run("bullet-list")}>
+            <List size={20} />
+          </BarButton>
+          <BarButton label="Ordered list" onClick={run("ordered-list")}>
+            <ListOrdered size={20} />
+          </BarButton>
+          <BarButton label="Quote" onClick={run("quote")}>
+            <TextQuote size={20} />
+          </BarButton>
+          <BarButton label="Code block" onClick={run("code-block")}>
+            <Code2 size={20} />
+          </BarButton>
+          <BarButton label="Table" onClick={run("table")}>
+            <Table size={20} />
+          </BarButton>
+          <BarButton label="Image" onClick={() => fileRef.current?.click()}>
+            <ImageIcon size={20} />
           </BarButton>
           {aiAvailable && (
             <>
@@ -161,55 +170,6 @@ export default function MobileEditorToolbar({
             </>
           )}
         </div>
-
-        {menuOpen && (
-          <div
-            onPointerDown={(e) => e.preventDefault()}
-            className="absolute z-50"
-            style={{
-              bottom: "calc(100% + 10px)",
-              left: "50%",
-              transform: "translateX(-50%)",
-              width: "max(272px, calc(100vw - 48px))",
-            }}
-          >
-            <div
-              className="no-scrollbar rounded-2xl p-2"
-              style={{
-                background: "var(--mob-surface)",
-                boxShadow:
-                  "0 0 0 1px rgba(255,255,255,0.08), 0 8px 32px rgba(0,0,0,0.45)",
-                maxHeight: `calc(${Math.max(vv.height, 200)}px - env(safe-area-inset-bottom, 0px) - ${gap + 48 + 20}px)`,
-                overflowY: "auto",
-              }}
-            >
-              <div
-                className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider"
-                style={{ color: "var(--mob-muted)" }}
-              >
-                Insert
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                <MenuTile label="Heading 1" icon={<Heading1 size={22} />} onClick={run("h1")} />
-                <MenuTile label="Heading 2" icon={<Heading2 size={22} />} onClick={run("h2")} />
-                <MenuTile label="Heading 3" icon={<Heading3 size={22} />} onClick={run("h3")} />
-                <MenuTile label="Bullet list" icon={<List size={22} />} onClick={run("bullet-list")} />
-                <MenuTile label="Ordered list" icon={<ListOrdered size={22} />} onClick={run("ordered-list")} />
-                <MenuTile label="Quote" icon={<TextQuote size={22} />} onClick={run("quote")} />
-                <MenuTile label="Code block" icon={<Code2 size={22} />} onClick={run("code-block")} />
-                <MenuTile label="Table" icon={<Table size={22} />} onClick={run("table")} />
-                <MenuTile
-                  label="Image"
-                  icon={<ImageIcon size={22} />}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    fileRef.current?.click();
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       <input
@@ -262,27 +222,5 @@ function BarDivider() {
       className="shrink-0"
       style={{ width: 1, height: 22, background: "var(--mob-muted)" }}
     />
-  );
-}
-
-function MenuTile({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 transition-transform active:scale-95"
-      style={{ color: "var(--mob-text)" }}
-    >
-      <span style={{ color: "var(--mob-accent, #7c6ff0)" }}>{icon}</span>
-      <span className="text-xs leading-tight">{label}</span>
-    </button>
   );
 }
