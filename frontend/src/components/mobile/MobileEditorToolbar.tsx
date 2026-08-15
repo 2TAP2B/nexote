@@ -10,6 +10,7 @@ import {
   Italic,
   List,
   ListOrdered,
+  Plus,
   Sparkles,
   Strikethrough,
   Table,
@@ -37,6 +38,13 @@ export default function MobileEditorToolbar({
 }) {
   const run = (action: FormatAction) => () => {
     editorRef.current?.format(action);
+  };
+
+  // First toolbar button: open the slash command menu. The editor listens for
+  // this event, drops a "/" in the document at the caret (or a fresh body
+  // paragraph below the current block) and focuses, which surfaces the sheet.
+  const openSlash = () => {
+    window.dispatchEvent(new CustomEvent("nexote:slash-open"));
   };
 
   // Visible while the caret is in the editor or text is selected, and only
@@ -119,6 +127,10 @@ export default function MobileEditorToolbar({
             boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
           }}
         >
+          <BarButton label="Insert / slash commands" onClick={openSlash} accent>
+            <Plus size={20} />
+          </BarButton>
+          <BarDivider />
           <BarButton label="Bold" onClick={run("bold")}>
             <Bold size={20} />
           </BarButton>

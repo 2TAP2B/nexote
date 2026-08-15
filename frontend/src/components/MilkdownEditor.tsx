@@ -533,6 +533,41 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       return () => window.removeEventListener("nexote:insert-image", onInsertImage);
     }, [noteId]);
 
+    // Toolbar "+" button: drops a "/" in the document at the caret and
+    // focuses, which surfaces the slash command sheet via the watcher below.
+    // If the caret is wedged in a block that can't trigger the menu (e.g. the
+    // title heading), insert a fresh body paragraph after it first.
+    useEffect(() => {
+      if (!mobile) return;
+      const onSlashOpen = () => {
+        const editor = crepeRef.current?.editor;
+        if (!editor) return;
+        editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          const { state } = view;
+          let tr = state.tr;
+          if (!state.selection.empty) tr = tr.deleteSelection();
+          const $pos = tr.selection.$from;
+          if ($pos.parent.type.name !== "paragraph") {
+            const after = $pos.after($pos.depth);
+            tr = tr.insert(after, tr.doc.type.schema.nodes.paragraph.create());
+            tr = tr.setSelection(TextSelection.near(tr.doc.resolve(after + 1)));
+          }
+          const slashFrom = tr.selection.from;
+          tr = tr.insertText("/", slashFrom).scrollIntoView();
+          view.dispatch(tr);
+          view.focus();
+          // If the editor was blurred when "+" was tapped, the watcher's
+          // update already ran with hasFocus() === false and returned null; the
+          // focus call doesn't dispatch a transaction, so open the sheet from
+          // the position we just wrote to make the menu appear regardless.
+          applySlash({ query: "", from: slashFrom, to: slashFrom + 1 });
+        });
+      };
+      window.addEventListener("nexote:slash-open", onSlashOpen);
+      return () => window.removeEventListener("nexote:slash-open", onSlashOpen);
+    }, [mobile]);
+
     // Slash command menu (mobile). A ProseMirror watcher plumbs the live
     // "/query" state up to React whenever the caret moves or the doc changes;
     // the sheet itself is a fixed panel pinned just above the format bar so it
@@ -595,7 +630,6 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     const selectSlashItem = (item: SlashItem) => {
       const editor = crepeRef.current?.editor;
       if (!editor) return;
-      const range = slashRef.current;
       const action = item.id;
       if (action === "image") {
         applySlash(null);
@@ -604,14 +638,30 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       }
       editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
+        // Recompute the "/query" range from the live state instead of trusting
+        // the last snapshot: if the caret moved or the sheet was opened from
+        // the "+" button the stored range can be stale, and deleting it would
+        // abort the whole command. A missing range just skips the deletion.
+        const range = computeSlashState(view);
         if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
         runFormatAction(ctx, action);
         view.focus();
       });
       applySlash(null);
-      editor.action((ctx) => {
-        ctx.get(editorViewCtx).focus();
-      });
+    };
+
+    // Some mobile browsers swallow the click that follows a preventDefault'd
+    // pointerdown (and a blur can tear the sheet down between the two), so the
+    // sheet items act on pointerdown. The guard stops a late/inherited click
+    // from running the same item twice.
+    const slashActingRef = useRef(false);
+    const runSlashItem = (item: SlashItem) => {
+      if (slashActingRef.current) return;
+      slashActingRef.current = true;
+      window.setTimeout(() => {
+        slashActingRef.current = false;
+      }, 250);
+      selectSlashItem(item);
     };
 
     useEditor((root) => {
@@ -644,6 +694,10 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         },
         [Crepe.Feature.LinkTooltip]: {
           inputPlaceholder: "Paste a link…",
+        },
+        [Crepe.Feature.Placeholder]: {
+          text: "Start writing, or type / for commands…",
+          mode: "block",
         },
         [Crepe.Feature.Toolbar]: {
           buildToolbar(builder) {
@@ -1190,7 +1244,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             >
               <div
                 onPointerDown={(e) => e.preventDefault()}
-                className="no-scrollbar w-full max-w-2xl overflow-y-auto rounded-2xl border px-1 py-1"
+                className="pointer-events-auto no-scrollbar w-full max-w-2xl overflow-y-auto rounded-2xl border px-1 py-1"
                 style={{
                   maxHeight: slashMaxHeight,
                   background: "var(--mob-surface)",
@@ -1216,7 +1270,14 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => selectSlashItem(item)}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      runSlashItem(item);
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      runSlashItem(item);
+                    }}
                     className="flex w-full shrink-0 items-center gap-3 rounded-xl px-3 py-2 text-left transition-opacity active:opacity-70"
                   >
                     <span
