@@ -21,6 +21,7 @@ import (
 type Handler struct {
 	Registry     *notes.VaultRegistry
 	JournalStore *notes.Store
+	Events       *hub
 }
 
 // New creates a Handler backed by the given vault registry. The journal
@@ -30,7 +31,7 @@ func New(r *notes.VaultRegistry, journalDir string) *Handler {
 	if err != nil {
 		log.Printf("journal store: %v", err)
 	}
-	return &Handler{Registry: r, JournalStore: js}
+	return &Handler{Registry: r, JournalStore: js, Events: newHub()}
 }
 
 // Routes returns an http.Handler serving the /api/* REST surface with CORS
@@ -44,6 +45,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/vaults/{id}", h.renameVault)
 	mux.HandleFunc("PATCH /api/vaults/{id}", h.setVaultIcon)
 	mux.HandleFunc("DELETE /api/vaults/{id}", h.deleteVault)
+
+	// Change notification stream (Server-Sent Events)
+	mux.HandleFunc("GET /api/events", h.streamEvents)
 
 	// Vault-scoped note routes
 	mux.HandleFunc("GET /api/vaults/{vaultId}/notes", h.listNotes)
@@ -314,6 +318,7 @@ func (h *Handler) updateNote(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, err)
 		return
 	}
+	h.publishNote(r.PathValue("vaultId"), id, doc.Meta.UpdatedAt)
 	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 
@@ -705,6 +710,7 @@ func (h *Handler) journalUpdateNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	h.publishNote("journal", id, doc.Meta.UpdatedAt)
 	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 

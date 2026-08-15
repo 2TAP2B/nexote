@@ -5,6 +5,11 @@ const nextConfig = {
   turbopack: {
     root: new URL(".", import.meta.url).pathname,
   },
+  // Disable response compression: the /api/events Server-Sent Events stream
+  // must pass through uncompressed (small buffered gzip frames never reach the
+  // browser's EventSource in time), and the app is a self-hosted LAN app where
+  // gzip saves little anyway.
+  compress: false,
   // Allow LAN access to the dev server (HMR/websocket) from the machine's
   // local IP and Tailscale IP so mobile devices can load /m.
   allowedDevOrigins: ["192.168.178.94", "100.64.0.26"],

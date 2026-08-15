@@ -698,8 +698,33 @@ func (s *Store) write(doc Document) error {
 	if err != nil {
 		return fmt.Errorf("encode note: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, doc.Meta.ID+".md"), data, 0o644); err != nil {
-		return fmt.Errorf("write note: %w", err)
+	// Write to a temp file in the same directory, then rename over the real
+	// file. Readers never see a partially-written note, and without an atomic
+	// swap a reader (e.g. another client's GET or the file listing) could
+	// observe a half-written body. os.Rename is atomic on the local FS.
+	path := filepath.Join(dir, doc.Meta.ID+".md")
+	tmp, err := os.CreateTemp(dir, doc.Meta.ID+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create note temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("write note temp: %w", err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("chmod note temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("close note temp: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("rename note: %w", err)
 	}
 	return nil
 }

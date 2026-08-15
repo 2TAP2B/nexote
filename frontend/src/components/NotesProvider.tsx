@@ -177,6 +177,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [treeMode, setTreeModeState] = useState<"simple" | "advanced">("advanced");
   const journalIdsRef = useRef<Set<string>>(new Set());
+  // Mirrors of state for use inside the mount-once SSE effect (avoids stale
+  // closures over notesById / activeId).
+  const notesByIdRef = useRef<Record<string, Note>>(notesById);
+  const activeIdRef = useRef<string | null>(activeId);
+
+  useEffect(() => {
+    notesByIdRef.current = notesById;
+  }, [notesById]);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   useEffect(() => {
     const stored = localStorage.getItem("nexote:tree-mode");
@@ -705,6 +717,75 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     void refreshJournal();
   }, [refreshJournal]);
 
+  // Live sync: subscribe to the backend's Server-Sent Events stream and, when
+  // another client saves an open note, refetch its body and swap it in (the
+  // editor remounts through the existing bodyChanged path when not actively
+  // edited). Guardrails:
+  //   - skip notes that aren't open in a tab (no cached copy),
+  //   - skip if this client is actively typing on the active note (<1.5s since
+  //     the last keystroke), so the editor is never yanked mid-typing,
+  //   - skip events no newer than the cached copy (e.g. our own save echo),
+  //   - EventSource errors auto-reconnect after a few seconds.
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+
+    const connect = () => {
+      if (closed) return;
+      es = new EventSource("/api/events");
+      es.addEventListener("note-change", (event) => {
+        let data: { vaultId?: string; id?: string; updatedAt?: string };
+        try {
+          data = JSON.parse((event as MessageEvent).data);
+        } catch {
+          return;
+        }
+        const { vaultId, id, updatedAt } = data;
+        if (!vaultId || !id || !updatedAt) return;
+        const cached = notesByIdRef.current[id];
+        if (!cached) return;
+        // The user is typing on this note right now — don't yank the editor.
+        if (
+          id === activeIdRef.current &&
+          Date.now() - lastEditAtRef.current < 1500
+        ) {
+          return;
+        }
+        if (Date.parse(cached.updatedAt) >= Date.parse(updatedAt)) return;
+        void (async () => {
+          try {
+            const fresh =
+              vaultId === "journal"
+                ? await api.journalGet(id)
+                : await api.get(vaultId, id);
+            setNotesById((prev) => {
+              const cur = prev[id];
+              if (!cur || Date.parse(cur.updatedAt) >= Date.parse(fresh.updatedAt)) {
+                return prev;
+              }
+              return { ...prev, [id]: fresh };
+            });
+          } catch {
+            // Transient (backend briefly down); the next event will retry.
+          }
+        })();
+      });
+      es.onerror = () => {
+        es?.close();
+        if (retry) clearTimeout(retry);
+        retry = setTimeout(connect, 3000);
+      };
+    };
+    connect();
+
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      es?.close();
+    };
+  }, []);
+
   // --- Tags ---
 
   const refreshTags = useCallback(async (vaultId: string) => {
@@ -806,9 +887,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const inflight = useRef<Promise<void> | null>(null);
   const draftRef = useRef<Draft>({ title: "", body: "" });
+  // Timestamp of the last local edit (armed by setDraft). The live-sync SSE
+  // handler uses it to avoid overwriting the user while they are typing.
+  const lastEditAtRef = useRef(0);
 
   const setDraft = useCallback((draft: Draft) => {
     draftRef.current = draft;
+    lastEditAtRef.current = Date.now();
   }, []);
 
   const save = useCallback(
@@ -820,7 +905,22 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setSaving(true);
         try {
           if (isJournal) {
-            await api.journalUpdate(id, input);
+            const doc = await api.journalUpdate(id, input);
+            setNotesById((prev) => {
+              const n = prev[id];
+              if (!n) return prev;
+              return {
+                ...prev,
+                [id]: {
+                  ...n,
+                  title: input.title || n.title,
+                  body: input.body ?? n.body,
+                  updatedAt: doc.updatedAt,
+                },
+              };
+            });
+            // Refresh tasks since the body may have changed checkbox states.
+            void refreshTasks();
           } else {
             const updated = await api.update(activeVaultId!, id, input);
             await refresh();
@@ -835,25 +935,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
                   title: input.title || n.title,
                   body: input.body ?? n.body,
                   tags: updated.tags ?? n.tags,
+                  updatedAt: updated.updatedAt,
                 },
               };
             });
-            return;
           }
-          setNotesById((prev) => {
-            const n = prev[id];
-            if (!n) return prev;
-            return {
-              ...prev,
-              [id]: {
-                ...n,
-                title: input.title || n.title,
-                body: input.body ?? n.body,
-              },
-            };
-          });
-          // Refresh tasks since the body may have changed checkbox states.
-          void refreshTasks();
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to save note");
         } finally {

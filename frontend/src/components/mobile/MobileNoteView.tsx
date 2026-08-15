@@ -105,9 +105,18 @@ export default function MobileNoteView({
     loadedKeyRef.current = activeNote.id;
     skipNextChange.current = true;
 
+    // Crepe does not always emit a post-mount markdown update (e.g. an empty
+    // or unchanged doc), so skipNextChange could stay set forever and swallow
+    // the user's first real edit. Release it right after mount: the redundant
+    // initial save is avoided while later emissions save normally.
+    const releaseSkip = window.setTimeout(() => {
+      skipNextChange.current = false;
+    }, 300);
+
     if (sameNote && bodyChanged) {
       setBodyKey((k) => k + 1);
     }
+    return () => window.clearTimeout(releaseSkip);
   }, [activeNote]);
 
   const handleEditorChange = useCallback((markdown: string) => {
