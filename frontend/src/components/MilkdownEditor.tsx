@@ -604,10 +604,15 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       : [];
 
     const gap = vv.isKeyboardOpen ? 12 : 80;
-    // Anchored to the bottom of the visual viewport, just above the format
-    // bar (which itself hugs the keyboard top when it's open). The sheet
-    // grows upward from this edge and its height is capped by the viewport.
-    const slashBottom = `calc(env(safe-area-inset-bottom, 0px) + ${gap + 52 + 12}px)`;
+    // Anchored to the VISUAL viewport's bottom edge, measured from the screen
+    // bottom. Fixed panels are pinned to the layout viewport, which does not
+    // shrink when the touch keyboard opens, so vv.bottom (the visual viewport's
+    // bottom edge in layout px, measured from the top) is translated into a
+    // bottom offset via (innerHeight - vv.bottom) — i.e. the keyboard height.
+    // This sits the sheet just above the format bar (gap + 52 bar + 12 sheet
+    // gap); without this it would render behind the keyboard on iOS/Chrome.
+    // The sheet grows upward from that edge, capped at the visual height.
+    const slashBottom = `calc((${window.innerHeight - vv.bottom}px) + env(safe-area-inset-bottom, 0px) + ${gap + 52 + 12}px)`;
     const slashMaxHeight = Math.max(140, vv.height - (gap + 52 + 12) - 24);
 
     const uploadImageFile = (file: File) => {

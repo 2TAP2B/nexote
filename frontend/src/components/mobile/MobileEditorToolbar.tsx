@@ -47,18 +47,19 @@ export default function MobileEditorToolbar({
     window.dispatchEvent(new CustomEvent("nexote:slash-open"));
   };
 
-  // Visible while the caret is in the editor or text is selected, and only
-  // when the chrome hasn't been hidden by scrolling. Re-tapping the editor
-  // while scrolled (focus/selection) force-reveals it; the next scroll-hide
-  // transition clears that override.
+  // Visible whenever the on-screen keyboard is open (the user is editing).
   const [hasSelection, setHasSelection] = useState(false);
   const [hasFocus, setHasFocus] = useState(false);
   const [forceShow, setForceShow] = useState(false);
   const chromeVisible = useScrollHideChrome();
   const vv = useVisualViewport();
-  // While the on-screen keyboard is open the user is editing, so never let
-  // scroll-hide dismiss the bar mid-typing.
-  const show = (hasSelection || hasFocus) && (chromeVisible || forceShow || vv.isKeyboardOpen);
+  // Keyboard-open is checked FIRST and alone: dismissing the keyboard on iOS
+  // doesn't always blur the editor, so hasFocus can stay stale when the user
+  // taps back in (no new focus event) — tying visibility to the keyboard
+  // itself avoids that dead state where the bar never reappears. While the
+  // keyboard is closed, show only when the caret is in the editor or text is
+  // selected AND the chrome hasn't been hidden by scrolling.
+  const show = vv.isKeyboardOpen || ((hasSelection || hasFocus) && (chromeVisible || forceShow));
 
   // Gap between the bar and what's beneath it: 12px when the keyboard is open
   // (hugging its top edge), or above the floating bottom pill otherwise.
