@@ -423,6 +423,10 @@ body {
     max-width: 100%;
     padding: 24px 16px 96px;
   }
+  .milkdown-raw-textarea {
+    max-width: 100% !important;
+    padding: 24px 16px 96px !important;
+  }
 }
 
 /* Hide scrollbar for tab overflow areas (MobileBottomBar) */

@@ -1,10 +1,11 @@
 "use client";
 
-import { Ellipsis, PanelLeft } from "lucide-react";
+import { BookOpen, Braces, Ellipsis, PanelLeft } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor";
+import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
 import MobileDashboard from "./MobileDashboard";
@@ -69,8 +70,10 @@ export default function MobileNoteView({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [bodyKey, setBodyKey] = useState(0);
+  const [rawMode, setRawMode] = useState(false);
   const loadedKeyRef = useRef<string | null>(null);
   const skipNextChange = useRef(false);
+  const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Guards against the autosave response clobbering in-flight typing — same
   // pattern as the desktop EditorPane. When our own save completes and
   // activeNote changes, we DON'T remount the editor or overwrite local body
@@ -83,12 +86,16 @@ export default function MobileNoteView({
       setTitle("");
       setBody("");
       loadedKeyRef.current = null;
+      setRawMode(false);
       return;
     }
 
     const sameNote = activeNote.id === loadedKeyRef.current;
     const bodyChanged = activeNote.body !== prevBodyRef.current;
     prevBodyRef.current = activeNote.body;
+
+    // Each note opens in the rendered view; the raw-mode toggle is per-note.
+    if (!sameNote) setRawMode(false);
 
     // If this update came from our own save, don't remount the editor or
     // overwrite local body state — the user may have continued typing while
@@ -164,11 +171,47 @@ export default function MobileNoteView({
     return () => clearTimeout(t);
   }, [activeId, title, body, save, settings.autosave]);
 
+  // Switch to the raw markdown textarea, caret at the end.
+  const toggleToRaw = () => {
+    setRawMode(true);
+    requestAnimationFrame(() => {
+      const el = rawTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+  };
+
+  // Flush the raw edits to the server, then remount the rendered editor so it
+  // shows exactly what was typed (the remount reads activeNote.body, which is
+  // updated by the save). skipNextChange swallows the remount's markdown
+  // emission, like an initial mount.
+  const toggleToRendered = async () => {
+    if (!activeId) return;
+    ownSaveCountRef.current++;
+    prevBodyRef.current = body;
+    skipNextChange.current = true;
+    await save(activeId, { title, body }).catch(() => {});
+    setBodyKey((k) => k + 1);
+    setRawMode(false);
+    window.setTimeout(() => {
+      skipNextChange.current = false;
+    }, 300);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => editorRef.current?.focusEnd());
+    });
+  };
+
   // Dashboard: render the mobile welcome screen (no editor).
   if (isDashboard || !activeNote) {
     return (
       <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
-        <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
+        <MobileTopBar
+          onOpenSidebar={onOpenSidebar}
+          onOverflow={onOverflow}
+          showToggle={false}
+        />
         <div
           className="h-full overflow-y-auto"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 60px)" }}
@@ -189,8 +232,15 @@ export default function MobileNoteView({
       style={{ background: "var(--mob-bg)" }}
     >
       {/* Top bar — fixed overlay that auto-hides on scroll-down, reappears
-       * on scroll-up or at top. Transparent so the editor shows through. */}
-      <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
+       * on scroll-up or at top. Transparent so the editor shows through.
+       * In raw mode it stays pinned so the toggle-back button is always
+       * reachable. */}
+      <MobileTopBar
+        onOpenSidebar={onOpenSidebar}
+        onOverflow={onOverflow}
+        rawMode={rawMode}
+        onToggleMode={() => (rawMode ? void toggleToRendered() : toggleToRaw())}
+      />
 
       {/* Editor — fullscreen, fills the entire area behind the top bar. The
        * H2 note name is the first line inside the editor (editable). While the
@@ -205,16 +255,25 @@ export default function MobileNoteView({
           } as React.CSSProperties
         }
       >
-        <MilkdownEditorWrapper
-          ref={editorRef}
-          key={`${activeNote.id}-${bodyKey}`}
-          defaultValue={activeNote.body}
-          onChange={handleEditorChange}
-          aiConfig={aiConfig}
-          vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
-          noteId={activeNote.id}
-          mobile
-        />
+        {rawMode ? (
+          <RawMarkdownTextarea
+            ref={rawTextareaRef}
+            value={body}
+            onChange={handleEditorChange}
+            fontSize={settings.editorFontSize}
+          />
+        ) : (
+          <MilkdownEditorWrapper
+            ref={editorRef}
+            key={`${activeNote.id}-${bodyKey}`}
+            defaultValue={activeNote.body}
+            onChange={handleEditorChange}
+            aiConfig={aiConfig}
+            vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
+            noteId={activeNote.id}
+            mobile
+          />
+        )}
       </div>
 
       {/* Bottom toolbar — appears after the user taps the editor to set a
@@ -231,11 +290,18 @@ export default function MobileNoteView({
 function MobileTopBar({
   onOpenSidebar,
   onOverflow,
+  rawMode = false,
+  onToggleMode,
+  showToggle = true,
 }: {
   onOpenSidebar: () => void;
   onOverflow: (x: number, y: number) => void;
+  rawMode?: boolean;
+  onToggleMode?: () => void;
+  showToggle?: boolean;
 }) {
-  const visible = useScrollHideChrome();
+  const hideChrome = useScrollHideChrome();
+  const visible = rawMode || hideChrome;
   return (
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex items-center justify-between px-4"
@@ -252,6 +318,16 @@ function MobileTopBar({
           <PanelLeft size={20} />
         </CircleButton>
       </div>
+      {showToggle && (
+        <div className="pointer-events-auto">
+          <CircleButton
+            ariaLabel={rawMode ? "Rendered view" : "Raw markdown"}
+            onClick={onToggleMode}
+          >
+            {rawMode ? <BookOpen size={20} /> : <Braces size={20} />}
+          </CircleButton>
+        </div>
+      )}
       <div className="pointer-events-auto">
         <CircleButton
           ariaLabel="More actions"

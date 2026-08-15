@@ -6,6 +6,7 @@ import {
   BookOpen,
   Bookmark,
   BookmarkCheck,
+  Braces,
   Copy,
   Edit3,
   Ellipsis,
@@ -21,6 +22,7 @@ import { useNotes } from "@/lib/notes-context";
 import { generateNoteTitle } from "@/lib/ai";
 import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import ContextMenu from "@/components/ContextMenu";
+import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
 
@@ -41,12 +43,14 @@ export default function EditorPane() {
   const [titleDraft, setTitleDraft] = useState("");
   const [bodyKey, setBodyKey] = useState(0);
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
+  const [rawMode, setRawMode] = useState(false);
 
   const skipNextChange = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MilkdownEditorHandle>(null);
   const prevBodyRef = useRef("");
   const ownSaveCountRef = useRef(0);
+  const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Stable identity for the editor's AI config so the Milkdown editor only
   // rebuilds when the AI settings actually change, not on every render.
@@ -64,12 +68,16 @@ export default function EditorPane() {
       setTitle("");
       setBody("");
       setLoadedKey(null);
+      setRawMode(false);
       return;
     }
 
     const sameNote = activeNote.id === loadedKey;
     const bodyChanged = activeNote.body !== prevBodyRef.current;
     prevBodyRef.current = activeNote.body;
+
+    // Each note opens in the rendered view; the raw-mode toggle is per-note.
+    if (!sameNote) setRawMode(false);
 
     // If this update came from our own save, don't remount the editor or
     // overwrite local body state — the user may have continued typing while
@@ -218,6 +226,38 @@ export default function EditorPane() {
     return <WelcomeDashboard />;
   }
 
+  // Switch to the raw markdown textarea, caret at the end.
+  const toggleToRaw = () => {
+    setRawMode(true);
+    requestAnimationFrame(() => {
+      const el = rawTextareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+  };
+
+  // Flush the raw edits to the server, then remount the rendered editor so it
+  // shows exactly what was typed (the remount reads activeNote.body, which is
+  // updated by the save). skipNextChange swallows the remount's markdown
+  // emission, like an initial mount.
+  const toggleToRendered = async () => {
+    if (!activeId) return;
+    ownSaveCountRef.current++;
+    prevBodyRef.current = body;
+    skipNextChange.current = true;
+    await save(activeId, { title, body }).catch(() => {});
+    setBodyKey((k) => k + 1);
+    setRawMode(false);
+    window.setTimeout(() => {
+      skipNextChange.current = false;
+    }, 300);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => editorRef.current?.focusEnd());
+    });
+  };
+
   // Cycle to the previous / next open tab.
   const goPrevTab = () => {
     if (!activeId || openTabs.length < 2) return;
@@ -320,11 +360,12 @@ export default function EditorPane() {
           </button>
           <button
             type="button"
-            aria-label="Reading view"
-            title="Reading view"
+            aria-label={rawMode ? "Rendered view" : "Raw markdown"}
+            title={rawMode ? "Rendered view" : "Raw markdown"}
+            onClick={() => (rawMode ? void toggleToRendered() : toggleToRaw())}
             className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
           >
-            <BookOpen size={15} />
+            {rawMode ? <BookOpen size={15} /> : <Braces size={15} />}
           </button>
           <button
             type="button"
@@ -387,15 +428,24 @@ export default function EditorPane() {
         className="nexote-editor-scroll min-h-0 flex-1 overflow-y-auto"
         style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
       >
-        <MilkdownEditorWrapper
-          ref={editorRef}
-          key={`${activeNote.id}-${bodyKey}`}
-          defaultValue={activeNote.body}
-          onChange={handleEditorChange}
-          aiConfig={aiConfig}
-          vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
-          noteId={activeNote.id}
-        />
+        {rawMode ? (
+          <RawMarkdownTextarea
+            ref={rawTextareaRef}
+            value={body}
+            onChange={handleEditorChange}
+            fontSize={settings.editorFontSize}
+          />
+        ) : (
+          <MilkdownEditorWrapper
+            ref={editorRef}
+            key={`${activeNote.id}-${bodyKey}`}
+            defaultValue={activeNote.body}
+            onChange={handleEditorChange}
+            aiConfig={aiConfig}
+            vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
+            noteId={activeNote.id}
+          />
+        )}
       </div>
     </main>
   );
