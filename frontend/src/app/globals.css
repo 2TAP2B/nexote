@@ -425,28 +425,6 @@ body {
   }
 }
 
-/* Slide transitions for folder / tree view switching */
-@keyframes slideInRight {
-  from { transform: translateX(100%); opacity: 0.3; }
-  to   { transform: translateX(0);    opacity: 1; }
-}
-@keyframes slideOutLeft {
-  from { transform: translateX(0);    opacity: 1; }
-  to   { transform: translateX(-100%); opacity: 0.3; }
-}
-@keyframes slideInLeft {
-  from { transform: translateX(-100%); opacity: 0.3; }
-  to   { transform: translateX(0);     opacity: 1; }
-}
-@keyframes slideOutRight {
-  from { transform: translateX(0);     opacity: 1; }
-  to   { transform: translateX(100%);  opacity: 0.3; }
-}
-.slide-in-right { animation: slideInRight 0.22s cubic-bezier(0.4, 0, 0.2, 1); }
-.slide-out-left { animation: slideOutLeft 0.22s cubic-bezier(0.4, 0, 0.2, 1); position: absolute; inset: 0; }
-.slide-in-left  { animation: slideInLeft  0.22s cubic-bezier(0.4, 0, 0.2, 1); }
-.slide-out-right{ animation: slideOutRight 0.22s cubic-bezier(0.4, 0, 0.2, 1); position: absolute; inset: 0; }
-
 /* Hide scrollbar for tab overflow areas (MobileBottomBar) */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

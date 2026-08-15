@@ -2,7 +2,6 @@
 
 import {
   ArrowDownAZ,
-  ArrowLeft,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -12,7 +11,6 @@ import {
   LayoutList,
   Menu,
   PanelLeftClose,
-  Rows3,
   Search,
   SquareStack,
 } from "lucide-react";
@@ -75,18 +73,6 @@ function AppShell() {
     toggleExpandCollapse: () => {},
     allSectionsExpanded: true,
     toggleSectionsCollapse: () => {},
-    folderMode: false,
-    folderName: "",
-    folderViewMode: "detailed",
-    onToggleFolderViewMode: () => {},
-    folderSort: false,
-    onToggleFolderSort: () => {},
-    onNewNoteInFolder: () => {},
-    onExitFolder: () => {},
-    canGoBack: false,
-    canGoForward: false,
-    onGoBack: () => {},
-    onGoForward: () => {},
   });
 
   useSwipeSidebar({
@@ -404,115 +390,58 @@ function SidebarHeader({
 
   return (
     <div style={{ borderBottom: "1px solid var(--border)" }}>
-      {treeControls.folderMode ? (
-        /* Folder view header — back, name, new note, sort, view mode, nav */
-        <div className="flex items-center gap-0.5 px-2 py-1.5">
-          <ActionButton
-            label="Back to tree"
-            icon={<ArrowLeft className="h-3.5 w-3.5" />}
-            onClick={treeControls.onExitFolder}
-          />
-          <span
-            className="truncate px-1 text-sm font-medium"
-            style={{ color: "var(--foreground)", maxWidth: 120 }}
-          >
-            {treeControls.folderName}
-          </span>
-          <div className="flex-1" />
-          <ActionButton
-            label="New note"
-            icon={<FilePlus className="h-3.5 w-3.5" />}
-            onClick={treeControls.onNewNoteInFolder}
-          />
-          <ActionButton
-            label={treeControls.folderSort ? "Sort: A-Z (on)" : "Sort A-Z"}
-            icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
-            onClick={treeControls.onToggleFolderSort}
-            active={treeControls.folderSort}
-          />
-          <ActionButton
-            label={treeControls.folderViewMode === "detailed" ? "Detailed" : "Compact"}
-            icon={
-              treeControls.folderViewMode === "detailed" ? (
-                <Rows3 className="h-3.5 w-3.5" />
-              ) : (
-                <LayoutList className="h-3.5 w-3.5" />
-              )
-            }
-            onClick={treeControls.onToggleFolderViewMode}
-          />
-          <ActionButton
-            label="Back"
-            icon={<ChevronLeft className="h-3.5 w-3.5" />}
-            onClick={treeControls.onGoBack}
-            disabled={!treeControls.canGoBack}
-          />
-          <ActionButton
-            label="Forward"
-            icon={<ChevronRight className="h-3.5 w-3.5" />}
-            onClick={treeControls.onGoForward}
-            disabled={!treeControls.canGoForward}
-          />
-          <ActionButton
-            label="Collapse sidebar"
-            icon={<PanelLeftClose className="h-3.5 w-3.5" />}
-            onClick={onCollapseSidebar}
-          />
-        </div>
-      ) : (
-        /* Root tree header */
-        <div className="flex items-center gap-0.5 px-2 py-1.5">
-          <ActionButton
-            label="New note"
-            icon={<FilePlus className="h-3.5 w-3.5" />}
-            onClick={onNewNote}
-          />
-          <ActionButton
-            label="New folder"
-            icon={<FolderPlus className="h-3.5 w-3.5" />}
-            onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
-          />
-          <ActionButton
-            label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
-            icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
-            onClick={treeControls.toggleSort}
-            active={treeControls.sorted}
-          />
-          <ActionButton
-            label="Card view"
-            icon={<LayoutList className="h-3.5 w-3.5" />}
-            onClick={() => {}}
-            active={false}
-          />
-          <ActionButton
-            label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
-            icon={
-              treeControls.allExpanded ? (
-                <ChevronsDownUp className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
-              )
-            }
-            onClick={treeControls.toggleExpandCollapse}
-          />
-          <ActionButton
-            label={
-              treeControls.allSectionsExpanded
-                ? "Collapse all sections"
-                : "Expand all sections"
-            }
-            icon={<SquareStack className="h-3.5 w-3.5" />}
-            onClick={treeControls.toggleSectionsCollapse}
-            active={false}
-          />
-          <div className="flex-1" />
-          <ActionButton
-            label="Collapse sidebar"
-            icon={<PanelLeftClose className="h-3.5 w-3.5" />}
-            onClick={onCollapseSidebar}
-          />
-        </div>
-      )}
+      {/* Root tree header */}
+      <div className="flex items-center gap-0.5 px-2 py-1.5">
+        <ActionButton
+          label="New note"
+          icon={<FilePlus className="h-3.5 w-3.5" />}
+          onClick={onNewNote}
+        />
+        <ActionButton
+          label="New folder"
+          icon={<FolderPlus className="h-3.5 w-3.5" />}
+          onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
+        />
+        <ActionButton
+          label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
+          icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
+          onClick={treeControls.toggleSort}
+          active={treeControls.sorted}
+        />
+        <ActionButton
+          label="Card view"
+          icon={<LayoutList className="h-3.5 w-3.5" />}
+          onClick={() => {}}
+          active={false}
+        />
+        <ActionButton
+          label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
+          icon={
+            treeControls.allExpanded ? (
+              <ChevronsDownUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
+            )
+          }
+          onClick={treeControls.toggleExpandCollapse}
+        />
+        <ActionButton
+          label={
+            treeControls.allSectionsExpanded
+              ? "Collapse all sections"
+              : "Expand all sections"
+          }
+          icon={<SquareStack className="h-3.5 w-3.5" />}
+          onClick={treeControls.toggleSectionsCollapse}
+          active={false}
+        />
+        <div className="flex-1" />
+        <ActionButton
+          label="Collapse sidebar"
+          icon={<PanelLeftClose className="h-3.5 w-3.5" />}
+          onClick={onCollapseSidebar}
+        />
+      </div>
     </div>
   );
 }

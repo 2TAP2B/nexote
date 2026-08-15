@@ -143,19 +143,6 @@ export type TreeControls = {
   toggleExpandCollapse: () => void;
   allSectionsExpanded: boolean;
   toggleSectionsCollapse: () => void;
-  // Folder view state (exposed so the sidebar header can switch)
-  folderMode: boolean;
-  folderName: string;
-  folderViewMode: "compact" | "detailed";
-  onToggleFolderViewMode: () => void;
-  folderSort: boolean;
-  onToggleFolderSort: () => void;
-  onNewNoteInFolder: () => void;
-  onExitFolder: () => void;
-  canGoBack: boolean;
-  canGoForward: boolean;
-  onGoBack: () => void;
-  onGoForward: () => void;
 };
 
 type FileTreeProps = {
@@ -304,9 +291,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   // Active navigation section + selected index within it.
   const [navSection, setNavSection] = useState<string>("vault");
   const [treeSelectedNav, setTreeSelectedNav] = useState<string | null>(null);
-  const [drillPath, setDrillPath] = useState<string | null>(null);
-  const [folderHistory, setFolderHistory] = useState<string[]>([]);
-  const [folderHistoryIndex, setFolderHistoryIndex] = useState(-1);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState<{ id: string; vaultId: string } | null>(null);
   const [sorted, setSorted] = useState(false);
@@ -322,8 +306,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   const [recentExpanded, setRecentExpanded] = useState(true);
   const [journalExpanded, setJournalExpanded] = useState(true);
   const [vaultExpandedMap, setVaultExpandedMap] = useState<Record<string, boolean>>({});
-  const [folderViewMode, setFolderViewMode] = useState<"compact" | "detailed">("detailed");
-  const [folderSort, setFolderSort] = useState(false);
 
   // Tracks which section a note was opened from, so the active highlight
   // only appears in the section the user actually clicked (not in every
@@ -397,46 +379,12 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [dragOverVaultId, setDragOverVaultId] = useState<string | null>(null);
 
-  // Navigate into a folder (advanced mode detail view). Pushes onto the
-  // history stack so left/right arrow keys can go back/forward.
-  const navigateToFolder = useCallback((path: string) => {
-    setDrillPath(path);
-    setFolderHistory((prev) => {
-      const trimmed = prev.slice(0, folderHistoryIndex + 1);
-      return [...trimmed, path];
-    });
-    setFolderHistoryIndex((i) => i + 1);
-  }, [folderHistoryIndex]);
-
-  const folderGoBack = useCallback(() => {
-    if (folderHistoryIndex > 0) {
-      const newIndex = folderHistoryIndex - 1;
-      setFolderHistoryIndex(newIndex);
-      setDrillPath(folderHistory[newIndex]);
-    } else if (folderHistoryIndex === 0) {
-      setFolderHistoryIndex(-1);
-      setDrillPath(null);
-      // Restore tree selection to the folder we just left.
-      const lastFolder = folderHistory[0];
-      if (lastFolder) setTreeSelectedNav(`folder:${lastFolder}`);
-    }
-  }, [folderHistoryIndex, folderHistory]);
-
-  const folderGoForward = useCallback(() => {
-    if (folderHistoryIndex < folderHistory.length - 1) {
-      const newIndex = folderHistoryIndex + 1;
-      setFolderHistoryIndex(newIndex);
-      setDrillPath(folderHistory[newIndex]);
-    }
-  }, [folderHistoryIndex, folderHistory]);
-
   // Arrow-key navigation in the sidebar.
   // Up/down = move within the current view's list.
   // Right = expand folder / move to first child / open note.
   // Left = collapse folder / move to parent folder.
   // Enter = open note / toggle folder. Space = toggle folder.
   useEffect(() => {
-    if (view === "tree" && drillPath !== null) return;
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
@@ -512,8 +460,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
           }
           window.dispatchEvent(new CustomEvent("nexote:focus-note-end"));
         } else {
-          // Folder → open the slide-in detail view.
-          navigateToFolder(item.path);
+          // Folder → toggle open/closed.
+          setOpenMap((prev) => ({ ...prev, [item.path]: !(prev[item.path] ?? true) }));
         }
       } else if (e.key === "ArrowLeft") {
         if (currentIdx < 0) {
@@ -547,7 +495,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [drillPath, view, availableSections, navSection, currentNavItems, treeSelectedNav, openTab, openFromSection, openJournalNote, navigateToFolder, activeVault, setOpenMap, isFolderOpen, notePathMap]);
+  }, [view, availableSections, navSection, currentNavItems, treeSelectedNav, openTab, openFromSection, openJournalNote, activeVault, setOpenMap, isFolderOpen, notePathMap]);
 
   // Listen for "focus tree" event (Shift+Left from editor) — select the
   // currently open note in the vault section so arrows work immediately.
@@ -701,12 +649,12 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }, []);
 
   const handleCreateHere = useCallback(() => {
-    void create(view === "tree" && drillPath ? { path: drillPath } : undefined);
-  }, [create, drillPath, view]);
+    void create();
+  }, [create]);
 
   const handleNewFolderHere = useCallback(() => {
-    openFolderDialog(view === "tree" ? drillPath ?? undefined : undefined);
-  }, [openFolderDialog, drillPath, view]);
+    openFolderDialog();
+  }, [openFolderDialog]);
 
   useEffect(() => {
     onControlsReady?.({
@@ -718,24 +666,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       toggleExpandCollapse,
       allSectionsExpanded,
       toggleSectionsCollapse,
-      folderMode: view === "tree" && drillPath !== null,
-      folderName: drillPath ? (drillPath.split("/").pop() || drillPath) : "",
-      folderViewMode,
-      onToggleFolderViewMode: () => setFolderViewMode((m) => (m === "detailed" ? "compact" : "detailed")),
-      folderSort,
-      onToggleFolderSort: () => setFolderSort((s) => !s),
-      onNewNoteInFolder: handleCreateHere,
-      onExitFolder: () => {
-        const lastFolder = drillPath;
-        setDrillPath(null);
-        setFolderHistory([]);
-        setFolderHistoryIndex(-1);
-        if (lastFolder) setTreeSelectedNav(`folder:${lastFolder}`);
-      },
-      canGoBack: folderHistoryIndex >= 0,
-      canGoForward: folderHistoryIndex < folderHistory.length - 1,
-      onGoBack: folderGoBack,
-      onGoForward: folderGoForward,
     });
   }, [
     onControlsReady,
@@ -747,15 +677,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     toggleExpandCollapse,
     allSectionsExpanded,
     toggleSectionsCollapse,
-    drillPath,
-    view,
-    folderViewMode,
-    folderSort,
-    handleCreateHere,
-    folderHistoryIndex,
-    folderHistory.length,
-    folderGoBack,
-    folderGoForward,
   ]);
 
   const handleCreateFolder = useCallback(
@@ -860,22 +781,14 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     );
   }
 
-  const inFolderMode = view === "tree" && drillPath !== null;
-
   return (
     <div className="flex h-full flex-col">
       <button id="nexote-new-note-btn" type="button" className="hidden" onClick={handleCreateHere} />
       <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={handleNewFolderHere} />
 
       <div className="relative flex-1 overflow-hidden">
-        {/* Root tree panel — slides left when entering folder */}
-        <div
-          className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1 transition-transform duration-300 ease-in-out"
-          style={{
-            transform: inFolderMode ? "translateX(-100%)" : "translateX(0)",
-            pointerEvents: inFolderMode ? "none" : "auto",
-          }}
-        >
+        {/* Root tree panel */}
+        <div className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1">
           {view === "bookmarks" ? (
             <DetailedNoteList
               notes={notes.filter((n) => bookmarks.has(n.id))}
@@ -1070,7 +983,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         onDeleteFolder={handleDeleteFolder}
                         onNewNoteInFolder={(path) => void create({ path })}
                         onNewFolderInFolder={(path) => openFolderDialog(path)}
-                        onDrillInto={navigateToFolder}
                         onAddTag={(id) => setTagInput({ id, vaultId: vault.id })}
                         onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
                         noteTags={(id) => {
@@ -1133,10 +1045,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                           switchVault(vault.id);
                           openFolderDialog(path);
                         }}
-                        onDrillInto={(path) => {
-                          switchVault(vault.id);
-                          navigateToFolder(path);
-                        }}
                         onAddTag={(id) => setTagInput({ id, vaultId: vault.id })}
                         onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
                         noteTags={(id) => {
@@ -1152,37 +1060,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
             </>
           )}
         </div>
-
-        {/* Folder view panel — slides in from right */}
-        {view === "tree" && drillPath !== null && (
-          <div className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1 slide-in-right"
-          >
-            <FolderDetailView
-              path={drillPath}
-              notes={notes}
-              activeId={activeId}
-              activeSource={activeSource}
-              notesById={notesById}
-              onOpen={(id) => openFromSection("drill", id)}
-              onBack={() => {
-                const lastFolder = drillPath;
-                setDrillPath(null);
-                setFolderHistory([]);
-                setFolderHistoryIndex(-1);
-                if (lastFolder) setTreeSelectedNav(`folder:${lastFolder}`);
-              }}
-              canGoBack={folderHistoryIndex >= 0}
-              canGoForward={folderHistoryIndex < folderHistory.length - 1}
-              onGoBack={folderGoBack}
-              onGoForward={folderGoForward}
-              viewMode={folderViewMode}
-              onToggleViewMode={() => setFolderViewMode((m) => m === "detailed" ? "compact" : "detailed")}
-              onNewNote={handleCreateHere}
-              sort={folderSort}
-              onToggleSort={() => setFolderSort((s) => !s)}
-            />
-          </div>
-        )}
       </div>
 
       {/* Settings at the bottom (the tree above already lists all vaults) */}
@@ -1321,7 +1198,6 @@ type TreeChildProps = {
   onDeleteFolder: (path: string) => void;
   onNewNoteInFolder: (path: string) => void;
   onNewFolderInFolder: (path: string) => void;
-  onDrillInto: (path: string) => void;
   onAddTag?: (id: string) => void;
   onRemoveTag?: (id: string, tag: string) => void;
   noteTags?: (id: string) => string[];
@@ -1371,7 +1247,6 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
     onNewNoteInFolder,
     onNewFolderInFolder,
     onDeleteFolder,
-    onDrillInto,
     treeSelectedNav,
     setTreeSelectedNav,
   } = props;
@@ -1436,13 +1311,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
         >
           <button
             type="button"
-            onClick={() => {
-              if (isCoarsePointer) {
-                setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
-              } else {
-                onDrillInto(node.path);
-              }
-            }}
+            onClick={() => setOpenMap((prev) => ({ ...prev, [node.path]: !open }))}
             className="flex items-center gap-2 min-w-0 flex-1"
             style={{ height: 33 }}
           >
@@ -1755,7 +1624,6 @@ function BookmarksList({
           onDeleteFolder={() => {}}
           onNewNoteInFolder={() => {}}
           onNewFolderInFolder={() => {}}
-          onDrillInto={() => {}}
         />
       ))}
     </ul>
@@ -2014,256 +1882,6 @@ function DetailedNoteList({
   );
 }
 
-// --- Folder detail view (advanced mode) ---
-// Shows notes in a folder grouped by time buckets with previews.
-function FolderDetailView({
-  path,
-  notes,
-  activeId,
-  activeSource,
-  notesById,
-  onOpen,
-  onBack,
-  canGoBack,
-  canGoForward,
-  onGoBack,
-  onGoForward,
-  viewMode,
-  onToggleViewMode,
-  onNewNote,
-  sort,
-  onToggleSort,
-}: {
-  path: string;
-  notes: { id: string; title: string; path: string; updatedAt: string; snippet?: string }[];
-  activeId: string | null;
-  activeSource: string | null;
-  notesById: Record<string, { body?: string }>;
-  onOpen: (id: string) => void;
-  onBack: () => void;
-  canGoBack: boolean;
-  canGoForward: boolean;
-  onGoBack: () => void;
-  onGoForward: () => void;
-  viewMode: "compact" | "detailed";
-  onToggleViewMode: () => void;
-  onNewNote: () => void;
-  sort: boolean;
-  onToggleSort: () => void;
-}) {
-  const folderName = path.split("/").pop() || path;
-  const folderNotes = notes
-    .filter((n) => n.path === path)
-    .sort((a, b) => {
-      if (sort) return a.title.localeCompare(b.title);
-      return b.updatedAt.localeCompare(a.updatedAt);
-    });
-
-  // Flat ordered list of note ids for keyboard navigation.
-  const flatIds = useMemo(() => folderNotes.map((n) => n.id), [folderNotes]);
-  const [selectedIndex, setSelectedIndex] = useState(() => {
-    const ai = flatIds.indexOf(activeId ?? "");
-    return ai >= 0 ? ai : 0;
-  });
-
-  // Reset selection when the folder changes.
-  useEffect(() => {
-    const ai = flatIds.indexOf(activeId ?? "");
-    setSelectedIndex(ai >= 0 ? ai : 0);
-  }, [path, flatIds, activeId]);
-
-  // Group by time bucket.
-  const grouped = useMemo(() => {
-    const map: Record<string, typeof folderNotes> = {};
-    for (const n of folderNotes) {
-      const b = timeBucket(n.updatedAt);
-      (map[b] ??= []).push(n);
-    }
-    return map;
-  }, [folderNotes]);
-
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    rootRef.current?.focus();
-  }, [path]);
-
-  // Keyboard navigation via window listener (more reliable than element
-  // focus, which can be stolen by the editor or lost to the scroll
-  // container). We use capture phase so we get the event before the
-  // scroll container and can preventDefault.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Don't interfere when the editor or an input is focused.
-      const el = document.activeElement as HTMLElement | null;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".milkdown") || el.closest(".ProseMirror"))) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.key === "ArrowDown") {
-          setSelectedIndex((i) => Math.min(i + 1, flatIds.length - 1));
-        } else if (e.key === "ArrowUp") {
-          setSelectedIndex((i) => Math.max(i - 1, 0));
-        } else if (e.key === "ArrowRight" || e.key === "Enter") {
-          if (flatIds[selectedIndex]) onOpen(flatIds[selectedIndex]);
-        } else if (e.key === "ArrowLeft") {
-          onGoBack();
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [flatIds, selectedIndex, onOpen, onGoBack]);
-
-  return (
-    <div
-      ref={rootRef}
-      tabIndex={0}
-      className="flex flex-col outline-none"
-    >
-      {/* Note list — compact or detailed */}
-      <div className="pt-1">
-        {folderNotes.length === 0 && (
-          <div className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)", paddingLeft: 30 }}>
-            This folder has no notes.
-          </div>
-        )}
-        {viewMode === "compact" ? (
-          <ul>
-            {folderNotes.map((n) => {
-              const flatIndex = flatIds.indexOf(n.id);
-              const active = n.id === activeId && activeSource === "drill";
-              const selected = flatIndex === selectedIndex;
-              return (
-                <li key={n.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(n.id)}
-                    onMouseEnter={() => setSelectedIndex(flatIndex)}
-                    className="group flex w-full items-center gap-2 transition-colors hover:bg-white/5"
-                    style={{
-                      height: 33,
-                      paddingLeft: 14,
-                      paddingRight: 14,
-                      borderRadius: 5,
-                      background: active ? "var(--primary)" : selected ? "rgba(255,255,255,0.06)" : undefined,
-                    }}
-                  >
-                    <FileText
-                      className="h-3.5 w-3.5 shrink-0"
-                      style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
-                    />
-                    <span
-                      className="min-w-0 flex-1 truncate text-left"
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 500,
-                        color: active ? "var(--primary-foreground)" : "var(--foreground)",
-                      }}
-                    >
-                      {n.title || "Untitled"}
-                    </span>
-                    <span
-                      className="shrink-0"
-                      style={{ fontSize: 11, color: active ? "var(--primary-foreground)" : "var(--muted-foreground)", opacity: 0.8 }}
-                    >
-                      {formatTime(n.updatedAt)}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          BUCKET_ORDER.map((bucket) => {
-            const items = grouped[bucket];
-            if (!items || items.length === 0) return null;
-            return (
-              <div key={bucket} className="mb-2">
-                <div
-                  className="px-3 pb-1 pt-2"
-                  style={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)", paddingLeft: 14 }}
-                >
-                  {BUCKET_LABELS[bucket]}
-                </div>
-                <ul>
-                  {items.map((n) => {
-                    const flatIndex = flatIds.indexOf(n.id);
-                    const active = n.id === activeId && activeSource === "drill";
-                    const selected = flatIndex === selectedIndex;
-                    const snippet = n.snippet ?? makeSnippetAfterH1(notesById[n.id]?.body);
-                    return (
-                      <li key={n.id}>
-                        <button
-                          type="button"
-                          onClick={() => onOpen(n.id)}
-                          onMouseEnter={() => setSelectedIndex(flatIndex)}
-                          className="group flex w-full flex-col gap-0.5 transition-colors hover:bg-white/5"
-                          style={{
-                            paddingLeft: 14,
-                            paddingRight: 14,
-                            paddingTop: 7,
-                            paddingBottom: 7,
-                            borderRadius: 5,
-                            background: active
-                              ? "var(--primary)"
-                              : selected
-                                ? "rgba(255,255,255,0.06)"
-                                : undefined,
-                          }}
-                        >
-                          <div className="flex items-center gap-2">
-                            <FileText
-                              className="h-3.5 w-3.5 shrink-0"
-                              style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
-                            />
-                            <span
-                              className="min-w-0 flex-1 truncate text-left"
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 500,
-                                color: active ? "var(--primary-foreground)" : "var(--foreground)",
-                              }}
-                            >
-                              {n.title || "Untitled"}
-                            </span>
-                            <span
-                              className="shrink-0"
-                              style={{
-                                fontSize: 11,
-                                color: active ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                                opacity: 0.8,
-                              }}
-                            >
-                              {formatTime(n.updatedAt)}
-                            </span>
-                          </div>
-                          {snippet && (
-                            <span
-                              className="truncate text-left"
-                              style={{
-                                fontSize: 12,
-                                color: active ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                                opacity: 0.7,
-                                paddingLeft: 22,
-                              }}
-                            >
-                              {snippet}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
-}
-
 // --- Collapsible Section wrapper ---
 function CollapsibleSection({
   title,
@@ -2468,7 +2086,6 @@ function RecentFilesList({
           onDeleteFolder={() => {}}
           onNewNoteInFolder={() => {}}
           onNewFolderInFolder={() => {}}
-          onDrillInto={() => {}}
         />
       ))}
     </ul>
