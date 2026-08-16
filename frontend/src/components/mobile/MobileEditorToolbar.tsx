@@ -10,6 +10,7 @@ import {
   Italic,
   List,
   ListOrdered,
+  ListTodo,
   Plus,
   Sparkles,
   Strikethrough,
@@ -157,6 +158,9 @@ export default function MobileEditorToolbar({
           </BarButton>
           <BarButton label="Ordered list" onClick={run("ordered-list")}>
             <ListOrdered size={20} />
+          </BarButton>
+          <BarButton label="Task list" onClick={run("task-list")}>
+            <ListTodo size={20} />
           </BarButton>
           <BarButton label="Quote" onClick={run("quote")}>
             <TextQuote size={20} />

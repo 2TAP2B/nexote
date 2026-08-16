@@ -8,8 +8,10 @@ import { commandsCtx, editorViewCtx, parserCtx, schemaCtx, serializerCtx } from 
 import {
   blockquoteSchema,
   bulletListSchema,
+  clearTextInCurrentBlockCommand,
   codeBlockSchema,
   headingSchema,
+  listItemSchema,
   orderedListSchema,
   setBlockTypeCommand,
   toggleEmphasisCommand,
@@ -34,6 +36,7 @@ import {
   Image as ImageIcon,
   List,
   ListOrdered,
+  ListTodo,
   Table,
   TextQuote,
 } from "lucide-react";
@@ -209,6 +212,7 @@ export type FormatAction =
   | "h3"
   | "bullet-list"
   | "ordered-list"
+  | "task-list"
   | "quote"
   | "code-block"
   | "table";
@@ -263,6 +267,7 @@ const SLASH_ITEMS: SlashItem[] = [
   { id: "h3", label: "Heading 3", hint: "#### ", icon: Heading3, keywords: "heading h3" },
   { id: "bullet-list", label: "Bullet list", hint: "- item", icon: List, keywords: "list bullet ul unordered" },
   { id: "ordered-list", label: "Ordered list", hint: "1. item", icon: ListOrdered, keywords: "list ordered ol numbered" },
+  { id: "task-list", label: "Task list", hint: "- [ ] item", icon: ListTodo, keywords: "task todo checkbox checklist" },
   { id: "quote", label: "Quote", hint: "> ", icon: TextQuote, keywords: "quote blockquote" },
   { id: "code-block", label: "Code block", hint: "```", icon: Code2, keywords: "code block" },
   { id: "table", label: "Table", hint: "| a | b |", icon: Table, keywords: "table grid" },
@@ -299,6 +304,16 @@ function runFormatAction(ctx: Ctx, action: Exclude<FormatAction, "image">) {
     case "ordered-list":
       commands.call(wrapInBlockTypeCommand.key, {
         nodeType: orderedListSchema.type(ctx),
+      });
+      break;
+    case "task-list":
+      // Mirrors Crepe's block-edit "Task List" menu item: wrap the current
+      // paragraph in a list item with the checkbox attribute set (checked:false
+      // → unchecked box), so the must-be-checked list_item schema accepts it.
+      commands.call(clearTextInCurrentBlockCommand.key);
+      commands.call(wrapInBlockTypeCommand.key, {
+        nodeType: listItemSchema.type(ctx),
+        attrs: { checked: false },
       });
       break;
     case "quote":
