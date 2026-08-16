@@ -193,6 +193,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     tasks,
     refreshTasks,
     toggleTaskItem,
+    isJournalNote,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
@@ -323,15 +324,16 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }, [navSection, shortcutsNavItems, recentNavItems, journalNavItems, bookmarksNavItems, vaultNavItems]);
 
   // Clear activeSource when activeId changes from outside a section open
-  // (e.g. command palette, daily note, tab click), so stale source tags
-  // don't cause false highlights.
+  // (e.g. command palette, tab click), so stale source tags don't cause
+  // false highlights. Journal notes only ever appear in the journal view,
+  // so opening one (e.g. the daily note) always highlights it there.
   useEffect(() => {
     if (sectionOpenRef.current) {
       sectionOpenRef.current = false;
       return;
     }
-    setActiveSource(null);
-  }, [activeId]);
+    setActiveSource(activeId && isJournalNote(activeId) ? "journal" : null);
+  }, [activeId, isJournalNote]);
 
   // Open a note and record which section it was opened from.
   const openFromSection = useCallback(

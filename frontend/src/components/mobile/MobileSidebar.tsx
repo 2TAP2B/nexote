@@ -152,6 +152,7 @@ export default function MobileSidebar({
                 title={item.label}
                 onClick={() => {
                   if (item.view === "journal") {
+                    onSelectView(item.view);
                     void openDaily();
                     onClose();
                     return;

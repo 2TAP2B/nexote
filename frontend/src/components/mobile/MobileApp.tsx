@@ -50,6 +50,23 @@ export default function MobileApp() {
   // closed; we set the view then open the sidebar).
   const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  // Persist the sidebar section (tree/recent/shortcuts/bookmarks/tags/tasks/
+  // images/journal) + selected tag across reloads, so the app reopens where the
+  // user left off instead of dropping back to the root note tree.
+  useEffect(() => {
+    const saved = localStorage.getItem("nexote:sidebar-view");
+    if (saved && saved !== "tree") setSidebarView(saved as SidebarView);
+    const tag = localStorage.getItem("nexote:selected-tag");
+    if (tag) setSelectedTag(tag);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("nexote:sidebar-view", sidebarView);
+  }, [sidebarView]);
+  useEffect(() => {
+    if (selectedTag) localStorage.setItem("nexote:selected-tag", selectedTag);
+    else localStorage.removeItem("nexote:selected-tag");
+  }, [selectedTag]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [colorScheme, setColorScheme] = useState("default");
 
