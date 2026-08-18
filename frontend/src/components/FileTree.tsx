@@ -321,6 +321,24 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   const [journalExpanded, setJournalExpanded] = useState(true);
   const [vaultExpandedMap, setVaultExpandedMap] = useState<Record<string, boolean>>({});
 
+  // Persist which vaults in the sidebar tree are expanded/collapsed, so a
+  // reload restores the user's layout instead of expanding every vault.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("nexote:vault-expanded");
+      if (stored) setVaultExpandedMap(JSON.parse(stored) as Record<string, boolean>);
+    } catch {
+      // ignore malformed stored state
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("nexote:vault-expanded", JSON.stringify(vaultExpandedMap));
+    } catch {
+      // ignore
+    }
+  }, [vaultExpandedMap]);
+
   // Tracks which section a note was opened from, so the active highlight
   // only appears in the section the user actually clicked (not in every
   // section that happens to list the note).
