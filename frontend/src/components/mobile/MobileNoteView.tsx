@@ -207,8 +207,34 @@ export default function MobileNoteView({
     });
   };
 
-  // Dashboard: render the mobile welcome screen (no editor).
+  // Dashboard: render the mobile welcome screen only when the dashboard tab is
+  // the active tab. While a note tab is active but its body hasn't loaded yet
+  // (e.g. right after a reload), show a lightweight skeleton instead of flashing
+  // the dashboard.
   if (isDashboard || !activeNote) {
+    if (!isDashboard) {
+      return (
+        <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
+          <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
+          <div
+            className="flex flex-col gap-2 px-5"
+            style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 84px)" }}
+          >
+            <Skeleton width="40%" height={28} />
+            <Skeleton width="90%" height={16} />
+            <Skeleton width="95%" height={16} />
+            <Skeleton width="80%" height={16} />
+          </div>
+          {aiPanelOpen && (
+            <AICommandPanel
+              editorRef={editorRef}
+              onClose={() => setAiPanelOpen(false)}
+              mobile
+            />
+          )}
+        </div>
+      );
+    }
     return (
       <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
         <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
@@ -377,5 +403,21 @@ function CircleButton({
     >
       {children}
     </button>
+  );
+}
+
+// A pulsing placeholder line used while a note body loads after a reload, so
+// the UI never flashes back to the dashboard.
+function Skeleton({ width, height }: { width: string; height: number }) {
+  return (
+    <div
+      className="rounded-xl"
+      style={{
+        width,
+        height,
+        background: "var(--mob-surface)",
+        animation: "mob-skeleton 1.2s ease-in-out infinite",
+      }}
+    />
   );
 }

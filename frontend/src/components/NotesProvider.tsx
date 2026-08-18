@@ -283,6 +283,52 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     setMarksByVault(next);
   }, [vaults]);
 
+  // Restore the open tabs + active note from localStorage as early as possible,
+  // so the note the user had open reappears without waiting on the heavier
+  // per-vault loads. activeId is set immediately (the mobile shell shows a
+  // skeleton instead of the dashboard while the body loads) and the active
+  // note's body is fetched right away using the last active vault (or journal).
+  const restoreTabs = useCallback(async () => {
+    try {
+      const storedTabs = localStorage.getItem("nexote:open-tabs");
+      const storedActive = localStorage.getItem("nexote:active-id");
+      if (!storedTabs) {
+        setRestoredTabs(true);
+        return;
+      }
+      const tabs = JSON.parse(storedTabs) as string[];
+      // Trust the persisted tabs (they were saved with valid membership); keep
+      // the dashboard, and drop nothing here. Body loads below skip failures.
+      const validTabs = tabs.includes(DASHBOARD_ID)
+        ? tabs
+        : [DASHBOARD_ID, ...tabs];
+      setOpenTabs(validTabs);
+      const activeToRestore =
+        storedActive && validTabs.includes(storedActive)
+          ? storedActive
+          : DASHBOARD_ID;
+      setActiveId(activeToRestore);
+      setRestoredTabs(true);
+
+      // Load the ACTIVE note's body first — the tab the user is looking at.
+      if (activeToRestore !== DASHBOARD_ID) {
+        const journalIds = journalIdsRef.current;
+        try {
+          const note = journalIds.has(activeToRestore)
+            ? await api.journalGet(activeToRestore)
+            : await api.get(activeVaultId ?? "", activeToRestore);
+          setNotesById((prev) => ({ ...prev, [activeToRestore]: note }));
+        } catch {
+          // note may live in another vault; will be resolved once vault data
+          // loads via the membership effect below
+        }
+      }
+    } catch {
+      // ignore malformed stored state
+      setRestoredTabs(true);
+    }
+  }, [activeVaultId]);
+
   // Load vault list on mount, then select the last active vault (or first).
   useEffect(() => {
     (async () => {
@@ -296,6 +342,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         if (pick) {
           setActiveVaultId(pick);
           if (!stored) localStorage.setItem("nexote:active-vault", pick);
+          // Restore the open tabs + active note body as early as possible, in
+          // parallel with the heavier all-vault loads below, so the note the
+          // user had open appears without first waiting on every vault's tree.
+          void restoreTabs();
         }
         // Load notes/folders for ALL vaults (for the multi-vault tree view).
         const data: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }> = {};
@@ -334,7 +384,38 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : "Failed to load vaults");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Once every vault's membership is known, fetch the bodies of any open tabs
+  // that aren't cached yet (the active note was fetched immediately; these are
+  // the other, non-active tabs). Resolves each tab's owning vault via the map.
+  useEffect(() => {
+    if (!restoredTabs || !activeVaultId) return;
+    const missing = openTabs.filter(
+      (id) => id !== DASHBOARD_ID && !notesById[id],
+    );
+    if (missing.length === 0) return;
+    (async () => {
+      const loaded: Record<string, Note> = {};
+      await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const vaultId = noteVaultMap[id];
+            loaded[id] = vaultId
+              ? await api.get(vaultId, id)
+              : await api.journalGet(id);
+          } catch {
+            // skip notes that fail to load
+          }
+        }),
+      );
+      if (Object.keys(loaded).length > 0) {
+        setNotesById((prev) => ({ ...prev, ...loaded }));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allVaultData, restoredTabs]);
 
   const switchVault = useCallback((id: string) => {
     setActiveVaultId(id);
@@ -443,70 +524,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     })();
   }, [activeVaultId, refresh]);
-
-  // Restore open tabs + active note from localStorage after the first load.
-  useEffect(() => {
-    if (restoredTabs || loading || !activeVaultId) return;
-    try {
-      const storedTabs = localStorage.getItem("nexote:open-tabs");
-      const storedActive = localStorage.getItem("nexote:active-id");
-      if (storedTabs) {
-        const tabs = JSON.parse(storedTabs) as string[];
-        // Keep tabs that are the dashboard, exist in ANY vault, or are journal
-        // notes. Tabs are shared across all vaults.
-        const journalIds = new Set(journalNotes.map((n) => n.id));
-        const validTabs = tabs.filter(
-          (t) =>
-            t === DASHBOARD_ID ||
-            noteVaultMap[t] != null ||
-            journalIds.has(t),
-        );
-        if (validTabs.length > 0) {
-          setOpenTabs(validTabs);
-          const activeToRestore =
-            storedActive && validTabs.includes(storedActive)
-              ? storedActive
-              : validTabs[0];
-          setActiveId(activeToRestore);
-
-          // Load note bodies for restored tabs that aren't the dashboard.
-          const noteTabs = validTabs.filter(
-            (t) => t !== DASHBOARD_ID && !notesById[t],
-          );
-          if (noteTabs.length > 0) {
-            (async () => {
-              const loaded: Record<string, Note> = {};
-              await Promise.all(
-                noteTabs.map(async (id) => {
-                  try {
-                    // Check if it's a journal note.
-                    if (journalIds.has(id)) {
-                      const jn = journalNotes.find((n) => n.id === id);
-                      if (jn) {
-                        const full = await api.journalGet(id);
-                        loaded[id] = full;
-                      }
-                    } else {
-                      const vaultId = noteVaultMap[id] ?? activeVaultId;
-                      loaded[id] = await api.get(vaultId, id);
-                    }
-                  } catch {
-                    // skip notes that fail to load
-                  }
-                }),
-              );
-              if (Object.keys(loaded).length > 0) {
-                setNotesById((prev) => ({ ...prev, ...loaded }));
-              }
-            })();
-          }
-        }
-      }
-    } catch {
-      // ignore malformed stored state
-    }
-    setRestoredTabs(true);
-  }, [restoredTabs, loading, activeVaultId, notes, journalNotes, noteVaultMap]);
 
   const openTab = useCallback(
     async (id: string) => {

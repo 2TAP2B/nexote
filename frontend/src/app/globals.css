@@ -752,3 +752,10 @@ body {
   right: 0;
   border-top: 1px solid color-mix(in oklab, var(--mob-muted) 15%, transparent);
 }
+
+/* Skeleton shimmer used while a note body loads after a reload (so the mobile
+ * UI never flashes back to the dashboard). */
+@keyframes mob-skeleton {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}

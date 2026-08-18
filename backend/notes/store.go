@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,8 +19,16 @@ var ErrNotFound = errors.New("note not found")
 // folders under Dir; each note is a "<id>.md" file whose frontmatter records
 // its path (the folder, relative to Dir) and title. Empty folders are tracked
 // as real directories so they persist even without notes.
+//
+// A lazily-built in-memory index maps note id -> absolute file path so that
+// reading a note (and the tree listing) does not re-walk the directory tree
+// for every note. Mutations (create/update/delete/move) keep the index in sync
+// so List/Get are fast even with many notes.
 type Store struct {
 	Dir string
+
+	mu    sync.RWMutex
+	index map[string]string // id -> absolute path of "<id>.md"
 }
 
 // NewStore creates a Store rooted at dir, creating the directory if needed.
@@ -28,6 +37,61 @@ func NewStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create notes dir: %w", err)
 	}
 	return &Store{Dir: dir}, nil
+}
+
+// buildIndex walks the tree once and records every "<id>.md" file's absolute
+// path. Called lazily; must be called with s.mu held (or after ensuring it).
+func (s *Store) buildIndex() {
+	s.index = make(map[string]string)
+	_ = filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		s.index[strings.TrimSuffix(d.Name(), ".md")] = p
+		return nil
+	})
+}
+
+// indexPath returns the indexed path for id, or "" if not indexed.
+func (s *Store) indexPath(id string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.index == nil {
+		return "", false
+	}
+	p, ok := s.index[id]
+	return p, ok
+}
+
+// ensureIndex populates the index on first use.
+func (s *Store) ensureIndex() {
+	s.mu.Lock()
+	if s.index == nil {
+		s.buildIndex()
+	}
+	s.mu.Unlock()
+}
+
+// trackIndex records a note's path (after a write or create).
+func (s *Store) trackIndex(id, path string) {
+	s.mu.Lock()
+	if s.index == nil {
+		s.index = make(map[string]string)
+	}
+	s.index[id] = path
+	s.mu.Unlock()
+}
+
+// untrackIndex removes a note from the index (after a delete).
+func (s *Store) untrackIndex(id string) {
+	s.mu.Lock()
+	if s.index != nil {
+		delete(s.index, id)
+	}
+	s.mu.Unlock()
 }
 
 // Entry is the metadata-only view returned by List for notes.
@@ -56,9 +120,13 @@ type ListResult struct {
 // List walks the store recursively and returns metadata for every note plus
 // every folder (including empty ones). Folders are derived from real
 // directories on disk, so empty folders persist after the last note is deleted.
+// A single tree walk populates the id->path index, so a subsequent read of any
+// listed note is O(1) rather than another walk.
 func (s *Store) List() (ListResult, error) {
 	var notes []Entry
 	var folders []FolderEntry = []FolderEntry{}
+
+	idx := make(map[string]string)
 
 	err := filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -83,7 +151,8 @@ func (s *Store) List() (ListResult, error) {
 			return nil
 		}
 		id := strings.TrimSuffix(d.Name(), ".md")
-		doc, err := s.read(id)
+		idx[id] = p
+		doc, err := s.readAt(id, p)
 		if err != nil {
 			// Skip files that aren't valid notes rather than failing the whole
 			// listing; a stray .md in the tree shouldn't break the UI.
@@ -103,6 +172,12 @@ func (s *Store) List() (ListResult, error) {
 	if err != nil {
 		return ListResult{}, fmt.Errorf("walk notes dir: %w", err)
 	}
+
+	// Publish the freshly-built index so later reads are O(1).
+	s.mu.Lock()
+	s.index = idx
+	s.mu.Unlock()
+
 	return ListResult{Notes: notes, Folders: folders}, nil
 }
 
@@ -313,6 +388,7 @@ func (s *Store) Delete(id string) error {
 		}
 		return fmt.Errorf("delete note: %w", err)
 	}
+	s.untrackIndex(id)
 	// Prune now-empty parent directories up to (but not including) the store
 	// root. This removes folders that became empty *and* had no explicit
 	// creation — i.e. folders that only existed because a note was in them.
@@ -627,10 +703,14 @@ func (s *Store) SetTaskChecked(id string, line int, checked bool) (Document, err
 // resolvePath finds the on-disk path of a note by id, searching the tree in
 // case the note lives in a subfolder. If not found, returns ErrNotFound.
 func (s *Store) resolvePath(id string) (string, error) {
-	// Fast path: note at the root.
-	rootPath := filepath.Join(s.Dir, id+".md")
-	if _, err := os.Stat(rootPath); err == nil {
-		return rootPath, nil
+	// Fast path: the note is indexed (the common case after a listing or an
+	// earlier read). Falls back to a full tree walk only when the index is
+	// stale (e.g. a file was added out-of-band), keeping lookups O(1).
+	if p, ok := s.indexPath(id); ok {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+		s.untrackIndex(id)
 	}
 	// Search the tree for "<id>.md".
 	var found string
@@ -650,6 +730,7 @@ func (s *Store) resolvePath(id string) (string, error) {
 	if found == "" {
 		return "", ErrNotFound
 	}
+	s.trackIndex(id, found)
 	return found, nil
 }
 
@@ -658,6 +739,12 @@ func (s *Store) read(id string) (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
+	return s.readAt(id, p)
+}
+
+// readAt decodes a note from an already-resolved absolute path. Used by List to
+// avoid resolving each note (which would walk the tree again) during a listing.
+func (s *Store) readAt(id, p string) (Document, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -721,6 +808,8 @@ func (s *Store) write(doc Document) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("rename note: %w", err)
 	}
+	// Keep the id->path index in sync with the on-disk location.
+	s.trackIndex(doc.Meta.ID, path)
 	return nil
 }
 
