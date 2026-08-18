@@ -94,43 +94,26 @@ export default function MobileApp() {
   }, [colorScheme]);
 
   // --- Tab navigation for the back/forward arrows ---
-  // The bottom-pill arrows cycle through the open note tabs (dashboard/home is
-  // skipped — it's the launcher, not a document). openTabs is stored newest-first
-  // (after the pinned dashboard), so we reverse to natural open order:
-  // left/back = previously opened note, right/forward = next opened note.
-  // From the first note, left returns to the dashboard. From the dashboard,
-  // right opens the most recently opened note.
-  const noteTabs = useMemo(
-    () => openTabs.filter((id) => id !== DASHBOARD_ID).reverse(),
-    [openTabs],
-  );
-  const activeTabIndex = noteTabs.indexOf(activeId ?? "");
-  // Left/back is available from any note (returns to dashboard from the first).
-  const canGoBack = activeTabIndex >= 0;
+  // The bottom-pill arrows cycle through the open tabs in the SAME order shown
+  // in the tab overview (MobileTabSwitcher / desktop TopBar): the dashboard is
+  // always the far-left (first) tab, followed by the open notes. Left moves
+  // back toward the dashboard, right moves forward through the tab list.
+  const tabOrder = openTabs;
+  const activeTabIndex = tabOrder.indexOf(activeId ?? "");
+  // Back is available from any tab after the dashboard; on the dashboard it's
+  // disabled. Forward is available unless we're on the last tab.
+  const canGoBack = activeTabIndex > 0;
   const canGoForward =
-    activeTabIndex === -1
-      ? noteTabs.length > 0
-      : activeTabIndex < noteTabs.length - 1;
+    activeTabIndex >= 0 && activeTabIndex < tabOrder.length - 1;
 
   const goToPrevTab = useCallback(() => {
-    const tabs = openTabs
-      .filter((id) => id !== DASHBOARD_ID)
-      .reverse();
-    const idx = tabs.indexOf(activeId ?? "");
-    if (idx > 0) void openTab(tabs[idx - 1]);
-    else if (idx === 0) void openTab(DASHBOARD_ID);
+    const idx = openTabs.indexOf(activeId ?? "");
+    if (idx > 0) void openTab(openTabs[idx - 1]);
   }, [openTabs, activeId, openTab]);
 
   const goToNextTab = useCallback(() => {
-    const tabs = openTabs
-      .filter((id) => id !== DASHBOARD_ID)
-      .reverse();
-    const idx = tabs.indexOf(activeId ?? "");
-    if (idx === -1) {
-      if (tabs.length > 0) void openTab(tabs[tabs.length - 1]);
-    } else if (idx < tabs.length - 1) {
-      void openTab(tabs[idx + 1]);
-    }
+    const idx = openTabs.indexOf(activeId ?? "");
+    if (idx >= 0 && idx < openTabs.length - 1) void openTab(openTabs[idx + 1]);
   }, [openTabs, activeId, openTab]);
 
   // Android PWA system-back handling: the back button should step back through
