@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Plus, X } from "lucide-react";
+import { FileText, Home, Plus, X } from "lucide-react";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
@@ -74,10 +74,17 @@ export default function MobileTabSwitcher({ onClose, onNewTab }: Props) {
                       : "4px solid transparent",
                   }}
                 >
-                  <FileText
-                    size={48}
-                    style={{ color: "var(--mob-muted)" }}
-                  />
+                  {isDashboard ? (
+                    <Home
+                      size={48}
+                      style={{ color: "var(--mob-muted)" }}
+                    />
+                  ) : (
+                    <FileText
+                      size={48}
+                      style={{ color: "var(--mob-muted)" }}
+                    />
+                  )}
                 </button>
                 {/* Title label under the card. */}
                 <div

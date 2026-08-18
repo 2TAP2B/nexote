@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import DeleteConfirm from "@/components/DeleteConfirm";
@@ -93,78 +93,42 @@ export default function MobileApp() {
     }
   }, [colorScheme]);
 
-  // --- Navigation history stack (browser-like back/forward across notes) ---
-  // past: notes visited before the current one (oldest first).
-  // future: notes to re-visit via forward (oldest first).
-  const historyRef = useRef<{ past: string[]; future: string[] }>({
-    past: [],
-    future: [],
-  });
-  // A flag to suppress history pushes while we're navigating via back/forward.
-  const navigatingRef = useRef(false);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
-
-  const refreshNavState = useCallback(() => {
-    const h = historyRef.current;
-    setCanGoBack(h.past.length > 0);
-    setCanGoForward(h.future.length > 0);
-  }, []);
-
-  // Track activeId changes and update the history stack.
-  useEffect(() => {
-    if (activeId == null) return;
-    if (navigatingRef.current) {
-      navigatingRef.current = false;
-      refreshNavState();
-      return;
-    }
-    // A normal open: push the previous activeId into past, clear future.
-    const h = historyRef.current;
-    // Only push if there's a previous id and it differs.
-    if (h.past[h.past.length - 1] !== activeId) {
-      // Avoid pushing the very first dashboard load.
-      if (h.past.length === 0 && activeId === DASHBOARD_ID) {
-        // initial load — no history entry
-      }
-    }
-    refreshNavState();
-  }, [activeId, refreshNavState]);
-
-  // Wrap openTab so a normal open pushes history.
-  const openWithHistory = useCallback(
-    async (id: string) => {
-      const h = historyRef.current;
-      if (activeId != null && id !== activeId) {
-        h.past.push(activeId);
-        h.future = [];
-      }
-      navigatingRef.current = false;
-      await openTab(id);
-      refreshNavState();
-    },
-    [activeId, openTab, refreshNavState],
+  // --- Tab navigation for the back/forward arrows ---
+  // The bottom-pill arrows cycle through the open note tabs (dashboard/home is
+  // skipped — it's the launcher, not a document). openTabs is stored newest-first
+  // (after the pinned dashboard), so we reverse to natural open order:
+  // left/back = previously opened note, right/forward = next opened note.
+  // From the dashboard, right opens the most recently opened note.
+  const noteTabs = useMemo(
+    () => openTabs.filter((id) => id !== DASHBOARD_ID).reverse(),
+    [openTabs],
   );
+  const activeTabIndex = noteTabs.indexOf(activeId ?? "");
+  const canGoBack = activeTabIndex > 0;
+  const canGoForward =
+    activeTabIndex === -1
+      ? noteTabs.length > 0
+      : activeTabIndex < noteTabs.length - 1;
 
-  const goBack = useCallback(() => {
-    const h = historyRef.current;
-    if (h.past.length === 0) return;
-    const prev = h.past.pop()!;
-    if (activeId != null) h.future.push(activeId);
-    navigatingRef.current = true;
-    void openTab(prev);
-    refreshNavState();
-  }, [activeId, openTab, refreshNavState]);
+  const goToPrevTab = useCallback(() => {
+    const tabs = openTabs
+      .filter((id) => id !== DASHBOARD_ID)
+      .reverse();
+    const idx = tabs.indexOf(activeId ?? "");
+    if (idx > 0) void openTab(tabs[idx - 1]);
+  }, [openTabs, activeId, openTab]);
 
-  const goForward = useCallback(() => {
-    const h = historyRef.current;
-    if (h.future.length === 0) return;
-    const next = h.future.pop()!;
-    if (activeId != null) h.past.push(activeId);
-    navigatingRef.current = true;
-    void openTab(next);
-    refreshNavState();
-  }, [activeId, openTab, refreshNavState]);
+  const goToNextTab = useCallback(() => {
+    const tabs = openTabs
+      .filter((id) => id !== DASHBOARD_ID)
+      .reverse();
+    const idx = tabs.indexOf(activeId ?? "");
+    if (idx === -1) {
+      if (tabs.length > 0) void openTab(tabs[tabs.length - 1]);
+    } else if (idx < tabs.length - 1) {
+      void openTab(tabs[idx + 1]);
+    }
+  }, [openTabs, activeId, openTab]);
 
   const handleNewNote = useCallback(() => {
     void create();
@@ -261,15 +225,14 @@ export default function MobileApp() {
         }}
         onSearch={() => setPaletteOpen(true)}
         onNewNote={handleNewNote}
-        openWithHistory={openWithHistory}
         openDaily={openDaily}
       />
 
       <MobileBottomPill
         canGoBack={canGoBack}
         canGoForward={canGoForward}
-        onBack={goBack}
-        onForward={goForward}
+        onBack={goToPrevTab}
+        onForward={goToNextTab}
         onSearch={() => setPaletteOpen(true)}
         onNewNote={handleNewNote}
         onOpenTabs={() => setTabSwitcherOpen(true)}

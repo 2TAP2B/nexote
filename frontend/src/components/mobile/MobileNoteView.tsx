@@ -33,7 +33,6 @@ type Props = {
   onOverflow: (x: number, y: number) => void;
   onSearch: () => void;
   onNewNote: () => void;
-  openWithHistory: (id: string) => Promise<void>;
   openDaily: () => Promise<void>;
 };
 
