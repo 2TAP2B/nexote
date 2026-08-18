@@ -3,7 +3,6 @@
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import type { CrepeConfig } from "@milkdown/crepe";
 import type { AIPromptContext } from "@milkdown/crepe/feature/ai";
-import { runAICmd } from "@milkdown/crepe/feature/ai";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { commandsCtx, editorViewCtx, parserCtx, schemaCtx, serializerCtx } from "@milkdown/kit/core";
 import {
@@ -1251,7 +1250,12 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           if (!editor) return;
           editor.action((ctx) => {
             const commands = ctx.get(commandsCtx);
-            commands.call(runAICmd.key, { instruction, label });
+            // Call the AI command by its registered NAME rather than the
+            // runAICmd key: our imported copy of runAICmd can be a separate
+            // bundle instance from the one Crepe registered internally, so its
+            // `.key` (a Symbol) wouldn't match the editor's command registry.
+            // Resolving by name ("RunAI") works regardless of module identity.
+            commands.call("RunAI", { instruction, label });
           });
         },
       }),
