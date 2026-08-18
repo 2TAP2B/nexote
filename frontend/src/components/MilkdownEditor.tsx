@@ -3,6 +3,7 @@
 import { Crepe, CrepeFeature } from "@milkdown/crepe";
 import type { CrepeConfig } from "@milkdown/crepe";
 import type { AIPromptContext } from "@milkdown/crepe/feature/ai";
+import { runAICmd } from "@milkdown/crepe/feature/ai";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { commandsCtx, editorViewCtx, parserCtx, schemaCtx, serializerCtx } from "@milkdown/kit/core";
 import {
@@ -201,6 +202,7 @@ export type MilkdownEditorHandle = {
   format: (action: FormatAction) => void;
   insertImageFile: (file: File) => void;
   askAI: () => void;
+  runAI: (instruction: string, label?: string) => void;
 };
 
 export type FormatAction =
@@ -339,6 +341,7 @@ type MilkdownEditorProps = {
   vaultId: string;
   noteId: string;
   mobile?: boolean;
+  onAskAI?: () => void;
 };
 
 const AI_SYSTEM_PROMPT = `You are a writing assistant embedded in a markdown editor.
@@ -495,10 +498,12 @@ function pinScroll(view: EditorView): () => void {
 
 // Inner editor lives inside MilkdownProvider so it can use the editor hooks.
 const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
-  function MilkdownEditor({ defaultValue, onChange, aiConfig, vaultId, noteId, mobile }, ref) {
+  function MilkdownEditor({ defaultValue, onChange, aiConfig, vaultId, noteId, mobile, onAskAI }, ref) {
     const crepeRef = useRef<Crepe | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
+    const onAskAIRef = useRef(onAskAI);
+    onAskAIRef.current = onAskAI;
 
     const aiBeforeRef = useRef("");
     const [aiReview, setAiReview] = useState<{
@@ -1233,19 +1238,20 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           uploadImageFile(file);
         },
         askAI: () => {
+          // Open our custom AI command panel (preset actions + custom prompt)
+          // instead of Crepe's floating instruction tooltip, which positions
+          // unreliably (clipped by the scroll container, or hidden when the
+          // selection moves on click). The panel is rendered by the parent
+          // (EditorPane / MobileNoteView) and calls runAI() with the chosen
+          // instruction.
+          onAskAIRef.current?.();
+        },
+        runAI: (instruction: string, label?: string) => {
           const editor = crepeRef.current?.editor;
           if (!editor) return;
           editor.action((ctx) => {
-            // Same call the Crepe toolbar's AI button makes: open the AI
-            // instruction tooltip for the current selection. It's only
-            // registered when the AI feature is enabled (baseUrl set).
-            const api = ctx.get("aiInstructionTooltipAPI" as never) as {
-              show: (from: number, to: number) => void;
-            };
-            if (!api?.show) return;
-            const view = ctx.get(editorViewCtx);
-            const { from, to } = view.state.selection;
-            api.show(from, to);
+            const commands = ctx.get(commandsCtx);
+            commands.call(runAICmd.key, { instruction, label });
           });
         },
       }),

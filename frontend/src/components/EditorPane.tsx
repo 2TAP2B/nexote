@@ -22,6 +22,7 @@ import { useNotes } from "@/lib/notes-context";
 import { generateNoteTitle } from "@/lib/ai";
 import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import ContextMenu from "@/components/ContextMenu";
+import AICommandPanel from "@/components/AICommandPanel";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
@@ -48,6 +49,7 @@ export default function EditorPane() {
   const skipNextChange = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<MilkdownEditorHandle>(null);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const prevBodyRef = useRef("");
   const ownSaveCountRef = useRef(0);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -408,6 +410,11 @@ export default function EditorPane() {
             },
             ...(settings.aiBaseUrl.trim()
               ? [{
+                  label: "Ask AI…",
+                  icon: <Sparkles className="h-4 w-4" />,
+                  onClick: () => setAiPanelOpen(true),
+                },
+                {
                   label: "Generate AI title",
                   icon: <Sparkles className="h-4 w-4" />,
                   onClick: () => void handleGenerateTitle(),
@@ -444,9 +451,17 @@ export default function EditorPane() {
             aiConfig={aiConfig}
             vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
             noteId={activeNote.id}
+            onAskAI={() => setAiPanelOpen(true)}
           />
         )}
       </div>
+
+      {aiPanelOpen && (
+        <AICommandPanel
+          editorRef={editorRef}
+          onClose={() => setAiPanelOpen(false)}
+        />
+      )}
     </main>
   );
 }

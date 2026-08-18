@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor";
+import AICommandPanel from "@/components/AICommandPanel";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
@@ -49,6 +50,7 @@ export default function MobileNoteView({
     useNotes();
 
   const editorRef = useRef<MilkdownEditorHandle>(null);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
 
   // Height of the on-screen keyboard (0 when hidden). The editor scroll area
   // shrinks by this amount while typing so the caret never scrolls underneath
@@ -217,10 +219,18 @@ export default function MobileNoteView({
             onNewNote={onNewNote}
             onOpenDaily={() => void openDaily()}
           />
-        </div>
       </div>
-    );
-  }
+
+      {aiPanelOpen && (
+        <AICommandPanel
+          editorRef={editorRef}
+          onClose={() => setAiPanelOpen(false)}
+          mobile
+        />
+      )}
+    </div>
+  );
+}
 
   return (
     <div
@@ -263,6 +273,7 @@ export default function MobileNoteView({
             vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
             noteId={activeNote.id}
             mobile
+            onAskAI={() => setAiPanelOpen(true)}
           />
         )}
       </div>
