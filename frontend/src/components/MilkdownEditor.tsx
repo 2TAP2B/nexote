@@ -715,6 +715,14 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       };
 
       const featureConfigs: NonNullable<CrepeConfig["featureConfigs"]> = {
+        [Crepe.Feature.Cursor]: {
+          // Crepe enables a custom "virtual cursor" by default that hides the
+          // native caret (caret-color: transparent) and paints its own. On
+          // touch it relies on JS repositioning plus a scroll listener, so the
+          // caret can drift off or vanish entirely while typing. Keep the real
+          // (blinking) caret on mobile so the user always sees where they type.
+          virtual: !mobile,
+        },
         [Crepe.Feature.ImageBlock]: {
           onUpload: (file: File) => uploadImageFile(file),
         },
