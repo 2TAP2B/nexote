@@ -333,6 +333,14 @@ export default function MobileNoteView({
           {rawMode ? <BookOpen size={20} /> : <Braces size={20} />}
         </CircleButton>
       </div>
+
+      {aiPanelOpen && (
+        <AICommandPanel
+          editorRef={editorRef}
+          onClose={() => setAiPanelOpen(false)}
+          mobile
+        />
+      )}
     </div>
   );
 }
