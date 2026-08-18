@@ -225,6 +225,7 @@ export default function MobileApp() {
         }}
         onSearch={() => setPaletteOpen(true)}
         onNewNote={handleNewNote}
+        onOpenSettings={() => setSettingsOpen(true)}
         openDaily={openDaily}
       />
 

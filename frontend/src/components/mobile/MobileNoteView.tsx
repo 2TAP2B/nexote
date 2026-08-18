@@ -34,6 +34,7 @@ type Props = {
   onOverflow: (x: number, y: number) => void;
   onSearch: () => void;
   onNewNote: () => void;
+  onOpenSettings: () => void;
   openDaily: () => Promise<void>;
 };
 
@@ -44,6 +45,7 @@ export default function MobileNoteView({
   onOverflow,
   onSearch,
   onNewNote,
+  onOpenSettings,
   openDaily,
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
@@ -218,6 +220,7 @@ export default function MobileNoteView({
             onOpenSearch={onSearch}
             onNewNote={onNewNote}
             onOpenDaily={() => void openDaily()}
+            onOpenSettings={onOpenSettings}
           />
       </div>
 

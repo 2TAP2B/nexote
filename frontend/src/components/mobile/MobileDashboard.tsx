@@ -1,13 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   Bookmark,
   CalendarDays,
+  ChevronRight,
   FilePlus,
   FileText,
+  Hash,
   History,
+  ListTodo,
   Search,
+  Settings,
   Star,
 } from "lucide-react";
 
@@ -47,10 +51,12 @@ export default function MobileDashboard({
   onOpenSearch,
   onNewNote,
   onOpenDaily,
+  onOpenSettings,
 }: {
   onOpenSearch: () => void;
   onNewNote: () => void;
   onOpenDaily: () => void;
+  onOpenSettings: () => void;
 }) {
   const {
     bookmarks,
@@ -60,6 +66,9 @@ export default function MobileDashboard({
     journalNotes,
     openNoteInVault,
     openJournalNote,
+    tasks,
+    tagsByVault,
+    refreshTags,
   } = useNotes();
 
   const greeting = useMemo(() => {
@@ -68,6 +77,13 @@ export default function MobileDashboard({
     if (h < 18) return "Good afternoon";
     return "Good evening";
   }, []);
+
+  // Load the tag index for every vault so the Tags section can show even
+  // before the user opens the Tags view. Re-runs once the vaults load.
+  useEffect(() => {
+    if (vaults.length === 0) return;
+    for (const v of vaults) void refreshTags(v.id);
+  }, [vaults, refreshTags]);
 
   // Merge every vault's notes + the journal into one recency-sorted list.
   const recents = useMemo<RecentEntry[]>(() => {
@@ -144,6 +160,29 @@ export default function MobileDashboard({
     else void openNoteInVault(entry.vaultId, entry.id);
   };
 
+  // Open tasks (unchecked), newest first, capped for the dashboard.
+  const openTasks = useMemo(
+    () => tasks.filter((t) => !t.checked).slice(0, 5),
+    [tasks],
+  );
+
+  // Tags pooled across all vaults, sorted by note count, top chips.
+  const allTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tags of Object.values(tagsByVault)) {
+      for (const t of tags) counts.set(t.name, (counts.get(t.name) ?? 0) + t.count);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }))
+      .slice(0, 12);
+  }, [tagsByVault]);
+
+  const openTaskNote = (task: (typeof tasks)[number]) => {
+    if (task.vaultId === "journal") void openJournalNote(task.noteId);
+    else void openNoteInVault(task.vaultId, task.noteId);
+  };
+
   const isEmpty = recents.length === 0;
 
   return (
@@ -152,18 +191,34 @@ export default function MobileDashboard({
       style={{ color: "var(--mob-text)" }}
     >
       {/* Header */}
-      <div className="px-1 pt-1">
-        <p
-          className="text-xs font-medium uppercase tracking-wide"
-          style={{ color: "var(--mob-muted)" }}
+      <div className="flex items-start justify-between px-1 pt-1">
+        <div>
+          <p
+            className="text-xs font-medium uppercase tracking-wide"
+            style={{ color: "var(--mob-muted)" }}
+          >
+            {greeting}
+          </p>
+          <h1 className="text-2xl font-bold">Nexote</h1>
+        </div>
+        <button
+          type="button"
+          aria-label="Settings"
+          onClick={onOpenSettings}
+          className="flex items-center justify-center rounded-full transition-transform active:scale-90"
+          style={{
+            width: 44,
+            height: 44,
+            background: "var(--mob-surface)",
+            color: "var(--mob-text)",
+          }}
         >
-          {greeting}
-        </p>
-        <h1 className="text-2xl font-bold">Nexote</h1>
+          <Settings size={20} />
+        </button>
       </div>
 
       {/* Quick actions — large touch targets */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <QuickAction
           icon={<FilePlus size={22} />}
           label="New note"
@@ -178,6 +233,11 @@ export default function MobileDashboard({
           icon={<Search size={22} />}
           label="Search"
           onClick={onOpenSearch}
+        />
+        <QuickAction
+          icon={<Settings size={22} />}
+          label="Settings"
+          onClick={onOpenSettings}
         />
       </div>
 
@@ -269,6 +329,90 @@ export default function MobileDashboard({
           </div>
         </section>
       )}
+
+      {/* Open tasks */}
+      {openTasks.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <SectionHeading
+            icon={<ListTodo size={16} />}
+            title="Open tasks"
+            count={openTasks.length}
+            onViewAll={() =>
+              window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))
+            }
+          />
+          <div className="flex flex-col gap-1.5">
+            {openTasks.map((t, i) => (
+              <button
+                key={`${t.vaultId}-${t.noteId}-${t.line}`}
+                type="button"
+                onClick={() => openTaskNote(t)}
+                className="flex min-h-[52px] items-center gap-3 rounded-2xl px-3 py-2 text-left transition-[transform,background] active:scale-[0.98]"
+                style={{ background: "var(--mob-card)" }}
+              >
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                  style={{
+                    background: "var(--mob-surface)",
+                    color: "var(--mob-accent)",
+                  }}
+                >
+                  <ListTodo size={18} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span
+                    className="truncate text-[15px] font-medium"
+                    style={{ color: "var(--mob-text)" }}
+                  >
+                    {t.text}
+                  </span>
+                  <span
+                    className="truncate text-xs"
+                    style={{ color: "var(--mob-muted)" }}
+                  >
+                    {t.noteTitle || "Untitled"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Tags */}
+      {allTags.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <SectionHeading
+            icon={<Hash size={16} />}
+            title="Tags"
+            onViewAll={() =>
+              window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tags" }))
+            }
+          />
+          <div className="flex flex-wrap gap-2 px-1">
+            {allTags.map((t) => (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: t.name }))
+                }
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-transform active:scale-95"
+                style={{
+                  background: "var(--mob-surface)",
+                  color: "var(--mob-text)",
+                }}
+              >
+                <Hash size={13} style={{ color: "var(--mob-accent)" }} />
+                {t.name}
+                <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
+                  {t.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
@@ -277,10 +421,12 @@ function SectionHeading({
   icon,
   title,
   count,
+  onViewAll,
 }: {
   icon: React.ReactNode;
   title: string;
   count?: number;
+  onViewAll?: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 px-1 pt-1">
@@ -295,6 +441,17 @@ function SectionHeading({
         <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
           {count}
         </span>
+      )}
+      {onViewAll && (
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="ml-auto flex items-center gap-0.5 text-xs font-medium"
+          style={{ color: "var(--mob-accent)" }}
+        >
+          View all
+          <ChevronRight size={14} />
+        </button>
       )}
     </div>
   );
