@@ -194,6 +194,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     refreshTasks,
     toggleTaskItem,
     isJournalNote,
+    noteVaultMap,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
@@ -202,10 +203,22 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     [openMap],
   );
   // Recent excludes notes already pinned as shortcuts, so a note doesn't
-  // appear in both the Shortcuts and Recent sections.
+  // appear in both the Shortcuts and Recent sections. Recent / Shortcuts /
+  // Bookmarks are aggregated across ALL vaults so they work as one set for
+  // every vault, regardless of which vault is currently active.
+  const allVaultNotes = useMemo(() => {
+    const list: (NoteMeta & { vaultId: string })[] = [];
+    for (const v of vaults) {
+      for (const n of allVaultData[v.id]?.notes ?? []) {
+        list.push({ ...n, vaultId: v.id });
+      }
+    }
+    return list;
+  }, [vaults, allVaultData]);
+
   const recentNotes = useMemo(
-    () => notes.filter((n) => !shortcuts.has(n.id)),
-    [notes, shortcuts],
+    () => allVaultNotes.filter((n) => !shortcuts.has(n.id)),
+    [allVaultNotes, shortcuts],
   );
 
   // Flat ordered list of visible items per section for keyboard nav.
@@ -225,11 +238,11 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
 
   // Shortcuts nav list (sorted by updatedAt desc to match the detailed view)
   const shortcutsNavItems = useMemo(() => {
-    return notes
+    return allVaultNotes
       .filter((n) => shortcuts.has(n.id))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map((n) => ({ type: "note", id: n.id }) as NavItem);
-  }, [notes, shortcuts]);
+  }, [allVaultNotes, shortcuts]);
 
   // Recent nav list (sorted by updatedAt desc, excludes shortcuts)
   const recentNavItems = useMemo(() => {
@@ -240,11 +253,11 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
 
   // Bookmarks nav list (sorted by updatedAt desc)
   const bookmarksNavItems = useMemo(() => {
-    return notes
+    return allVaultNotes
       .filter((n) => bookmarks.has(n.id))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map((n) => ({ type: "note", id: n.id }) as NavItem);
-  }, [notes, bookmarks]);
+  }, [allVaultNotes, bookmarks]);
 
   // Journal nav list (vault-independent, sorted by updatedAt desc)
   const journalNavItems = useMemo(() => {
@@ -335,14 +348,21 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     setActiveSource(activeId && isJournalNote(activeId) ? "journal" : null);
   }, [activeId, isJournalNote]);
 
-  // Open a note and record which section it was opened from.
+  // Open a note and record which section it was opened from. The note may
+  // belong to any vault (aggregated Recent/Shortcuts/Bookmarks sections), so
+  // route through the vault-aware opener when it isn't in the active vault.
   const openFromSection = useCallback(
     (section: string, id: string) => {
       sectionOpenRef.current = true;
       setActiveSource(section);
-      openTab(id);
+      const vaultId = noteVaultMap[id];
+      if (vaultId && vaultId !== activeVault?.id) {
+        void openNoteInVault(vaultId, id);
+      } else {
+        void openTab(id);
+      }
     },
-    [openTab],
+    [noteVaultMap, activeVault, openNoteInVault, openTab],
   );
 
   // Context menu state.
@@ -793,7 +813,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         <div className="absolute inset-0 overflow-y-auto px-1 pb-2 pt-1">
           {view === "bookmarks" ? (
             <DetailedNoteList
-              notes={notes.filter((n) => bookmarks.has(n.id))}
+              notes={allVaultNotes.filter((n) => bookmarks.has(n.id))}
               notesById={notesById}
               activeId={activeId}
               activeSource={activeSource}
@@ -829,7 +849,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
             />
           ) : view === "shortcuts" ? (
             <DetailedNoteList
-              notes={notes.filter((n) => shortcuts.has(n.id))}
+              notes={allVaultNotes.filter((n) => shortcuts.has(n.id))}
               notesById={notesById}
               activeId={activeId}
               activeSource={activeSource}

@@ -92,6 +92,9 @@ type NotesContextValue = {
   openNoteInVault: (vaultId: string, noteId: string) => Promise<void>;
   openJournalNote: (id: string) => Promise<void>;
   isJournalNote: (id: string) => boolean;
+  // noteId → vaultId, so vault-scoped ops can route to the owning vault.
+  noteVaultMap: Record<string, string>;
+  refreshAllMarks: () => Promise<void>;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
 };
@@ -157,8 +160,20 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [activeVaultId, setActiveVaultId] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
-  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
-  const [shortcuts, setShortcuts] = useState<Set<string>>(new Set());
+  // Bookmark/shortcut sets are aggregated across all vaults so the Recent,
+  // Shortcuts, and Bookmarks sections work as one list for every vault.
+  // Per-vault lists are kept so toggles write to the correct vault's store.
+  const [marksByVault, setMarksByVault] = useState<
+    Record<string, { bookmarks: string[]; shortcuts: string[] }>
+  >({});
+  const bookmarks = useMemo(
+    () => new Set(Object.values(marksByVault).flatMap((m) => m.bookmarks)),
+    [marksByVault],
+  );
+  const shortcuts = useMemo(
+    () => new Set(Object.values(marksByVault).flatMap((m) => m.shortcuts)),
+    [marksByVault],
+  );
   const [openTabs, setOpenTabs] = useState<string[]>([DASHBOARD_ID]);
   const [activeId, setActiveId] = useState<string | null>(DASHBOARD_ID);
   const [notesById, setNotesById] = useState<Record<string, Note>>({});
@@ -237,6 +252,38 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [vaults, activeVaultId],
   );
 
+  // noteId → vaultId, used to route bookmark/shortcut toggles (and any
+  // vault-scoped op) to the vault that actually owns the note.
+  const noteVaultMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const [vid, data] of Object.entries(allVaultData)) {
+      for (const n of data.notes ?? []) map[n.id] = vid;
+    }
+    return map;
+  }, [allVaultData]);
+
+  // Load bookmarks+shortcuts for every vault, replacing the merged state.
+  const refreshAllMarks = useCallback(async () => {
+    const next: Record<string, { bookmarks: string[]; shortcuts: string[] }> = {};
+    await Promise.all(
+      vaults.map(async (v) => {
+        try {
+          const [bm, sc] = await Promise.all([
+            api.listBookmarks(v.id),
+            api.listShortcuts(v.id),
+          ]);
+          next[v.id] = {
+            bookmarks: bm.bookmarks ?? [],
+            shortcuts: sc.shortcuts ?? [],
+          };
+        } catch {
+          next[v.id] = { bookmarks: [], shortcuts: [] };
+        }
+      }),
+    );
+    setMarksByVault(next);
+  }, [vaults]);
+
   // Load vault list on mount, then select the last active vault (or first).
   useEffect(() => {
     (async () => {
@@ -264,6 +311,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           }),
         );
         setAllVaultData(data);
+        // Load bookmarks/shortcuts for ALL vaults so the Recent/Shortcuts/
+        // Bookmarks sections are one list across every vault.
+        const marks: Record<string, { bookmarks: string[]; shortcuts: string[] }> = {};
+        await Promise.all(
+          list.map(async (v) => {
+            try {
+              const [bm, sc] = await Promise.all([
+                api.listBookmarks(v.id),
+                api.listShortcuts(v.id),
+              ]);
+              marks[v.id] = {
+                bookmarks: bm.bookmarks ?? [],
+                shortcuts: sc.shortcuts ?? [],
+              };
+            } catch {
+              marks[v.id] = { bookmarks: [], shortcuts: [] };
+            }
+          }),
+        );
+        setMarksByVault(marks);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load vaults");
       }
@@ -273,11 +340,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const switchVault = useCallback((id: string) => {
     setActiveVaultId(id);
     localStorage.setItem("nexote:active-vault", id);
-    // Reset note state when switching vaults.
+    // Reset note state when switching vaults. Bookmarks/shortcuts are
+    // aggregated across all vaults and stay intact.
     setNotes([]);
     setFolders([]);
-    setBookmarks(new Set());
-    setShortcuts(new Set());
     setNotesById({});
     setOpenTabs([DASHBOARD_ID]);
     setActiveId(DASHBOARD_ID);
@@ -305,6 +371,21 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       try {
         await api.deleteVault(id);
+        setMarksByVault((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setAllVaultData((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setTagsByVault((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
         setVaults((prev) => {
           const next = prev.filter((v) => v.id !== id);
           if (activeVaultId === id && next.length > 0) {
@@ -335,10 +416,17 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       result.notes?.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       setNotes(result.notes ?? []);
       setFolders(result.folders ?? []);
-      const bm = await api.listBookmarks(activeVaultId);
-      setBookmarks(new Set(bm.bookmarks ?? []));
-      const sc = await api.listShortcuts(activeVaultId);
-      setShortcuts(new Set(sc.shortcuts ?? []));
+      const [bm, sc] = await Promise.all([
+        api.listBookmarks(activeVaultId),
+        api.listShortcuts(activeVaultId),
+      ]);
+      setMarksByVault((prev) => ({
+        ...prev,
+        [activeVaultId]: {
+          bookmarks: bm.bookmarks ?? [],
+          shortcuts: sc.shortcuts ?? [],
+        },
+      }));
       // Also update all-vault data for the active vault
       setAllVaultData((prev) => ({
         ...prev,
@@ -553,10 +641,25 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const copyNote = useCallback(
     async (id: string) => {
-      if (!activeVaultId) return;
+      // Copy within the note's owning vault so aggregated sections work
+      // across all vaults.
+      const vaultId = noteVaultMap[id] ?? activeVaultId;
+      if (!vaultId) return;
       try {
-        const note = await api.copy(activeVaultId, id);
-        await refresh();
+        const note = await api.copy(vaultId, id);
+        if (vaultId === activeVaultId) {
+          await refresh();
+        } else {
+          try {
+            const res = await api.list(vaultId);
+            setAllVaultData((prev) => ({
+              ...prev,
+              [vaultId]: { notes: res.notes ?? [], folders: res.folders ?? [] },
+            }));
+          } catch {
+            // ignore
+          }
+        }
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
         setOpenTabs((prev) => appendOpenTab(prev, note.id));
         setActiveId(note.id);
@@ -564,7 +667,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : "Failed to copy note");
       }
     },
-    [activeVaultId, refresh],
+    [activeVaultId, noteVaultMap, refresh],
   );
 
   const moveNoteToVault = useCallback(
@@ -598,44 +701,66 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const toggleBookmark = useCallback(
     async (id: string) => {
-      if (!activeVaultId) return;
+      // The note may live in another vault; route the toggle there so the
+      // aggregated Bookmarks section works across all vaults.
+      const vaultId = noteVaultMap[id] ?? activeVaultId;
+      if (!vaultId) return;
       const isBookmarked = bookmarks.has(id);
-      setBookmarks((prev) => {
-        const next = new Set(prev);
-        if (isBookmarked) next.delete(id);
-        else next.add(id);
-        return next;
-      });
+      setMarksByVault((prev) => ({
+        ...prev,
+        [vaultId]: {
+          bookmarks: isBookmarked
+            ? (prev[vaultId]?.bookmarks ?? []).filter((x) => x !== id)
+            : [...(prev[vaultId]?.bookmarks ?? []), id],
+          shortcuts: prev[vaultId]?.shortcuts ?? [],
+        },
+      }));
       try {
-        if (isBookmarked) await api.removeBookmark(activeVaultId, id);
-        else await api.addBookmark(activeVaultId, id);
+        if (isBookmarked) await api.removeBookmark(vaultId, id);
+        else await api.addBookmark(vaultId, id);
       } catch (e) {
-        setBookmarks(bookmarks);
+        setMarksByVault((prev) => ({
+          ...prev,
+          [vaultId]: {
+            bookmarks: (prev[vaultId]?.bookmarks ?? []).filter((x) => x !== id),
+            shortcuts: prev[vaultId]?.shortcuts ?? [],
+          },
+        }));
         setError(e instanceof Error ? e.message : "Failed to toggle bookmark");
       }
     },
-    [bookmarks, activeVaultId],
+    [bookmarks, activeVaultId, noteVaultMap],
   );
 
   const toggleShortcut = useCallback(
     async (id: string) => {
-      if (!activeVaultId) return;
+      const vaultId = noteVaultMap[id] ?? activeVaultId;
+      if (!vaultId) return;
       const isShortcut = shortcuts.has(id);
-      setShortcuts((prev) => {
-        const next = new Set(prev);
-        if (isShortcut) next.delete(id);
-        else next.add(id);
-        return next;
-      });
+      setMarksByVault((prev) => ({
+        ...prev,
+        [vaultId]: {
+          bookmarks: prev[vaultId]?.bookmarks ?? [],
+          shortcuts: isShortcut
+            ? (prev[vaultId]?.shortcuts ?? []).filter((x) => x !== id)
+            : [...(prev[vaultId]?.shortcuts ?? []), id],
+        },
+      }));
       try {
-        if (isShortcut) await api.removeShortcut(activeVaultId, id);
-        else await api.addShortcut(activeVaultId, id);
+        if (isShortcut) await api.removeShortcut(vaultId, id);
+        else await api.addShortcut(vaultId, id);
       } catch (e) {
-        setShortcuts(shortcuts);
+        setMarksByVault((prev) => ({
+          ...prev,
+          [vaultId]: {
+            bookmarks: prev[vaultId]?.bookmarks ?? [],
+            shortcuts: (prev[vaultId]?.shortcuts ?? []).filter((x) => x !== id),
+          },
+        }));
         setError(e instanceof Error ? e.message : "Failed to toggle shortcut");
       }
     },
-    [shortcuts, activeVaultId],
+    [shortcuts, activeVaultId, noteVaultMap],
   );
 
   const createFolder = useCallback(
@@ -844,16 +969,32 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const remove = useCallback(
     async (id: string) => {
-      if (!activeVaultId) return;
+      // Delete from the vault that owns the note (it may not be the active
+      // vault when deleting from an aggregated section).
+      const vaultId = noteVaultMap[id] ?? activeVaultId;
+      if (!vaultId) return;
       try {
-        await api.remove(activeVaultId, id);
+        await api.remove(vaultId, id);
         closeTab(id);
-        await refresh();
+        if (vaultId === activeVaultId) {
+          await refresh();
+        } else {
+          // Refresh that vault's per-vault data directly.
+          try {
+            const res = await api.list(vaultId);
+            setAllVaultData((prev) => ({
+              ...prev,
+              [vaultId]: { notes: res.notes ?? [], folders: res.folders ?? [] },
+            }));
+          } catch {
+            // ignore
+          }
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to delete note");
       }
     },
-    [activeVaultId, closeTab, refresh],
+    [activeVaultId, noteVaultMap, closeTab, refresh],
   );
 
   // Delete a journal note (vault-independent).
@@ -1001,6 +1142,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       openNoteInVault,
       openJournalNote,
       isJournalNote: (id: string) => journalIdsRef.current.has(id),
+      noteVaultMap,
+      refreshAllMarks,
       settings,
       updateSettings,
     }),
@@ -1055,6 +1198,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       toggleTaskItem,
       openNoteInVault,
       openJournalNote,
+      noteVaultMap,
+      refreshAllMarks,
       settings,
       updateSettings,
     ],

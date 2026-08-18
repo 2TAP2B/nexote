@@ -53,14 +53,11 @@ export default function MobileDashboard({
   onOpenDaily: () => void;
 }) {
   const {
-    notes,
     bookmarks,
     shortcuts,
-    activeVault,
     vaults,
     allVaultData,
     journalNotes,
-    openTab,
     openNoteInVault,
     openJournalNote,
   } = useNotes();
@@ -101,16 +98,46 @@ export default function MobileDashboard({
     return items.slice(0, 5);
   }, [vaults, allVaultData, journalNotes]);
 
-  // Bookmarks / shortcuts are per-vault; `notes` is already newest-first.
-  const bookmarkNotes = notes.filter((n) => bookmarks.has(n.id)).slice(0, 6);
-  const shortcutNotes = notes.filter((n) => shortcuts.has(n.id)).slice(0, 6);
-
-  // Notes in the active vault open via openTab; everything else goes through
-  // openNoteInVault which switches vaults when needed.
-  const openNote = (id: string) => {
-    if (notes.some((n) => n.id === id)) void openTab(id);
-    else if (activeVault) void openNoteInVault(activeVault.id, id);
-  };
+  // Bookmarks / shortcuts are pooled across all vaults (one shared list),
+  // newest-first.
+  const bookmarkNotes = useMemo(() => {
+    const items: RecentEntry[] = [];
+    for (const v of vaults) {
+      for (const n of allVaultData[v.id]?.notes ?? []) {
+        if (bookmarks.has(n.id)) {
+          items.push({
+            id: n.id,
+            title: n.title,
+            path: n.path,
+            updatedAt: n.updatedAt,
+            vaultId: v.id,
+            source: "vault",
+          });
+        }
+      }
+    }
+    items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return items.slice(0, 6);
+  }, [vaults, allVaultData, bookmarks]);
+  const shortcutNotes = useMemo(() => {
+    const items: RecentEntry[] = [];
+    for (const v of vaults) {
+      for (const n of allVaultData[v.id]?.notes ?? []) {
+        if (shortcuts.has(n.id)) {
+          items.push({
+            id: n.id,
+            title: n.title,
+            path: n.path,
+            updatedAt: n.updatedAt,
+            vaultId: v.id,
+            source: "vault",
+          });
+        }
+      }
+    }
+    items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return items.slice(0, 6);
+  }, [vaults, allVaultData, shortcuts]);
 
   const openItem = (entry: RecentEntry) => {
     if (entry.source === "journal") void openJournalNote(entry.id);
@@ -213,7 +240,7 @@ export default function MobileDashboard({
                 title={n.title || "Untitled"}
                 subtitle={n.path || "No folder"}
                 time={formatRelative(n.updatedAt)}
-                onClick={() => openNote(n.id)}
+                onClick={() => openItem(n)}
               />
             ))}
           </div>
@@ -236,7 +263,7 @@ export default function MobileDashboard({
                 title={n.title || "Untitled"}
                 subtitle={n.path || "No folder"}
                 time={formatRelative(n.updatedAt)}
-                onClick={() => openNote(n.id)}
+                onClick={() => openItem(n)}
               />
             ))}
           </div>
