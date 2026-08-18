@@ -369,8 +369,9 @@ func (s *Store) Daily() (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
-	// Seed the body with a header so the journal isn't empty.
-	doc.Body = fmt.Sprintf("# %s\n\n", date)
+	// Seed the body with a header so the journal isn't empty. The default note
+	// title heading is H2 (##), so keep the daily header at the same level.
+	doc.Body = fmt.Sprintf("## %s\n\n", date)
 	doc.Meta.UpdatedAt = now
 	if err := s.write(doc); err != nil {
 		return Document{}, err
