@@ -267,3 +267,54 @@ func TestDailyCreatesAndReuses(t *testing.T) {
 		t.Fatalf("Daily created a second note: %q vs %q", d1.Meta.ID, d2.Meta.ID)
 	}
 }
+
+// TestUpdateSyncsInlineTags verifies that a note's frontmatter tags mirror the
+// inline #hashtags in its body: adding a tag shows up, and removing a #tag from
+// the text drops it from the note.
+func TestUpdateSyncsInlineTags(t *testing.T) {
+	s := newTestStore(t)
+
+	doc, err := s.Create(CreateInput{Title: "Tagged"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Add inline tags.
+	doc, err = s.Update(doc.Meta.ID, UpdateInput{Title: "Tagged", Body: "#work and #ideas notes\n"})
+	if err != nil {
+		t.Fatalf("Update (add): %v", err)
+	}
+	if len(doc.Meta.Tags) != 2 {
+		t.Fatalf("tags = %v, want [ideas work]", doc.Meta.Tags)
+	}
+	if !containsString(doc.Meta.Tags, "work") || !containsString(doc.Meta.Tags, "ideas") {
+		t.Fatalf("tags = %v, want to include work and ideas", doc.Meta.Tags)
+	}
+
+	// Remove one inline tag — it must disappear from the note's tags.
+	doc, err = s.Update(doc.Meta.ID, UpdateInput{Title: "Tagged", Body: "#work notes\n"})
+	if err != nil {
+		t.Fatalf("Update (remove): %v", err)
+	}
+	if len(doc.Meta.Tags) != 1 || doc.Meta.Tags[0] != "work" {
+		t.Fatalf("tags = %v, want [work]", doc.Meta.Tags)
+	}
+
+	// Removing all inline tags empties the tag list.
+	doc, err = s.Update(doc.Meta.ID, UpdateInput{Title: "Tagged", Body: "no tags here\n"})
+	if err != nil {
+		t.Fatalf("Update (clear): %v", err)
+	}
+	if len(doc.Meta.Tags) != 0 {
+		t.Fatalf("tags = %v, want empty", doc.Meta.Tags)
+	}
+
+	// The tag index reflects the drop.
+	idx, err := s.TagIndex()
+	if err != nil {
+		t.Fatalf("TagIndex: %v", err)
+	}
+	if len(idx) != 0 {
+		t.Fatalf("tag index = %v, want empty", idx)
+	}
+}

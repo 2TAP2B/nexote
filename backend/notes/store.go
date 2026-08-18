@@ -242,18 +242,12 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	doc.Body = in.Body
 	doc.Meta.UpdatedAt = time.Now().UTC()
 
-	// Extract inline #hashtags from the body and merge into frontmatter tags.
-	bodyTags := extractInlineTags(doc.Body)
-	existing := make(map[string]bool, len(doc.Meta.Tags))
-	for _, t := range doc.Meta.Tags {
-		existing[t] = true
-	}
-	for _, t := range bodyTags {
-		if !existing[t] {
-			doc.Meta.Tags = append(doc.Meta.Tags, t)
-			existing[t] = true
-		}
-	}
+	// Tags are defined inline in the body with #hashtags (e.g. #work #ideas).
+	// Replace the note's frontmatter tags with exactly the tags present in the
+	// body, so removing a #tag from the text also drops it from the note (and,
+	// if no other note carries it, from the tag index). This keeps the
+	// frontmatter tags a faithful mirror of the inline hashtags.
+	doc.Meta.Tags = extractInlineTags(doc.Body)
 
 	// If the path changed, delete the old file first, then write the new one.
 	if doc.Meta.Path != oldPath {
