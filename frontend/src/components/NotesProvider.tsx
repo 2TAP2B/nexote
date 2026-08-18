@@ -339,13 +339,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const switchVault = useCallback((id: string) => {
     setActiveVaultId(id);
     localStorage.setItem("nexote:active-vault", id);
-    // Reset note state when switching vaults. Bookmarks/shortcuts are
-    // aggregated across all vaults and stay intact.
+    // Switching vaults only changes the tree's focus vault. Open tabs and the
+    // note-body cache are shared across ALL vaults (one tab list for every
+    // vault), so they stay intact. Bookmarks/shortcuts are already aggregated.
     setNotes([]);
     setFolders([]);
-    setNotesById({});
-    setOpenTabs([DASHBOARD_ID]);
-    setActiveId(DASHBOARD_ID);
   }, []);
 
   const createVault = useCallback(async (name: string, icon?: string) => {
@@ -454,13 +452,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       const storedActive = localStorage.getItem("nexote:active-id");
       if (storedTabs) {
         const tabs = JSON.parse(storedTabs) as string[];
-        // Keep tabs that are the dashboard, exist in the current vault, or
-        // are journal notes.
+        // Keep tabs that are the dashboard, exist in ANY vault, or are journal
+        // notes. Tabs are shared across all vaults.
         const journalIds = new Set(journalNotes.map((n) => n.id));
         const validTabs = tabs.filter(
           (t) =>
             t === DASHBOARD_ID ||
-            notes.some((n) => n.id === t) ||
+            noteVaultMap[t] != null ||
             journalIds.has(t),
         );
         if (validTabs.length > 0) {
@@ -489,7 +487,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
                         loaded[id] = full;
                       }
                     } else {
-                      loaded[id] = await api.get(activeVaultId, id);
+                      const vaultId = noteVaultMap[id] ?? activeVaultId;
+                      loaded[id] = await api.get(vaultId, id);
                     }
                   } catch {
                     // skip notes that fail to load
@@ -507,7 +506,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       // ignore malformed stored state
     }
     setRestoredTabs(true);
-  }, [restoredTabs, loading, activeVaultId, notes, journalNotes]);
+  }, [restoredTabs, loading, activeVaultId, notes, journalNotes, noteVaultMap]);
 
   const openTab = useCallback(
     async (id: string) => {
@@ -515,12 +514,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setActiveId(DASHBOARD_ID);
         return;
       }
+      // Route to the note's owning vault (tabs are shared across all vaults).
+      const vaultId = noteVaultMap[id] ?? activeVaultId;
       if (openTabs.includes(id)) {
         setActiveId(id);
-        // Load the note body if it's not cached (e.g. after a refresh).
-        if (!notesById[id] && activeVaultId) {
+        if (vaultId && !notesById[id]) {
           try {
-            const note = await api.get(activeVaultId, id);
+            const note = await api.get(vaultId, id);
             setNotesById((prev) => ({ ...prev, [id]: note }));
           } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to load note");
@@ -528,39 +528,28 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         }
         return;
       }
-      if (!activeVaultId) return;
+      if (!vaultId) return;
       setActiveId(id);
       setOpenTabs((prev) => appendOpenTab(prev, id));
       if (!notesById[id]) {
         try {
-          const note = await api.get(activeVaultId, id);
+          const note = await api.get(vaultId, id);
           setNotesById((prev) => ({ ...prev, [id]: note }));
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to load note");
         }
       }
     },
-    [openTabs, notesById, activeVaultId, setNotes],
+    [openTabs, notesById, activeVaultId, noteVaultMap, setNotes],
   );
 
   // Open a note from any vault. Switches vault if needed, then opens the note.
   const openNoteInVault = useCallback(
     async (vaultId: string, noteId: string) => {
-      if (vaultId !== activeVaultId) {
-        switchVault(vaultId);
-        try {
-          const note = await api.get(vaultId, noteId);
-          requestAnimationFrame(() => {
-            setNotesById((prev) => ({ ...prev, [noteId]: note }));
-            setOpenTabs((prev) => appendOpenTab(prev, noteId));
-            setActiveId(noteId);
-          });
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Failed to load note");
-        }
-      } else {
-        await openTab(noteId);
-      }
+      // Focus the owning vault so the tree/context is consistent, then open the
+      // shared tab. Tabs are cross-vault, so this adds/focuses one global tab.
+      if (vaultId !== activeVaultId) switchVault(vaultId);
+      await openTab(noteId);
     },
     [activeVaultId, switchVault, openTab],
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import DeleteConfirm from "@/components/DeleteConfirm";
@@ -98,13 +98,15 @@ export default function MobileApp() {
   // skipped — it's the launcher, not a document). openTabs is stored newest-first
   // (after the pinned dashboard), so we reverse to natural open order:
   // left/back = previously opened note, right/forward = next opened note.
-  // From the dashboard, right opens the most recently opened note.
+  // From the first note, left returns to the dashboard. From the dashboard,
+  // right opens the most recently opened note.
   const noteTabs = useMemo(
     () => openTabs.filter((id) => id !== DASHBOARD_ID).reverse(),
     [openTabs],
   );
   const activeTabIndex = noteTabs.indexOf(activeId ?? "");
-  const canGoBack = activeTabIndex > 0;
+  // Left/back is available from any note (returns to dashboard from the first).
+  const canGoBack = activeTabIndex >= 0;
   const canGoForward =
     activeTabIndex === -1
       ? noteTabs.length > 0
@@ -116,6 +118,7 @@ export default function MobileApp() {
       .reverse();
     const idx = tabs.indexOf(activeId ?? "");
     if (idx > 0) void openTab(tabs[idx - 1]);
+    else if (idx === 0) void openTab(DASHBOARD_ID);
   }, [openTabs, activeId, openTab]);
 
   const goToNextTab = useCallback(() => {
@@ -129,6 +132,46 @@ export default function MobileApp() {
       void openTab(tabs[idx + 1]);
     }
   }, [openTabs, activeId, openTab]);
+
+  // Android PWA system-back handling: the back button should step back through
+  // the note history instead of closing the app. We push a history entry for
+  // each note the user opens and, on popstate, restore the previous tab. When
+  // the history is back to the dashboard, the next back exits the app.
+  const historyRef = useRef<string[]>([DASHBOARD_ID]);
+  const openTabRef = useRef(openTab);
+  openTabRef.current = openTab;
+  useEffect(() => {
+    if (!activeId || activeId === DASHBOARD_ID) return;
+    const last = historyRef.current[historyRef.current.length - 1];
+    if (last !== activeId) {
+      historyRef.current.push(activeId);
+      try {
+        window.history.pushState({ nexoteDepth: historyRef.current.length }, "");
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeId]);
+
+  useEffect(() => {
+    const onPop = () => {
+      if (historyRef.current.length > 1) {
+        historyRef.current.pop();
+        const prev = historyRef.current[historyRef.current.length - 1];
+        void openTabRef.current(prev);
+        // Re-push so a subsequent back within the app returns here, and the
+        // final back (from the dashboard) exits the app.
+        try {
+          window.history.pushState({ nexoteDepth: historyRef.current.length }, "");
+        } catch {
+          // ignore
+        }
+      }
+      // At depth 1 (dashboard) we let the default back behavior exit the app.
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const handleNewNote = useCallback(() => {
     void create();
