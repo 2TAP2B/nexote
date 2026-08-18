@@ -208,11 +208,6 @@ export const api = {
   // --- Tags (vault-scoped) ---
   listTags: (vaultId: string) =>
     request<{ tags: TagCount[] }>(`${vaultBase(vaultId)}/tags`),
-  addTag: (vaultId: string, id: string, tag: string) =>
-    request<Note>(`${vaultBase(vaultId)}/notes/${id}/tags`, {
-      method: "POST",
-      body: JSON.stringify({ tag }),
-    }),
   removeTag: (vaultId: string, id: string, tag: string) =>
     request<Note>(`${vaultBase(vaultId)}/notes/${id}/tags/${encodeURIComponent(tag)}`, {
       method: "DELETE",

@@ -81,7 +81,6 @@ type NotesContextValue = {
   // Tags
   tagsByVault: Record<string, TagCount[]>;
   refreshTags: (vaultId: string) => Promise<void>;
-  addTagToNote: (vaultId: string, noteId: string, tag: string) => Promise<void>;
   removeTagFromNote: (vaultId: string, noteId: string, tag: string) => Promise<void>;
   renameTagInVault: (vaultId: string, from: string, to: string) => Promise<void>;
   deleteTagInVault: (vaultId: string, tag: string) => Promise<void>;
@@ -907,13 +906,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const addTagToNote = useCallback(async (vaultId: string, noteId: string, tag: string) => {
-    const doc = await api.addTag(vaultId, noteId, tag);
-    setNotesById((prev) => ({ ...prev, [noteId]: doc }));
-    await refreshTags(vaultId);
-    await refresh();
-  }, [refresh, refreshTags]);
-
   const removeTagFromNote = useCallback(async (vaultId: string, noteId: string, tag: string) => {
     const doc = await api.removeTag(vaultId, noteId, tag);
     setNotesById((prev) => ({ ...prev, [noteId]: doc }));
@@ -1132,7 +1124,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       journalNotes,
       tagsByVault,
       refreshTags,
-      addTagToNote,
       removeTagFromNote,
       renameTagInVault,
       deleteTagInVault,
@@ -1189,7 +1180,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       journalNotes,
       tagsByVault,
       refreshTags,
-      addTagToNote,
       removeTagFromNote,
       renameTagInVault,
       deleteTagInVault,

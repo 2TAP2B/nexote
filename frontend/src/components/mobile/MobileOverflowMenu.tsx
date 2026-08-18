@@ -6,7 +6,6 @@ import {
   Copy,
   Edit3,
   FolderInput,
-  Hash,
   Sparkles,
   SquareArrowOutUpRight,
   Star,
@@ -109,13 +108,6 @@ export default function MobileOverflowMenu({
       label: isBookmarked ? "Remove from bookmarks" : "Add to bookmarks",
       icon: <Bookmark className="h-4 w-4" />,
       onClick: () => toggleBookmark(noteId),
-    },
-    {
-      label: "Add tag…",
-      icon: <Hash className="h-4 w-4" />,
-      onClick: () => {
-        // Tag input deferred — close for now; can wire later.
-      },
     },
     { label: "", onClick: () => {}, separator: true },
     {

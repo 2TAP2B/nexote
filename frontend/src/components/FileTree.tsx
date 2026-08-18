@@ -186,7 +186,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     journalNotes,
     tagsByVault,
     refreshTags,
-    addTagToNote,
     removeTagFromNote,
     renameTagInVault,
     deleteTagInVault,
@@ -306,7 +305,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   const [navSection, setNavSection] = useState<string>("vault");
   const [treeSelectedNav, setTreeSelectedNav] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [tagInput, setTagInput] = useState<{ id: string; vaultId: string } | null>(null);
   const [sorted, setSorted] = useState(false);
 
   // Keep the keyboard-nav section in sync with the active sidebar view.
@@ -1023,7 +1021,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         onDeleteFolder={handleDeleteFolder}
                         onNewNoteInFolder={(path) => void create({ path })}
                         onNewFolderInFolder={(path) => openFolderDialog(path)}
-                        onAddTag={(id) => setTagInput({ id, vaultId: vault.id })}
                         onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
                         noteTags={(id) => {
                           const data = allVaultData[vault.id];
@@ -1085,7 +1082,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                           switchVault(vault.id);
                           openFolderDialog(path);
                         }}
-                        onAddTag={(id) => setTagInput({ id, vaultId: vault.id })}
                         onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
                         noteTags={(id) => {
                           const data = allVaultData[vault.id];
@@ -1138,21 +1134,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
           y={ctxMenu.y}
           items={ctxMenu.items}
           onClose={() => setCtxMenu(null)}
-        />
-      )}
-
-      {/* Tag input dialog — a small input that appears below the note row */}
-      {tagInput && (
-        <TagInputDialog
-          noteId={tagInput.id}
-          vaultId={tagInput.vaultId}
-          existingTags={tagsByVault[tagInput.vaultId]?.map((t) => t.name) ?? []}
-          currentTags={allVaultData[tagInput.vaultId]?.notes.find((n) => n.id === tagInput.id)?.tags ?? []}
-          onSubmit={async (tag) => {
-            await addTagToNote(tagInput.vaultId, tagInput.id, tag);
-            setTagInput(null);
-          }}
-          onClose={() => setTagInput(null)}
         />
       )}
 
@@ -1218,7 +1199,6 @@ type TreeChildProps = {
   onDeleteFolder: (path: string) => void;
   onNewNoteInFolder: (path: string) => void;
   onNewFolderInFolder: (path: string) => void;
-  onAddTag?: (id: string) => void;
   onRemoveTag?: (id: string, tag: string) => void;
   noteTags?: (id: string) => string[];
 };
@@ -1403,7 +1383,6 @@ function NoteItem(
     onRename,
     onMoveNote,
     onMoveTo,
-    onAddTag,
   } = props;
 
   const isRenaming = renaming?.id === note.id;
@@ -1458,13 +1437,6 @@ function NoteItem(
               onClick: () => onBookmark(note.id),
             },
           ];
-          if (onAddTag) {
-            items.push({
-              label: "Add tag…",
-              icon: <Hash className="h-4 w-4" />,
-              onClick: () => onAddTag(note.id),
-            });
-          }
           items.push(
             { label: "", onClick: () => {}, separator: true },
             {
@@ -2276,7 +2248,7 @@ function TagsView({
     <div className="pt-1">
       {allTags.length === 0 && (
         <div className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
-          No tags yet. Add tags to notes via the context menu.
+          No tags yet. Add tags to notes with #tag in the text.
         </div>
       )}
       <ul>
@@ -2912,144 +2884,3 @@ export function MoveToDialog({
   );
 }
 
-// --- Tag Input Dialog ---
-// A small inline input that appears below a note row when the user selects
-// "Add tag…" from the context menu. Shows a # prefix, autocompletes from
-// existing tags, and submits on Enter.
-function TagInputDialog({
-  noteId,
-  vaultId: _vaultId,
-  existingTags,
-  currentTags,
-  onSubmit,
-  onClose,
-}: {
-  noteId: string;
-  vaultId: string;
-  existingTags: string[];
-  currentTags: string[];
-  onSubmit: (tag: string) => void;
-  onClose: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [value, setValue] = useState("");
-  const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-
-  // Position the dialog below the note row.
-  useEffect(() => {
-    const el = document.querySelector(`[data-note-id="${noteId}"]`);
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setPos({ left: rect.left + 14, top: rect.bottom + 2 });
-    } else {
-      setPos({ left: 200, top: 200 });
-    }
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [noteId]);
-
-  // Close on outside click / Escape.
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest("[data-tag-input-dialog]")) return;
-      onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
-  const val = value.trim().toLowerCase().replace(/^#/, "");
-  const suggestions = val
-    ? existingTags
-        .filter((t) => t.includes(val) && !currentTags.includes(t))
-        .slice(0, 6)
-    : existingTags.filter((t) => !currentTags.includes(t)).slice(0, 6);
-
-  const submit = (tag: string) => {
-    const clean = tag.trim().toLowerCase().replace(/^#/, "");
-    if (clean && !currentTags.includes(clean)) {
-      onSubmit(clean);
-    }
-  };
-
-  if (!pos) return null;
-
-  return (
-    <div
-      data-tag-input-dialog
-      style={{
-        position: "fixed",
-        left: pos.left,
-        top: pos.top,
-        zIndex: 9999,
-      }}
-      className="w-56 overflow-hidden rounded-lg border border-border bg-background shadow-lg"
-    >
-      <div className="flex items-center gap-1.5 px-2.5 py-2" style={{ borderBottom: suggestions.length > 0 ? "1px solid var(--border)" : undefined }}>
-        <Hash className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--primary)" }} />
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value);
-            setSelectedSuggestion(0);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (suggestions.length > 0 && selectedSuggestion >= 0 && selectedSuggestion < suggestions.length && val) {
-                submit(suggestions[selectedSuggestion]);
-              } else {
-                submit(value);
-              }
-            } else if (e.key === "ArrowDown" && suggestions.length > 0) {
-              e.preventDefault();
-              setSelectedSuggestion((i) => Math.min(i + 1, suggestions.length - 1));
-            } else if (e.key === "ArrowUp" && suggestions.length > 0) {
-              e.preventDefault();
-              setSelectedSuggestion((i) => Math.max(i - 1, 0));
-            }
-          }}
-          placeholder="tag name…"
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-          style={{ color: "var(--foreground)" }}
-        />
-        <kbd
-          className="shrink-0 rounded px-1 text-xs"
-          style={{ border: "1px solid var(--border)", color: "var(--muted-foreground)" }}
-        >
-          ↵
-        </kbd>
-      </div>
-      {suggestions.length > 0 && (
-        <ul className="py-1">
-          {suggestions.map((tag, i) => (
-            <li key={tag}>
-              <button
-                type="button"
-                onMouseEnter={() => setSelectedSuggestion(i)}
-                onClick={() => submit(tag)}
-                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm transition-colors"
-                style={{
-                  background: i === selectedSuggestion ? "color-mix(in oklab, var(--primary) 12%, transparent)" : undefined,
-                  color: "var(--foreground)",
-                }}
-              >
-                <Hash className="h-3 w-3 shrink-0" style={{ color: "var(--primary)" }} />
-                <span className="truncate">{tag}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
