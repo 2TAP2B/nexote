@@ -1,5 +1,6 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
@@ -37,6 +38,7 @@ export default function MobileApp() {
   } = useNotes();
 
   // --- Screen / overlay state ---
+  const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -263,10 +265,17 @@ export default function MobileApp() {
         canGoForward={canGoForward}
         onBack={goToPrevTab}
         onForward={goToNextTab}
+        onDashboard={() => void openTab(DASHBOARD_ID)}
         onSearch={() => setPaletteOpen(true)}
         onNewNote={handleNewNote}
         onOpenTabs={() => setTabSwitcherOpen(true)}
         tabCount={openTabs.length}
+        isOnNote={activeId !== DASHBOARD_ID && activeId !== null}
+        onOpenSidebar={() => setSidebarOpen(true)}
+        onOpenDaily={() => void openDaily()}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        onCommandPalette={() => setPaletteOpen(true)}
       />
 
       <MobileSidebar
