@@ -1,7 +1,8 @@
 "use client";
 
-import { BookOpen, Braces, Ellipsis, PanelLeft } from "lucide-react";
+import { BookOpen, Braces, Ellipsis, Moon, PanelLeft, Sun } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor";
@@ -237,7 +238,7 @@ export default function MobileNoteView({
     }
     return (
       <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
-        <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} />
+        <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} showThemeToggle />
         <div
           className="h-full overflow-y-auto"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 60px)" }}
@@ -349,13 +350,17 @@ function MobileTopBar({
   onOpenSidebar,
   onOverflow,
   rawMode = false,
+  showThemeToggle = false,
 }: {
   onOpenSidebar: () => void;
   onOverflow: (x: number, y: number) => void;
   rawMode?: boolean;
+  showThemeToggle?: boolean;
 }) {
   const hideChrome = useScrollHideChrome();
   const visible = rawMode || hideChrome;
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark";
   return (
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex items-center justify-between px-4"
@@ -373,15 +378,24 @@ function MobileTopBar({
         </CircleButton>
       </div>
       <div className="pointer-events-auto">
-        <CircleButton
-          ariaLabel="More actions"
-          onClick={(e) => {
-            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            onOverflow(r.right, r.bottom + 8);
-          }}
-        >
-          <Ellipsis size={20} />
-        </CircleButton>
+        {showThemeToggle ? (
+          <CircleButton
+            ariaLabel="Toggle theme"
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+          >
+            {isDark ? <Sun size={20} /> : <Moon size={20} />}
+          </CircleButton>
+        ) : (
+          <CircleButton
+            ariaLabel="More actions"
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              onOverflow(r.right, r.bottom + 8);
+            }}
+          >
+            <Ellipsis size={20} />
+          </CircleButton>
+        )}
       </div>
     </div>
   );

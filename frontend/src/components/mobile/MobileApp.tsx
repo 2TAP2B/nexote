@@ -78,8 +78,9 @@ export default function MobileApp() {
   }, []);
   useEffect(() => {
     const el = document.documentElement;
-    // Always force dark on mobile so scheme dark variants match.
-    el.classList.add("dark");
+    // Apply the saved color scheme. next-themes manages the .dark/.light class
+    // via useTheme (toggled from the dashboard top bar); we only add the
+    // scheme-specific class here so color schemes (Nord, Dracula, …) work.
     el.classList.forEach((c) => {
       if (c.startsWith("scheme-")) el.classList.remove(c);
     });

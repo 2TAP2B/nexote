@@ -69,6 +69,7 @@ export default function MobileDashboard({
     tasks,
     tagsByVault,
     refreshTags,
+    toggleTaskItem,
   } = useNotes();
 
   const greeting = useMemo(() => {
@@ -218,7 +219,7 @@ export default function MobileDashboard({
       </div>
 
       {/* Quick actions — large touch targets */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <QuickAction
           icon={<FilePlus size={22} />}
           label="New note"
@@ -233,11 +234,6 @@ export default function MobileDashboard({
           icon={<Search size={22} />}
           label="Search"
           onClick={onOpenSearch}
-        />
-        <QuickAction
-          icon={<Settings size={22} />}
-          label="Settings"
-          onClick={onOpenSettings}
         />
       </div>
 
@@ -330,36 +326,44 @@ export default function MobileDashboard({
         </section>
       )}
 
-      {/* Open tasks */}
+      {/* Todo list */}
       {openTasks.length > 0 && (
         <section className="flex flex-col gap-2">
           <SectionHeading
             icon={<ListTodo size={16} />}
-            title="Open tasks"
+            title="Todo list"
             count={openTasks.length}
             onViewAll={() =>
               window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))
             }
           />
           <div className="flex flex-col gap-1.5">
-            {openTasks.map((t, i) => (
-              <button
+            {openTasks.map((t) => (
+              <div
                 key={`${t.vaultId}-${t.noteId}-${t.line}`}
-                type="button"
-                onClick={() => openTaskNote(t)}
-                className="flex min-h-[52px] items-center gap-3 rounded-2xl px-3 py-2 text-left transition-[transform,background] active:scale-[0.98]"
+                className="flex min-h-[52px] items-center gap-3 rounded-2xl px-3 py-2"
                 style={{ background: "var(--mob-card)" }}
               >
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                  style={{
-                    background: "var(--mob-surface)",
-                    color: "var(--mob-accent)",
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void toggleTaskItem(t.vaultId, t.noteId, t.line, !t.checked);
                   }}
+                  className="flex shrink-0 items-center justify-center"
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
+                    border: `2px solid var(--mob-accent)`,
+                    background: "transparent",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => openTaskNote(t)}
+                  className="flex min-w-0 flex-1 flex-col text-left"
                 >
-                  <ListTodo size={18} />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
                   <span
                     className="truncate text-[15px] font-medium"
                     style={{ color: "var(--mob-text)" }}
@@ -372,8 +376,8 @@ export default function MobileDashboard({
                   >
                     {t.noteTitle || "Untitled"}
                   </span>
-                </span>
-              </button>
+                </button>
+              </div>
             ))}
           </div>
         </section>
