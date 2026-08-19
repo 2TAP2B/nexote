@@ -588,6 +588,8 @@ function AppearanceSection({
     { value: "catppuccin-mocha", label: "Catppuccin Mocha", swatch: "#cba6f7" },
     { value: "dracula", label: "Dracula", swatch: "#bd93f9" },
     { value: "gruvbox", label: "Gruvbox", swatch: "#83a598" },
+    { value: "pastel-dreams", label: "Pastel Dreams", swatch: "#c0aafd" },
+    { value: "amethyst-haze", label: "Amethyst Haze", swatch: "#a995c9" },
   ] as const;
 
   return (

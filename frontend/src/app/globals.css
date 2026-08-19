@@ -366,6 +366,74 @@
   --ring: #83a598;
 }
 
+/* ── Pastel Dreams ────────────────────────────────────────────────── */
+.scheme-pastel-dreams {
+  --background: #e8e0f7;
+  --foreground: #1c1917;
+  --muted: #d4c8f0;
+  --sidebar: #ddd0ee;
+  --icon-rail: #c8b8e8;
+  --muted-foreground: #5b5366;
+  --border: rgba(28, 25, 23, 0.10);
+  --input: rgba(28, 25, 23, 0.10);
+  --tab-active: #c8b8e8;
+  --primary: #4a35da;
+  --primary-foreground: #e8e0f7;
+  --accent: #6b4dff;
+  --accent-foreground: #e8e0f7;
+  --ring: #4a35da;
+}
+.scheme-pastel-dreams.dark {
+  --background: #1c1917;
+  --foreground: #e0e0ef;
+  --muted: #2a2522;
+  --sidebar: #3f324a;
+  --icon-rail: #1c1917;
+  --muted-foreground: #9a8fa8;
+  --border: rgba(224, 224, 239, 0.08);
+  --input: rgba(224, 224, 239, 0.08);
+  --tab-active: #3f324a;
+  --primary: #c0aafd;
+  --primary-foreground: #1c1917;
+  --accent: #4a35da;
+  --accent-foreground: #e0e0ef;
+  --ring: #c0aafd;
+}
+
+/* ── Amethyst Haze ────────────────────────────────────────────────── */
+.scheme-amethyst-haze {
+  --background: #e8e4f0;
+  --foreground: #1a1823;
+  --muted: #d4cfe0;
+  --sidebar: #ddd8e8;
+  --icon-rail: #c8c2d8;
+  --muted-foreground: #5a5370;
+  --border: rgba(26, 24, 35, 0.10);
+  --input: rgba(26, 24, 35, 0.10);
+  --tab-active: #c8c2d8;
+  --primary: #3723ef;
+  --primary-foreground: #e8e4f0;
+  --accent: #a995c9;
+  --accent-foreground: #1a1823;
+  --ring: #3723ef;
+}
+.scheme-amethyst-haze.dark {
+  --background: #1a1823;
+  --foreground: #e0dfed;
+  --muted: #2a2735;
+  --sidebar: #5a5370;
+  --icon-rail: #1a1823;
+  --muted-foreground: #9a93b0;
+  --border: rgba(224, 223, 237, 0.08);
+  --input: rgba(224, 223, 237, 0.08);
+  --tab-active: #5a5370;
+  --primary: #a995c9;
+  --primary-foreground: #1a1823;
+  --accent: #3723ef;
+  --accent-foreground: #f2b8c6;
+  --ring: #a995c9;
+}
+
 html,
 body {
   height: 100%;
