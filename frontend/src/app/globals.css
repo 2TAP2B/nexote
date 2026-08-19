@@ -386,16 +386,16 @@
 .scheme-pastel-dreams.dark {
   --background: #1c1917;
   --foreground: #e0e0ef;
-  --muted: #2a2522;
+  --muted: #2e2937;
   --sidebar: #3f324a;
-  --icon-rail: #1c1917;
-  --muted-foreground: #9a8fa8;
-  --border: rgba(224, 224, 239, 0.08);
-  --input: rgba(224, 224, 239, 0.08);
+  --icon-rail: #251f23;
+  --muted-foreground: #a89bb8;
+  --border: rgba(224, 224, 239, 0.10);
+  --input: rgba(224, 224, 239, 0.10);
   --tab-active: #3f324a;
   --primary: #c0aafd;
   --primary-foreground: #1c1917;
-  --accent: #4a35da;
+  --accent: #6b4dff;
   --accent-foreground: #e0e0ef;
   --ring: #c0aafd;
 }
@@ -420,13 +420,13 @@
 .scheme-amethyst-haze.dark {
   --background: #1a1823;
   --foreground: #e0dfed;
-  --muted: #2a2735;
-  --sidebar: #5a5370;
-  --icon-rail: #1a1823;
-  --muted-foreground: #9a93b0;
-  --border: rgba(224, 223, 237, 0.08);
-  --input: rgba(224, 223, 237, 0.08);
-  --tab-active: #5a5370;
+  --muted: #2e2940;
+  --sidebar: #3a3450;
+  --icon-rail: #221e30;
+  --muted-foreground: #a8a0c0;
+  --border: rgba(224, 223, 237, 0.10);
+  --input: rgba(224, 223, 237, 0.10);
+  --tab-active: #3a3450;
   --primary: #a995c9;
   --primary-foreground: #1a1823;
   --accent: #3723ef;

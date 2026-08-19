@@ -221,10 +221,12 @@ export default function MobileApp() {
     open: sidebarOpen,
   });
 
-  // Keep the body background dark for the mobile shell.
+  // Keep the body background in sync with the mobile shell (so the safe-area
+  // / overscroll areas match). Uses the CSS variable so it follows the active
+  // color scheme + light/dark mode.
   useEffect(() => {
     const prev = document.body.style.backgroundColor;
-    document.body.style.backgroundColor = "var(--mob-bg, #1a1d29)";
+    document.body.style.backgroundColor = "var(--mob-bg)";
     return () => {
       document.body.style.backgroundColor = prev;
     };

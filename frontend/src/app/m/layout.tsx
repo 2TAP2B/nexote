@@ -1,10 +1,10 @@
 import type { Viewport } from "next";
 
-import { mobileShellVars } from "@/components/mobile/mobileTheme";
-
 // Mobile viewport: allow horizontal clamping, cover the notch (safe areas),
-// and prevent user zoom (feels more app-like). The dark background is set on
-// the shell root in MobileApp via --mob-bg.
+// and prevent user zoom (feels more app-like). The mobile shell colors are
+// derived from the active color scheme via CSS variables in globals.css
+// (.mob-shell-root maps --background etc. to --mob-*). We don't hardcode
+// inline color vars here so light/dark themes work correctly on mobile.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -24,7 +24,7 @@ export default function MobileLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mob-shell-root" style={mobileShellVars as React.CSSProperties}>
+    <div className="mob-shell-root">
       {children}
     </div>
   );
