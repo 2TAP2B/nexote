@@ -29,7 +29,6 @@ type Props = {
   onNewNote: () => void;
   onOpenTabs: () => void;
   tabCount: number;
-  isOnNote: boolean;
   onOpenSidebar: () => void;
   onOpenDaily: () => void;
   onOpenSettings: () => void;
@@ -51,7 +50,6 @@ export default function MobileBottomPill({
   onNewNote,
   onOpenTabs,
   tabCount,
-  isOnNote,
   onOpenSidebar,
   onOpenDaily,
   onOpenSettings,
@@ -133,71 +131,87 @@ export default function MobileBottomPill({
         }}
       >
         <div
-          className="mob-bottom-pill pointer-events-auto flex items-center gap-4 rounded-full px-5"
+          className="mob-bottom-pill pointer-events-auto flex items-center rounded-full px-5"
           style={{
-            height: 56,
+            height: 60,
             background: "var(--mob-surface)",
             boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
             touchAction: "none",
           }}
         >
-          <PillIcon
-            active={canGoBack}
-            onClick={canGoBack ? onBack : undefined}
-            ariaLabel="Back"
-          >
-            <ChevronLeft size={22} />
-          </PillIcon>
-          <PillIcon
-            active={canGoForward}
-            onClick={canGoForward ? onForward : undefined}
-            ariaLabel="Forward"
-          >
-            <ChevronRight size={22} />
-          </PillIcon>
-          {isOnNote && (
+          {/* Left group */}
+          <div className="flex flex-1 items-center justify-end gap-3">
             <PillIcon
-              active
-              onClick={onDashboard}
-              ariaLabel="Dashboard"
+              active={canGoBack}
+              onClick={canGoBack ? onBack : undefined}
+              ariaLabel="Back"
             >
-              <LayoutDashboard size={24} style={{ color: "var(--mob-accent)" }} />
+              <ChevronLeft size={22} />
             </PillIcon>
-          )}
-          <PillIcon active onClick={onSearch} ariaLabel="Search">
-            <Search size={22} />
-          </PillIcon>
-          <PillIcon active onClick={onNewNote} ariaLabel="New note">
-            <Plus size={24} />
-          </PillIcon>
-          <button
-            type="button"
-            aria-label="Open tabs"
-            onClick={onOpenTabs}
-            className="flex items-center justify-center transition-transform active:scale-90"
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              background: "color-mix(in srgb, var(--mob-text) 12%, transparent)",
-              border: "1px solid color-mix(in srgb, var(--mob-muted) 40%, transparent)",
-              color: "var(--mob-text)",
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
-            {tabCount || 0}
-          </button>
-          <button
-            ref={menuBtnRef}
-            type="button"
-            aria-label="Menu"
-            onClick={openMenu}
-            className="flex items-center justify-center transition-transform active:scale-90"
-            style={{ color: "var(--mob-text)" }}
-          >
-            <Menu size={24} />
-          </button>
+            <PillIcon
+              active={canGoForward}
+              onClick={canGoForward ? onForward : undefined}
+              ariaLabel="Forward"
+            >
+              <ChevronRight size={22} />
+            </PillIcon>
+          </div>
+
+          {/* Center: dashboard */}
+          <div className="flex flex-1 items-center justify-center">
+            <button
+              type="button"
+              aria-label="Dashboard"
+              onClick={onDashboard}
+              className="flex items-center justify-center rounded-full transition-transform active:scale-90"
+              style={{
+                width: 44,
+                height: 44,
+                background: "color-mix(in srgb, var(--mob-accent) 18%, transparent)",
+                color: "var(--mob-accent)",
+              }}
+            >
+              <LayoutDashboard size={24} />
+            </button>
+          </div>
+
+          {/* Right group */}
+          <div className="flex flex-1 items-center justify-start gap-3">
+            <PillIcon active onClick={onSearch} ariaLabel="Search">
+              <Search size={22} />
+            </PillIcon>
+            <PillIcon active onClick={onNewNote} ariaLabel="New note">
+              <Plus size={24} />
+            </PillIcon>
+            <button
+              type="button"
+              aria-label="Open tabs"
+              onClick={onOpenTabs}
+              className="flex items-center justify-center transition-transform active:scale-90"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                background: "color-mix(in srgb, var(--mob-text) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--mob-muted) 40%, transparent)",
+                color: "var(--mob-text)",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              {tabCount || 0}
+            </button>
+            <button
+              ref={menuBtnRef}
+              type="button"
+              aria-label="Menu"
+              onClick={openMenu}
+              className="flex items-center justify-center transition-transform active:scale-90"
+              style={{ color: "var(--mob-text)" }}
+            >
+              <Menu size={24} />
+            </button>
+          </div>
         </div>
       </div>
 
