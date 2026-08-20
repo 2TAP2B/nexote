@@ -360,7 +360,9 @@ function MobileTopBar({
   const hideChrome = useScrollHideChrome();
   const visible = rawMode || hideChrome;
   const { theme, setTheme } = useTheme();
-  const isDark = theme === "dark";
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && theme === "dark";
   return (
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex items-center justify-between px-4"
