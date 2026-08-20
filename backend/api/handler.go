@@ -611,6 +611,12 @@ type Payload struct {
 	UpdatedAt string   `json:"updatedAt"`
 	Tags      []string `json:"tags"`
 	Body      string   `json:"body"`
+	Type      string   `json:"type,omitempty"`
+	Artist    string   `json:"artist,omitempty"`
+	Year      int      `json:"year,omitempty"`
+	Genre     string   `json:"genre,omitempty"`
+	Wantlist  *bool    `json:"wantlist,omitempty"`
+	Cover     string   `json:"cover,omitempty"`
 }
 
 func toPayload(d notes.Document) Payload {
@@ -622,6 +628,12 @@ func toPayload(d notes.Document) Payload {
 		UpdatedAt: d.Meta.UpdatedAt.Format(timeRFC3339Millis),
 		Tags:      d.Meta.Tags,
 		Body:      d.Body,
+		Type:      d.Meta.Type,
+		Artist:    d.Meta.Artist,
+		Year:      d.Meta.Year,
+		Genre:     d.Meta.Genre,
+		Wantlist:  d.Meta.Wantlist,
+		Cover:     d.Meta.Cover,
 	}
 }
 

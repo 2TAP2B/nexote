@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
   CalendarDays,
   ChevronRight,
+  Disc3,
   FilePlus,
   FileText,
   Hash,
@@ -16,6 +17,8 @@ import {
 } from "lucide-react";
 
 import { useNotes } from "@/lib/notes-context";
+import VinylGallery from "@/components/VinylGallery";
+import VinylFormDialog from "@/components/VinylFormDialog";
 
 type RecentEntry = {
   id: string;
@@ -71,6 +74,8 @@ export default function MobileDashboard({
     refreshTags,
     toggleTaskItem,
   } = useNotes();
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -234,6 +239,16 @@ export default function MobileDashboard({
           icon={<Search size={22} />}
           label="Search"
           onClick={onOpenSearch}
+        />
+        <QuickAction
+          icon={<Disc3 size={22} />}
+          label="Vinyls"
+          onClick={() => setGalleryOpen(true)}
+        />
+        <QuickAction
+          icon={<Disc3 size={22} />}
+          label="New vinyl"
+          onClick={() => setFormOpen(true)}
         />
       </div>
 
@@ -417,6 +432,17 @@ export default function MobileDashboard({
           </div>
         </section>
       )}
+
+      <VinylGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+      />
+      <VinylFormDialog
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => setGalleryOpen(false)}
+      />
     </main>
   );
 }

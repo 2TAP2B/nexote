@@ -34,6 +34,12 @@ type Meta struct {
 	CreatedAt time.Time `yaml:"createdAt"`
 	UpdatedAt time.Time `yaml:"updatedAt"`
 	Tags      []string  `yaml:"tags,omitempty"`
+	Type      string    `yaml:"type,omitempty"`
+	Artist    string    `yaml:"artist,omitempty"`
+	Year      int       `yaml:"year,omitempty"`
+	Genre     string    `yaml:"genre,omitempty"`
+	Wantlist  *bool     `yaml:"wantlist,omitempty"`
+	Cover     string    `yaml:"cover,omitempty"`
 }
 
 // Document is a parsed note: its metadata plus the markdown body.

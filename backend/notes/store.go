@@ -103,6 +103,12 @@ type Entry struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	Tags      []string  `json:"tags"`
 	Snippet   string    `json:"snippet"`
+	Type      string    `json:"type,omitempty"`
+	Artist    string    `json:"artist,omitempty"`
+	Year      int       `json:"year,omitempty"`
+	Genre     string    `json:"genre,omitempty"`
+	Wantlist  *bool     `json:"wantlist,omitempty"`
+	Cover     string    `json:"cover,omitempty"`
 }
 
 // FolderEntry represents an (possibly empty) folder in the tree.
@@ -166,6 +172,12 @@ func (s *Store) List() (ListResult, error) {
 			UpdatedAt: doc.Meta.UpdatedAt,
 			Tags:      doc.Meta.Tags,
 			Snippet:   makeSnippet(doc.Body, 150),
+			Type:      doc.Meta.Type,
+			Artist:    doc.Meta.Artist,
+			Year:      doc.Meta.Year,
+			Genre:     doc.Meta.Genre,
+			Wantlist:  doc.Meta.Wantlist,
+			Cover:     doc.Meta.Cover,
 		})
 		return nil
 	})
@@ -274,11 +286,18 @@ func (s *Store) DeleteFolder(folderPath string) error {
 }
 
 // UpdateInput is the body for updating a note. Path is optional (nil = don't
-// change); an empty string moves the note to the root.
+// change); an empty string moves the note to the root. The structured
+// collection fields are pointers so a nil value means "leave unchanged".
 type UpdateInput struct {
-	Title string  `json:"title"`
-	Body  string  `json:"body"`
-	Path  *string `json:"path,omitempty"`
+	Title    string  `json:"title"`
+	Body     string  `json:"body"`
+	Path     *string `json:"path,omitempty"`
+	Type     *string `json:"type,omitempty"`
+	Artist   *string `json:"artist,omitempty"`
+	Year     *int    `json:"year,omitempty"`
+	Genre    *string `json:"genre,omitempty"`
+	Wantlist *bool   `json:"wantlist,omitempty"`
+	Cover    *string `json:"cover,omitempty"`
 }
 
 // Update rewrites a note's title and body, bumping updatedAt. The id and
@@ -298,6 +317,24 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	}
 	if in.Path != nil {
 		doc.Meta.Path = sanitizePath(*in.Path)
+	}
+	if in.Type != nil {
+		doc.Meta.Type = *in.Type
+	}
+	if in.Artist != nil {
+		doc.Meta.Artist = *in.Artist
+	}
+	if in.Year != nil {
+		doc.Meta.Year = *in.Year
+	}
+	if in.Genre != nil {
+		doc.Meta.Genre = *in.Genre
+	}
+	if in.Wantlist != nil {
+		doc.Meta.Wantlist = in.Wantlist
+	}
+	if in.Cover != nil {
+		doc.Meta.Cover = *in.Cover
 	}
 
 	// When the note moves to a different folder, physically move any image

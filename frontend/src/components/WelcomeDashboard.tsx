@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   CalendarDays,
+  Disc3,
   FilePlus,
   FileText,
   Keyboard,
@@ -10,8 +11,11 @@ import {
   PanelLeftClose,
   Search,
 } from "lucide-react";
+import { useState } from "react";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
+import VinylFormDialog from "./VinylFormDialog";
+import VinylGallery from "./VinylGallery";
 
 type Props = {
   onOpenPalette?: () => void;
@@ -25,7 +29,9 @@ type Action = {
 };
 
 export default function WelcomeDashboard({ onOpenPalette }: Props) {
-  const { notes, openTab, create, openDaily } = useNotes();
+  const { notes, openTab, openNoteInVault, create, openDaily } = useNotes();
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
 
   const openPalette = () => {
     if (onOpenPalette) {
@@ -115,6 +121,46 @@ export default function WelcomeDashboard({ onOpenPalette }: Props) {
           ))}
         </div>
 
+        {/* Vinyl collection */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setGalleryOpen(true)}
+            className="group flex items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Disc3 className="h-5 w-5" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="text-sm font-medium text-foreground">
+                Vinyl collection
+              </span>
+              <span className="mt-0.5 text-xs text-muted-foreground">
+                Browse the cover gallery
+              </span>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormOpen(true)}
+            className="group flex items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Disc3 className="h-5 w-5" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="text-sm font-medium text-foreground">
+                New vinyl
+              </span>
+              <span className="mt-0.5 text-xs text-muted-foreground">
+                Add an album to your collection
+              </span>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
+          </button>
+        </div>
+
         {/* Recent notes */}
         {recent.length > 0 && (
           <div className="flex flex-col gap-2">
@@ -188,6 +234,17 @@ export default function WelcomeDashboard({ onOpenPalette }: Props) {
           </div>
         </div>
       </div>
+
+      <VinylGallery
+        open={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+      />
+      <VinylFormDialog
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        onSaved={() => setGalleryOpen(false)}
+      />
     </main>
   );
 }

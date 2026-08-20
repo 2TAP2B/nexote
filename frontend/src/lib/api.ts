@@ -10,6 +10,12 @@ export type NoteMeta = {
   updatedAt: string;
   tags?: string[];
   snippet?: string;
+  type?: string;
+  artist?: string;
+  year?: number;
+  genre?: string;
+  wantlist?: boolean;
+  cover?: string;
 };
 
 export type Note = NoteMeta & {
@@ -20,6 +26,12 @@ export type NoteInput = {
   title?: string;
   body?: string;
   path?: string | null;
+  type?: string | null;
+  artist?: string | null;
+  year?: number | null;
+  genre?: string | null;
+  wantlist?: boolean | null;
+  cover?: string | null;
 };
 
 export type FolderMeta = {
