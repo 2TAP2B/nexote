@@ -270,7 +270,6 @@ export default function MobileApp() {
         onNewNote={handleNewNote}
         onOpenTabs={() => setTabSwitcherOpen(true)}
         tabCount={openTabs.length}
-        isOnNote={activeId !== DASHBOARD_ID && activeId !== null}
         onOpenSidebar={() => setSidebarOpen(true)}
         onOpenDaily={() => void openDaily()}
         onOpenSettings={() => setSettingsOpen(true)}
