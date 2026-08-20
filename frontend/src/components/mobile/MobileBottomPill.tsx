@@ -165,7 +165,7 @@ export default function MobileBottomPill({
               type="button"
               aria-label="Dashboard"
               onClick={onDashboard}
-              className="flex items-center justify-center rounded-full transition-transform active:scale-90"
+              className="mx-4 flex items-center justify-center rounded-full transition-transform active:scale-90"
               style={{
                 width: 44,
                 height: 44,
