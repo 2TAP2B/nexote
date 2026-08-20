@@ -16,7 +16,6 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
-import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
 
 type Props = {
@@ -36,10 +35,10 @@ type Props = {
   onCommandPalette: () => void;
 };
 
-// Floating capsule toolbar at the bottom of the note view. Auto-hides on
-// scroll-down and reappears on scroll-up (standard mobile pattern). Icons:
-// back, forward, dashboard (center, only when on a note), search, new note,
-// open tabs, and a hamburger menu with quick actions.
+// Floating capsule toolbar at the bottom of the note view. Always visible
+// (except while the touch keyboard is open). Icons: back, forward, dashboard
+// (center, always shown), search, new note, open tabs, and a hamburger menu
+// with quick actions.
 export default function MobileBottomPill({
   canGoBack,
   canGoForward,
@@ -56,7 +55,7 @@ export default function MobileBottomPill({
   onToggleTheme,
   onCommandPalette,
 }: Props) {
-  const visible = useScrollHideChrome();
+  const visible = true;
   // Hide while the touch keyboard is open so the nav capsule never sits
   // between the editor and the keyboard.
   const vv = useVisualViewport();
