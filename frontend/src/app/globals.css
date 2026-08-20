@@ -698,7 +698,6 @@ body {
   --crepe-color-on-surface: var(--mob-text);
   --crepe-color-on-surface-variant: var(--mob-muted);
   --crepe-color-outline: var(--mob-muted);
-  --foreground: var(--mob-text);
   --muted-foreground: var(--mob-muted);
   --border: var(--mob-surface);
   --sidebar: var(--mob-bg);
