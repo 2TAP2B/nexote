@@ -190,9 +190,9 @@ export default function MobileBottomPill({
               style={{
                 width: 30,
                 height: 30,
-                borderRadius: 8,
+                borderRadius: "50%",
                 background: "color-mix(in srgb, var(--mob-text) 12%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--mob-muted) 40%, transparent)",
+                boxShadow: "0 0 0 1.5px var(--mob-text)",
                 color: "var(--mob-text)",
                 fontSize: 13,
                 fontWeight: 600,
