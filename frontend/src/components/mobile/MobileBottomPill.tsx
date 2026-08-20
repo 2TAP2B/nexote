@@ -154,6 +154,9 @@ export default function MobileBottomPill({
             >
               <ChevronRight size={22} />
             </PillIcon>
+            <PillIcon active onClick={onSearch} ariaLabel="Search">
+              <Search size={22} />
+            </PillIcon>
           </div>
 
           {/* Center: dashboard */}
@@ -176,9 +179,6 @@ export default function MobileBottomPill({
 
           {/* Right group */}
           <div className="flex flex-1 items-center justify-start gap-3">
-            <PillIcon active onClick={onSearch} ariaLabel="Search">
-              <Search size={22} />
-            </PillIcon>
             <PillIcon active onClick={onNewNote} ariaLabel="New note">
               <Plus size={24} />
             </PillIcon>
