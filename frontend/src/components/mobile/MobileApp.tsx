@@ -4,12 +4,15 @@ import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
+import CollectionGallery from "@/components/CollectionGallery";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import type { SidebarView } from "@/components/Ribbon";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
+import { api } from "@/lib/api";
+import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
 import MobileBottomPill from "./MobileBottomPill";
@@ -36,6 +39,7 @@ export default function MobileApp() {
     switchVault,
     allVaultData,
     vaults,
+    openNoteInVault,
     isJournalNote,
     refreshNoteBody,
   } = useNotes();
@@ -48,6 +52,7 @@ export default function MobileApp() {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [treeControls, setTreeControls] = useState<TreeControls | null>(null);
   const [moveTo, setMoveTo] = useState<string | null>(null);
@@ -191,15 +196,28 @@ export default function MobileApp() {
     };
     const onToggleSidebar = () => setSidebarOpen((v) => !v);
     const onOpenSettings = () => setSettingsOpen(true);
+    const onOpenCollection = (e: Event) => {
+      const folder = (e as CustomEvent).detail as string;
+      if (!folder) return;
+      void api.listCollections().then((res) => {
+        const col = (res.collections ?? []).find((c) => c.name === folder);
+        if (col) {
+          setGalleryCollection(col);
+          setSidebarOpen(false);
+        }
+      });
+    };
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     window.addEventListener("nexote:open-settings", onOpenSettings);
+    window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
     return () => {
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
+      window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
     };
   }, []);
 
@@ -365,6 +383,16 @@ export default function MobileApp() {
         colorScheme={colorScheme}
         onColorSchemeChange={setColorScheme}
       />
+
+      {galleryCollection && (
+        <CollectionGallery
+          open={Boolean(galleryCollection)}
+          collection={galleryCollection}
+          onClose={() => setGalleryCollection(null)}
+          onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+          onCollectionChanged={setGalleryCollection}
+        />
+      )}
     </div>
   );
 }
