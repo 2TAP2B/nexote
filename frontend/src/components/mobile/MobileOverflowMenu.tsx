@@ -6,6 +6,7 @@ import {
   Copy,
   Edit3,
   FolderInput,
+  History,
   Sparkles,
   SquareArrowOutUpRight,
   Star,
@@ -25,6 +26,7 @@ type Props = {
   onDelete: (id: string) => void;
   onMoveTo: (id: string) => void;
   onRename: (id: string) => void;
+  onHistory: (id: string) => void;
 };
 
 // The ⋮ overflow menu for the currently open note. Mirrors the desktop
@@ -37,6 +39,7 @@ export default function MobileOverflowMenu({
   onDelete,
   onMoveTo,
   onRename,
+  onHistory,
 }: Props) {
   const {
     bookmarks,
@@ -86,6 +89,11 @@ export default function MobileOverflowMenu({
       label: "Make a copy",
       icon: <Copy className="h-4 w-4" />,
       onClick: () => void copyNote(noteId),
+    },
+    {
+      label: "Note history",
+      icon: <History className="h-4 w-4" />,
+      onClick: () => onHistory(noteId),
     },
     ...(hasAI
       ? [{

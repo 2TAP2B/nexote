@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"nexote/notes"
 )
@@ -865,13 +866,17 @@ func (h *Handler) journalRestoreNoteHistoryVersion(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 
-// parseHistoryTS parses a unix-millisecond timestamp path segment.
+// parseHistoryTS parses a history version identifier. It accepts either the
+// nanosecond integer used as the snapshot filename, or the RFC3339 timestamp
+// string the frontend sends back from the history list.
 func parseHistoryTS(s string) (int64, error) {
-	ts, err := strconv.ParseInt(s, 10, 64)
-	if err != nil || ts <= 0 {
-		return 0, errors.New("invalid history timestamp")
+	if ts, err := strconv.ParseInt(s, 10, 64); err == nil && ts > 0 {
+		return ts, nil
 	}
-	return ts, nil
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t.UnixNano(), nil
+	}
+	return 0, errors.New("invalid history timestamp")
 }
 
 // --- Tags ---

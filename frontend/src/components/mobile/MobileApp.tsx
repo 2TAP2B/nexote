@@ -7,6 +7,7 @@ import CommandPalette from "@/components/CommandPalette";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
+import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import type { SidebarView } from "@/components/Ribbon";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
@@ -35,6 +36,8 @@ export default function MobileApp() {
     switchVault,
     allVaultData,
     vaults,
+    isJournalNote,
+    refreshNoteBody,
   } = useNotes();
 
   // --- Screen / overlay state ---
@@ -44,6 +47,7 @@ export default function MobileApp() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [treeControls, setTreeControls] = useState<TreeControls | null>(null);
   const [moveTo, setMoveTo] = useState<string | null>(null);
@@ -313,6 +317,20 @@ export default function MobileApp() {
             // Rename deferred — close the menu. Inline rename can be added later.
             setOverflowOpen(false);
           }}
+          onHistory={(id) => {
+            setOverflowOpen(false);
+            setHistoryOpen(true);
+          }}
+        />
+      )}
+
+      {historyOpen && activeNote && (
+        <NoteHistoryPanel
+          open={historyOpen}
+          noteId={activeNote.id}
+          isJournal={isJournalNote(activeNote.id)}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={() => void refreshNoteBody(activeNote.id)}
         />
       )}
 
