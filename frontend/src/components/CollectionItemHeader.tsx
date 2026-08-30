@@ -11,10 +11,11 @@ type Props = {
   mobile?: boolean;
 };
 
-// Read-only header shown above a collection item's editor body. Displays the
-// item's cover image and each custom field (with its label from the collection
-// definition). Only renders for type=collection-item notes; the cover and
-// fields live in frontmatter, so the markdown body stays clean and editable.
+// Read-only header shown above a collection item's editor body. Displays a
+// full-width banner of the item's cover image (covering the full available
+// width without stretching), then each custom field listed below it. Only
+// renders for type=collection-item notes; the cover and fields live in
+// frontmatter, so the markdown body stays clean and editable.
 export default function CollectionItemHeader({ note, mobile }: Props) {
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
 
@@ -34,32 +35,44 @@ export default function CollectionItemHeader({ note, mobile }: Props) {
 
   return (
     <div
-      className="flex gap-4 rounded-xl border border-border p-4 mb-4"
-      style={{
-        background: "var(--muted)",
-        ...(mobile ? { margin: 16, padding: 16 } : {}),
-      }}
+      style={mobile ? { margin: 12 } : {}}
     >
-      {/* Cover */}
+      {/* Full-width banner cover */}
       <div
-        className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-lg"
-        style={{ background: "var(--background)" }}
+        className="flex w-full items-center justify-center overflow-hidden"
+        style={{
+          aspectRatio: "16/9",
+          maxHeight: 360,
+          borderRadius: 12,
+          background: "var(--muted)",
+        }}
       >
         {note.cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={note.cover}
             alt={note.title}
-            className="h-full w-full object-cover"
+            className="h-full w-full"
+            style={{
+              objectFit: "cover",
+              objectPosition: "center",
+            }}
           />
         ) : (
-          <Disc3 className="h-8 w-8 text-muted-foreground/40" />
+          <Disc3 className="h-12 w-12 text-muted-foreground/40" />
         )}
       </div>
 
-      {/* Fields */}
+      {/* Field list below the image */}
       {fields.length > 0 && (
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div
+          className="flex flex-col gap-1.5"
+          style={{
+            padding: "12px 4px",
+            borderBottom: "1px solid var(--border)",
+            marginBottom: 4,
+          }}
+        >
           {fields.map((f) => {
             const value = note.fields?.[f.key];
             if (value === undefined || value === null || value === "") return null;
@@ -70,7 +83,7 @@ export default function CollectionItemHeader({ note, mobile }: Props) {
                   : "No"
                 : value;
             return (
-              <div key={f.key} className="flex items-baseline gap-2">
+              <div key={f.key} className="flex items-baseline gap-3">
                 <span
                   className="w-20 shrink-0 text-xs font-medium uppercase tracking-wide"
                   style={{ color: "var(--muted-foreground)" }}
