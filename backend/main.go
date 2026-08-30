@@ -43,9 +43,26 @@ func main() {
 
 	collectionsDir := filepath.Join(home, "collections")
 	h := api.New(registry, filepath.Join(home, "journal"), collectionsDir)
+	if collectionsVaultID != "" {
+		if cs, err := registry.Store(collectionsVaultID); err == nil {
+			h.CollectionsStore = cs
+		}
+	}
 
 	// Migrate legacy type:vinyl notes into a "Vinyls" collection.
 	migrateVinyls(registry, h.Collections, collectionsVaultID)
+
+	// Ensure every registered collection has a matching folder in the
+	// Collections vault, so collections created before this fix appear too.
+	if h.CollectionsStore != nil && h.Collections != nil {
+		if cols, cerr := h.Collections.List(); cerr == nil {
+			for _, c := range cols {
+				if c.Name != "" {
+					_ = h.CollectionsStore.CreateFolder(c.Name)
+				}
+			}
+		}
+	}
 
 	addr := ":" + port
 	log.Printf("nexote backend listening on http://localhost%s (home: %s)", addr, home)

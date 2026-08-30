@@ -21,10 +21,11 @@ import (
 
 // Handler holds the dependencies shared across all routes.
 type Handler struct {
-	Registry     *notes.VaultRegistry
-	Collections  *notes.CollectionRegistry
-	JournalStore *notes.Store
-	Events       *hub
+	Registry          *notes.VaultRegistry
+	Collections       *notes.CollectionRegistry
+	CollectionsStore  *notes.Store
+	JournalStore      *notes.Store
+	Events            *hub
 }
 
 // New creates a Handler backed by the given vault registry. The journal
@@ -269,6 +270,13 @@ func (h *Handler) createCollection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeRegistryError(w, err)
 		return
+	}
+	// Create a matching folder in the Collections vault so the collection
+	// shows up in the sidebar tree even before any items are added.
+	if h.CollectionsStore != nil && col.Name != "" {
+		if ferr := h.CollectionsStore.CreateFolder(col.Name); ferr != nil {
+			log.Printf("create collection folder: %v", ferr)
+		}
 	}
 	writeJSON(w, http.StatusCreated, col)
 }
