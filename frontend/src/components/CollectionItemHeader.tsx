@@ -40,7 +40,8 @@ export default function CollectionItemHeader({ note, mobile }: Props) {
     return value !== undefined && value !== null && value !== "";
   });
 
-  const hasManyFields = fields.length > 2;
+  // All fields sit behind the toggle, regardless of how many there are.
+  const hasManyFields = fields.length > 0;
 
   return (
     <div style={mobile ? { margin: 12 } : {}}>
