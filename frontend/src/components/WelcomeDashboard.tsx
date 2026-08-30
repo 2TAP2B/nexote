@@ -6,16 +6,19 @@ import {
   Disc3,
   FilePlus,
   FileText,
+  FolderPlus,
   Keyboard,
   LayoutDashboard,
   PanelLeftClose,
   Search,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { api } from "@/lib/api";
+import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
-import VinylFormDialog from "./VinylFormDialog";
-import VinylGallery from "./VinylGallery";
+import CollectionFormDialog from "./CollectionFormDialog";
+import CollectionGallery from "./CollectionGallery";
 
 type Props = {
   onOpenPalette?: () => void;
@@ -30,8 +33,13 @@ type Action = {
 
 export default function WelcomeDashboard({ onOpenPalette }: Props) {
   const { notes, openTab, openNoteInVault, create, openDaily } = useNotes();
-  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [collections, setCollections] = useState<CollectionMeta[]>([]);
+  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+
+  useEffect(() => {
+    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+  }, []);
 
   const openPalette = () => {
     if (onOpenPalette) {
@@ -72,6 +80,8 @@ export default function WelcomeDashboard({ onOpenPalette }: Props) {
   const recent = [...notes]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 6);
+
+  const pinned = collections.filter((c) => c.pinned);
 
   return (
     <main className="flex flex-1 items-start justify-center overflow-y-auto bg-background p-6 md:p-10">
@@ -121,40 +131,57 @@ export default function WelcomeDashboard({ onOpenPalette }: Props) {
           ))}
         </div>
 
-        {/* Vinyl collection */}
+        {/* Pinned collections */}
+        {pinned.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Disc3 className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-medium text-muted-foreground">
+                Collections
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {pinned.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setGalleryCollection(c)}
+                  className="group flex items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Disc3 className="h-5 w-5" />
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-sm font-medium text-foreground">
+                      {c.name}
+                    </span>
+                    <span className="mt-0.5 text-xs text-muted-foreground">
+                      Browse the {c.name.toLowerCase()} gallery
+                    </span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* New collection */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
-            onClick={() => setGalleryOpen(true)}
-            className="group flex items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Disc3 className="h-5 w-5" />
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-sm font-medium text-foreground">
-                Vinyl collection
-              </span>
-              <span className="mt-0.5 text-xs text-muted-foreground">
-                Browse the cover gallery
-              </span>
-            </div>
-            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
-          </button>
-          <button
-            type="button"
             onClick={() => setFormOpen(true)}
-            className="group flex items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+            className="group flex items-center gap-3 rounded-xl border border-dashed border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
           >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Disc3 className="h-5 w-5" />
+              <FolderPlus className="h-5 w-5" />
             </span>
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="text-sm font-medium text-foreground">
-                New vinyl
+                New collection
               </span>
               <span className="mt-0.5 text-xs text-muted-foreground">
-                Add an album to your collection
+                Create a customizable collection
               </span>
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
@@ -235,15 +262,20 @@ export default function WelcomeDashboard({ onOpenPalette }: Props) {
         </div>
       </div>
 
-      <VinylGallery
-        open={galleryOpen}
-        onClose={() => setGalleryOpen(false)}
-        onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-      />
-      <VinylFormDialog
+      {galleryCollection && (
+        <CollectionGallery
+          open={Boolean(galleryCollection)}
+          collection={galleryCollection}
+          onClose={() => setGalleryCollection(null)}
+          onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+        />
+      )}
+      <CollectionFormDialog
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        onSaved={() => setGalleryOpen(false)}
+        onSaved={() => {
+          void api.listCollections().then((res) => setCollections(res.collections ?? []));
+        }}
       />
     </main>
   );

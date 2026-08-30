@@ -8,6 +8,7 @@ import {
   Disc3,
   FilePlus,
   FileText,
+  FolderPlus,
   Hash,
   History,
   ListTodo,
@@ -16,9 +17,11 @@ import {
   Star,
 } from "lucide-react";
 
+import { api } from "@/lib/api";
+import type { CollectionMeta } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
-import VinylGallery from "@/components/VinylGallery";
-import VinylFormDialog from "@/components/VinylFormDialog";
+import CollectionFormDialog from "@/components/CollectionFormDialog";
+import CollectionGallery from "@/components/CollectionGallery";
 
 type RecentEntry = {
   id: string;
@@ -74,8 +77,13 @@ export default function MobileDashboard({
     refreshTags,
     toggleTaskItem,
   } = useNotes();
-  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [collections, setCollections] = useState<CollectionMeta[]>([]);
+  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+
+  useEffect(() => {
+    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+  }, []);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -241,16 +249,39 @@ export default function MobileDashboard({
           onClick={onOpenSearch}
         />
         <QuickAction
-          icon={<Disc3 size={22} />}
-          label="Vinyls"
-          onClick={() => setGalleryOpen(true)}
-        />
-        <QuickAction
-          icon={<Disc3 size={22} />}
-          label="New vinyl"
+          icon={<FolderPlus size={22} />}
+          label="New collection"
           onClick={() => setFormOpen(true)}
         />
       </div>
+
+      {/* Pinned collections */}
+      {collections.filter((c) => c.pinned).length > 0 && (
+        <section className="flex flex-col gap-2">
+          <SectionHeading
+            icon={<Disc3 size={16} />}
+            title="Collections"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            {collections
+              .filter((c) => c.pinned)
+              .map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setGalleryCollection(c)}
+                  className="flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-2xl transition-[transform,background] active:scale-[0.98]"
+                  style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+                >
+                  <span style={{ color: "var(--mob-accent)" }}>
+                    <Disc3 size={20} />
+                  </span>
+                  <span className="text-xs font-medium">{c.name}</span>
+                </button>
+              ))}
+          </div>
+        </section>
+      )}
 
       {/* Continue where you left off */}
       {isEmpty ? (
@@ -433,15 +464,20 @@ export default function MobileDashboard({
         </section>
       )}
 
-      <VinylGallery
-        open={galleryOpen}
-        onClose={() => setGalleryOpen(false)}
-        onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-      />
-      <VinylFormDialog
+      {galleryCollection && (
+        <CollectionGallery
+          open={Boolean(galleryCollection)}
+          collection={galleryCollection}
+          onClose={() => setGalleryCollection(null)}
+          onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+        />
+      )}
+      <CollectionFormDialog
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        onSaved={() => setGalleryOpen(false)}
+        onSaved={() => {
+          void api.listCollections().then((res) => setCollections(res.collections ?? []));
+        }}
       />
     </main>
   );

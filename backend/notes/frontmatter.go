@@ -28,18 +28,20 @@ import (
 
 // Meta is the YAML frontmatter block of a note.
 type Meta struct {
-	ID        string    `yaml:"id"`
-	Title     string    `yaml:"title"`
-	Path      string    `yaml:"path,omitempty"`
-	CreatedAt time.Time `yaml:"createdAt"`
-	UpdatedAt time.Time `yaml:"updatedAt"`
-	Tags      []string  `yaml:"tags,omitempty"`
-	Type      string    `yaml:"type,omitempty"`
-	Artist    string    `yaml:"artist,omitempty"`
-	Year      int       `yaml:"year,omitempty"`
-	Genre     string    `yaml:"genre,omitempty"`
-	Wantlist  *bool     `yaml:"wantlist,omitempty"`
-	Cover     string    `yaml:"cover,omitempty"`
+	ID        string            `yaml:"id"`
+	Title     string            `yaml:"title"`
+	Path      string            `yaml:"path,omitempty"`
+	CreatedAt time.Time         `yaml:"createdAt"`
+	UpdatedAt time.Time         `yaml:"updatedAt"`
+	Tags      []string          `yaml:"tags,omitempty"`
+	Type      string            `yaml:"type,omitempty"`
+	Artist    string            `yaml:"artist,omitempty"`
+	Year      int               `yaml:"year,omitempty"`
+	Genre     string            `yaml:"genre,omitempty"`
+	Wantlist  *bool             `yaml:"wantlist,omitempty"`
+	Cover     string            `yaml:"cover,omitempty"`
+	Collection string           `yaml:"collection,omitempty"`
+	Fields    map[string]string `yaml:"fields,omitempty"`
 }
 
 // Document is a parsed note: its metadata plus the markdown body.

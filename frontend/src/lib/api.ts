@@ -16,6 +16,8 @@ export type NoteMeta = {
   genre?: string;
   wantlist?: boolean;
   cover?: string;
+  collection?: string;
+  fields?: Record<string, string>;
 };
 
 export type Note = NoteMeta & {
@@ -32,6 +34,24 @@ export type NoteInput = {
   genre?: string | null;
   wantlist?: boolean | null;
   cover?: string | null;
+  collection?: string | null;
+  fields?: Record<string, string> | null;
+};
+
+export type CollectionFieldType = "text" | "number" | "boolean" | "date";
+
+export type CollectionField = {
+  key: string;
+  label: string;
+  type: CollectionFieldType;
+};
+
+export type CollectionMeta = {
+  id: string;
+  name: string;
+  icon?: string;
+  pinned: boolean;
+  fields: CollectionField[];
 };
 
 export type FolderMeta = {
@@ -138,6 +158,34 @@ export const api = {
     }),
   deleteVault: (id: string) =>
     request<void>(`/api/vaults/${id}`, { method: "DELETE" }),
+
+  // --- Collections ---
+  listCollections: () =>
+    request<{ collections: CollectionMeta[] }>("/api/collections"),
+  createCollection: (input: {
+    name: string;
+    icon?: string;
+    fields: CollectionField[];
+  }) =>
+    request<CollectionMeta>("/api/collections", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateCollection: (
+    id: string,
+    input: { name?: string; icon?: string; fields?: CollectionField[] },
+  ) =>
+    request<CollectionMeta>(`/api/collections/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  setCollectionPinned: (id: string, pinned: boolean) =>
+    request<CollectionMeta>(`/api/collections/${id}/pin`, {
+      method: "PATCH",
+      body: JSON.stringify({ pinned }),
+    }),
+  deleteCollection: (id: string) =>
+    request<void>(`/api/collections/${id}`, { method: "DELETE" }),
 
   // --- Notes (vault-scoped) ---
   list: (vaultId: string) =>

@@ -112,19 +112,21 @@ func (s *Store) untrackIndex(id string) {
 
 // Entry is the metadata-only view returned by List for notes.
 type Entry struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Path      string    `json:"path"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	Tags      []string  `json:"tags"`
-	Snippet   string    `json:"snippet"`
-	Type      string    `json:"type,omitempty"`
-	Artist    string    `json:"artist,omitempty"`
-	Year      int       `json:"year,omitempty"`
-	Genre     string    `json:"genre,omitempty"`
-	Wantlist  *bool     `json:"wantlist,omitempty"`
-	Cover     string    `json:"cover,omitempty"`
+	ID         string            `json:"id"`
+	Title      string            `json:"title"`
+	Path       string            `json:"path"`
+	CreatedAt  time.Time         `json:"createdAt"`
+	UpdatedAt  time.Time         `json:"updatedAt"`
+	Tags       []string          `json:"tags"`
+	Snippet    string            `json:"snippet"`
+	Type       string            `json:"type,omitempty"`
+	Artist     string            `json:"artist,omitempty"`
+	Year       int               `json:"year,omitempty"`
+	Genre      string            `json:"genre,omitempty"`
+	Wantlist   *bool             `json:"wantlist,omitempty"`
+	Cover      string            `json:"cover,omitempty"`
+	Collection string            `json:"collection,omitempty"`
+	Fields     map[string]string `json:"fields,omitempty"`
 }
 
 // FolderEntry represents an (possibly empty) folder in the tree.
@@ -186,19 +188,21 @@ func (s *Store) List() (ListResult, error) {
 			return nil
 		}
 		notes = append(notes, Entry{
-			ID:        doc.Meta.ID,
-			Title:     doc.Meta.Title,
-			Path:      doc.Meta.Path,
-			CreatedAt: doc.Meta.CreatedAt,
-			UpdatedAt: doc.Meta.UpdatedAt,
-			Tags:      doc.Meta.Tags,
-			Snippet:   makeSnippet(doc.Body, 150),
-			Type:      doc.Meta.Type,
-			Artist:    doc.Meta.Artist,
-			Year:      doc.Meta.Year,
-			Genre:     doc.Meta.Genre,
-			Wantlist:  doc.Meta.Wantlist,
-			Cover:     doc.Meta.Cover,
+			ID:         doc.Meta.ID,
+			Title:      doc.Meta.Title,
+			Path:       doc.Meta.Path,
+			CreatedAt:  doc.Meta.CreatedAt,
+			UpdatedAt:  doc.Meta.UpdatedAt,
+			Tags:       doc.Meta.Tags,
+			Snippet:    makeSnippet(doc.Body, 150),
+			Type:       doc.Meta.Type,
+			Artist:     doc.Meta.Artist,
+			Year:       doc.Meta.Year,
+			Genre:      doc.Meta.Genre,
+			Wantlist:   doc.Meta.Wantlist,
+			Cover:      doc.Meta.Cover,
+			Collection: doc.Meta.Collection,
+			Fields:     doc.Meta.Fields,
 		})
 		return nil
 	})
@@ -317,16 +321,18 @@ func (s *Store) DeleteFolder(folderPath string) error {
 // match the note's current updatedAt, Update returns ErrConflict instead of
 // overwriting a concurrent change.
 type UpdateInput struct {
-	Title            string  `json:"title"`
-	Body             string  `json:"body"`
-	Path             *string `json:"path,omitempty"`
-	Type             *string `json:"type,omitempty"`
-	Artist           *string `json:"artist,omitempty"`
-	Year             *int    `json:"year,omitempty"`
-	Genre            *string `json:"genre,omitempty"`
-	Wantlist         *bool   `json:"wantlist,omitempty"`
-	Cover            *string `json:"cover,omitempty"`
-	ExpectedUpdatedAt *string `json:"expectedUpdatedAt,omitempty"`
+	Title             string            `json:"title"`
+	Body              string            `json:"body"`
+	Path              *string           `json:"path,omitempty"`
+	Type              *string           `json:"type,omitempty"`
+	Artist            *string           `json:"artist,omitempty"`
+	Year              *int              `json:"year,omitempty"`
+	Genre             *string           `json:"genre,omitempty"`
+	Wantlist          *bool             `json:"wantlist,omitempty"`
+	Cover             *string           `json:"cover,omitempty"`
+	Collection        *string           `json:"collection,omitempty"`
+	Fields            map[string]string `json:"fields,omitempty"`
+	ExpectedUpdatedAt *string           `json:"expectedUpdatedAt,omitempty"`
 }
 
 // Update rewrites a note's title and body, bumping updatedAt. The id and
@@ -386,6 +392,12 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	}
 	if in.Cover != nil {
 		doc.Meta.Cover = *in.Cover
+	}
+	if in.Collection != nil {
+		doc.Meta.Collection = *in.Collection
+	}
+	if in.Fields != nil {
+		doc.Meta.Fields = in.Fields
 	}
 
 	// When the note moves to a different folder, physically move any image

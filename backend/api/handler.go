@@ -22,18 +22,23 @@ import (
 // Handler holds the dependencies shared across all routes.
 type Handler struct {
 	Registry     *notes.VaultRegistry
+	Collections  *notes.CollectionRegistry
 	JournalStore *notes.Store
 	Events       *hub
 }
 
 // New creates a Handler backed by the given vault registry. The journal
 // store is created at <registryRoot>/../journal (i.e. ~/.nexote/journal).
-func New(r *notes.VaultRegistry, journalDir string) *Handler {
+func New(r *notes.VaultRegistry, journalDir string, collectionsDir string) *Handler {
 	js, err := notes.NewStore(journalDir)
 	if err != nil {
 		log.Printf("journal store: %v", err)
 	}
-	return &Handler{Registry: r, JournalStore: js, Events: newHub()}
+	cr, err := notes.NewCollectionRegistry(collectionsDir)
+	if err != nil {
+		log.Printf("collections registry: %v", err)
+	}
+	return &Handler{Registry: r, Collections: cr, JournalStore: js, Events: newHub()}
 }
 
 // Routes returns an http.Handler serving the /api/* REST surface with CORS
@@ -47,6 +52,13 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/vaults/{id}", h.renameVault)
 	mux.HandleFunc("PATCH /api/vaults/{id}", h.setVaultIcon)
 	mux.HandleFunc("DELETE /api/vaults/{id}", h.deleteVault)
+
+	// Collection management
+	mux.HandleFunc("GET /api/collections", h.listCollections)
+	mux.HandleFunc("POST /api/collections", h.createCollection)
+	mux.HandleFunc("PUT /api/collections/{id}", h.updateCollection)
+	mux.HandleFunc("PATCH /api/collections/{id}/pin", h.setCollectionPinned)
+	mux.HandleFunc("DELETE /api/collections/{id}", h.deleteCollection)
 
 	// Change notification stream (Server-Sent Events)
 	mux.HandleFunc("GET /api/events", h.streamEvents)
@@ -218,6 +230,100 @@ func (h *Handler) renameVault(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) deleteVault(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := h.Registry.Delete(id); err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Collections ---
+
+func (h *Handler) listCollections(w http.ResponseWriter, r *http.Request) {
+	if h.Collections == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("collections not available"))
+		return
+	}
+	cols, err := h.Collections.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]notes.CollectionMeta{"collections": cols})
+}
+
+func (h *Handler) createCollection(w http.ResponseWriter, r *http.Request) {
+	if h.Collections == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("collections not available"))
+		return
+	}
+	var in struct {
+		Name   string                  `json:"name"`
+		Icon   string                  `json:"icon"`
+		Fields []notes.CollectionField `json:"fields"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	col, err := h.Collections.Create(in.Name, in.Icon, in.Fields)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, col)
+}
+
+func (h *Handler) updateCollection(w http.ResponseWriter, r *http.Request) {
+	if h.Collections == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("collections not available"))
+		return
+	}
+	id := r.PathValue("id")
+	var in struct {
+		Name   string                  `json:"name"`
+		Icon   string                  `json:"icon"`
+		Fields []notes.CollectionField `json:"fields"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	col, err := h.Collections.Update(id, in.Name, in.Icon, in.Fields)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, col)
+}
+
+func (h *Handler) setCollectionPinned(w http.ResponseWriter, r *http.Request) {
+	if h.Collections == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("collections not available"))
+		return
+	}
+	id := r.PathValue("id")
+	var in struct {
+		Pinned bool `json:"pinned"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	col, err := h.Collections.SetPinned(id, in.Pinned)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, col)
+}
+
+func (h *Handler) deleteCollection(w http.ResponseWriter, r *http.Request) {
+	if h.Collections == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("collections not available"))
+		return
+	}
+	id := r.PathValue("id")
+	if err := h.Collections.Delete(id); err != nil {
 		h.writeRegistryError(w, err)
 		return
 	}
@@ -678,36 +784,40 @@ func (h *Handler) writeRegistryError(w http.ResponseWriter, err error) {
 
 // Payload is the JSON shape returned for a single note.
 type Payload struct {
-	ID        string   `json:"id"`
-	Title     string   `json:"title"`
-	Path      string   `json:"path"`
-	CreatedAt string   `json:"createdAt"`
-	UpdatedAt string   `json:"updatedAt"`
-	Tags      []string `json:"tags"`
-	Body      string   `json:"body"`
-	Type      string   `json:"type,omitempty"`
-	Artist    string   `json:"artist,omitempty"`
-	Year      int      `json:"year,omitempty"`
-	Genre     string   `json:"genre,omitempty"`
-	Wantlist  *bool    `json:"wantlist,omitempty"`
-	Cover     string   `json:"cover,omitempty"`
+	ID         string            `json:"id"`
+	Title      string            `json:"title"`
+	Path       string            `json:"path"`
+	CreatedAt  string            `json:"createdAt"`
+	UpdatedAt  string            `json:"updatedAt"`
+	Tags       []string          `json:"tags"`
+	Body       string            `json:"body"`
+	Type       string            `json:"type,omitempty"`
+	Artist     string            `json:"artist,omitempty"`
+	Year       int               `json:"year,omitempty"`
+	Genre      string            `json:"genre,omitempty"`
+	Wantlist   *bool             `json:"wantlist,omitempty"`
+	Cover      string            `json:"cover,omitempty"`
+	Collection string            `json:"collection,omitempty"`
+	Fields     map[string]string `json:"fields,omitempty"`
 }
 
 func toPayload(d notes.Document) Payload {
 	return Payload{
-		ID:        d.Meta.ID,
-		Title:     d.Meta.Title,
+		ID:         d.Meta.ID,
+		Title:      d.Meta.Title,
 		Path:       d.Meta.Path,
-		CreatedAt: d.Meta.CreatedAt.Format(timeRFC3339Millis),
-		UpdatedAt: d.Meta.UpdatedAt.Format(timeRFC3339Millis),
-		Tags:      d.Meta.Tags,
-		Body:      d.Body,
-		Type:      d.Meta.Type,
-		Artist:    d.Meta.Artist,
-		Year:      d.Meta.Year,
-		Genre:     d.Meta.Genre,
-		Wantlist:  d.Meta.Wantlist,
-		Cover:     d.Meta.Cover,
+		CreatedAt:  d.Meta.CreatedAt.Format(timeRFC3339Millis),
+		UpdatedAt:  d.Meta.UpdatedAt.Format(timeRFC3339Millis),
+		Tags:       d.Meta.Tags,
+		Body:       d.Body,
+		Type:       d.Meta.Type,
+		Artist:     d.Meta.Artist,
+		Year:       d.Meta.Year,
+		Genre:      d.Meta.Genre,
+		Wantlist:   d.Meta.Wantlist,
+		Cover:      d.Meta.Cover,
+		Collection: d.Meta.Collection,
+		Fields:     d.Meta.Fields,
 	}
 }
 
