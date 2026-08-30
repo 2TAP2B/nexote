@@ -1,10 +1,12 @@
 "use client";
 
-import { Disc3, Pencil, Plus, X } from "lucide-react";
+import { Disc3, Pencil, Pin, PinOff, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { api } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
 import type { CollectionMeta, NoteMeta } from "@/lib/api";
+import CollectionFormDialog from "./CollectionFormDialog";
 import CollectionItemForm from "./CollectionItemForm";
 
 type Props = {
@@ -12,6 +14,7 @@ type Props = {
   collection: CollectionMeta;
   onClose: () => void;
   onOpenNote: (vaultId: string, id: string) => void;
+  onCollectionChanged?: (c: CollectionMeta) => void;
 };
 
 type Item = NoteMeta & {
@@ -26,9 +29,11 @@ export default function CollectionGallery({
   collection,
   onClose,
   onOpenNote,
+  onCollectionChanged,
 }: Props) {
   const { vaults, allVaultData, refresh, activeVault } = useNotes();
   const [formOpen, setFormOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
 
   useEffect(() => {
@@ -67,6 +72,15 @@ export default function CollectionGallery({
     setFormOpen(true);
   };
 
+  const togglePin = async () => {
+    try {
+      const updated = await api.setCollectionPinned(collection.id, !collection.pinned);
+      onCollectionChanged?.(updated);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       {/* Header */}
@@ -90,6 +104,28 @@ export default function CollectionGallery({
           <span className="text-sm text-muted-foreground">{items.length}</span>
         </div>
         <div className="flex-1" />
+        <button
+          type="button"
+          aria-label={collection.pinned ? "Unpin from dashboard" : "Pin to dashboard"}
+          title={collection.pinned ? "Unpin from dashboard" : "Pin to dashboard"}
+          onClick={() => void togglePin()}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {collection.pinned ? (
+            <Pin className="h-4 w-4 text-primary" />
+          ) : (
+            <PinOff className="h-4 w-4" />
+          )}
+        </button>
+        <button
+          type="button"
+          aria-label="Edit collection"
+          title="Edit collection"
+          onClick={() => setEditOpen(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={() => openForm()}
@@ -137,7 +173,10 @@ export default function CollectionGallery({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onOpenNote(item.vaultId, item.id)}
+                  onClick={() => {
+                    onOpenNote(item.vaultId, item.id);
+                    onClose();
+                  }}
                   className="flex flex-col text-left active:scale-[0.98]"
                 >
                   <div className="flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/40">
@@ -185,6 +224,18 @@ export default function CollectionGallery({
           onSaved={() => void refresh()}
         />
       )}
+
+      <CollectionFormDialog
+        open={editOpen}
+        collection={collection}
+        onClose={() => setEditOpen(false)}
+        onSaved={() => {
+          void api.listCollections().then((res) => {
+            const updated = (res.collections ?? []).find((c) => c.id === collection.id);
+            if (updated) onCollectionChanged?.(updated);
+          });
+        }}
+      />
     </div>
   );
 }

@@ -470,6 +470,10 @@ export default function MobileDashboard({
           collection={galleryCollection}
           onClose={() => setGalleryCollection(null)}
           onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+          onCollectionChanged={(c) => {
+            setGalleryCollection(c);
+            void api.listCollections().then((res) => setCollections(res.collections ?? []));
+          }}
         />
       )}
       <CollectionFormDialog

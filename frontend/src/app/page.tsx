@@ -342,6 +342,7 @@ function AppShell() {
             collection={galleryCollection}
             onClose={() => setGalleryCollection(null)}
             onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+            onCollectionChanged={setGalleryCollection}
           />
         )}
       </div>
