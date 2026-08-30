@@ -11,6 +11,7 @@ import {
   Edit3,
   Ellipsis,
   FileText,
+  History,
   Loader2,
   Sparkles,
   SquareArrowOutUpRight,
@@ -23,6 +24,7 @@ import { generateNoteTitle } from "@/lib/ai";
 import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import ContextMenu from "@/components/ContextMenu";
 import AICommandPanel from "@/components/AICommandPanel";
+import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
@@ -34,7 +36,7 @@ const MilkdownEditorWrapper = dynamic<
 >(() => import("@/components/MilkdownEditor"), { ssr: false });
 
 export default function EditorPane() {
-  const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote, copyNote } =
+  const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote, copyNote, refreshNoteBody } =
     useNotes();
 
   const [title, setTitle] = useState("");
@@ -45,6 +47,7 @@ export default function EditorPane() {
   const [bodyKey, setBodyKey] = useState(0);
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
   const [rawMode, setRawMode] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const skipNextChange = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -371,6 +374,15 @@ export default function EditorPane() {
           </button>
           <button
             type="button"
+            aria-label="Note history"
+            title="Note history"
+            onClick={() => setHistoryOpen(true)}
+            className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
+          >
+            <History size={15} />
+          </button>
+          <button
+            type="button"
             aria-label="More actions"
             title="More actions"
             onClick={(e) => {
@@ -462,6 +474,17 @@ export default function EditorPane() {
           onClose={() => setAiPanelOpen(false)}
         />
       )}
+
+      <NoteHistoryPanel
+        open={historyOpen}
+        noteId={activeNote.id}
+        isJournal={isJournalNote(activeNote.id)}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={() => {
+          // Reload the note body so the editor reflects the restored version.
+          void refreshNoteBody(activeNote.id);
+        }}
+      />
     </main>
   );
 }

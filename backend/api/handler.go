@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"nexote/notes"
@@ -58,6 +59,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/vaults/{vaultId}/notes/{id}", h.updateNote)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/notes/{id}", h.deleteNote)
 
+	// Vault-scoped note history routes
+	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/{id}/history", h.listNoteHistory)
+	mux.HandleFunc("GET /api/vaults/{vaultId}/notes/{id}/history/{ts}", h.getNoteHistoryVersion)
+	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/{id}/history/{ts}/restore", h.restoreNoteHistoryVersion)
+
 	// Vault-scoped folder routes
 	mux.HandleFunc("POST /api/vaults/{vaultId}/folders", h.createFolder)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/folders/{path...}", h.deleteFolder)
@@ -91,6 +97,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/journal/notes/{id}", h.journalGetNote)
 	mux.HandleFunc("PUT /api/journal/notes/{id}", h.journalUpdateNote)
 	mux.HandleFunc("DELETE /api/journal/notes/{id}", h.journalDeleteNote)
+
+	// Journal note history routes (vault-independent)
+	mux.HandleFunc("GET /api/journal/notes/{id}/history", h.journalListNoteHistory)
+	mux.HandleFunc("GET /api/journal/notes/{id}/history/{ts}", h.journalGetNoteHistoryVersion)
+	mux.HandleFunc("POST /api/journal/notes/{id}/history/{ts}/restore", h.journalRestoreNoteHistoryVersion)
 
 	// Task routes (vault-independent, scans all vaults)
 	mux.HandleFunc("GET /api/tasks", h.listTasks)
@@ -338,6 +349,64 @@ func (h *Handler) deleteNote(w http.ResponseWriter, r *http.Request) {
 		_ = shortcuts.Remove(id)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Note history ---
+
+func (h *Handler) listNoteHistory(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	versions, err := store.ListHistory(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]notes.HistoryVersion{"versions": versions})
+}
+
+func (h *Handler) getNoteHistoryVersion(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	ts, err := parseHistoryTS(r.PathValue("ts"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := store.GetHistoryVersion(id, ts)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) restoreNoteHistoryVersion(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	id := r.PathValue("id")
+	ts, err := parseHistoryTS(r.PathValue("ts"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := store.RestoreHistoryVersion(id, ts)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	h.publishNote(r.PathValue("vaultId"), id, doc.Meta.UpdatedAt)
+	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 
 // --- Folders ---
@@ -591,6 +660,10 @@ func (h *Handler) writeStoreError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
+	if errors.Is(err, notes.ErrConflict) {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
 	writeError(w, http.StatusInternalServerError, err)
 }
 
@@ -737,6 +810,68 @@ func (h *Handler) journalDeleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) journalListNoteHistory(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	id := r.PathValue("id")
+	versions, err := h.JournalStore.ListHistory(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]notes.HistoryVersion{"versions": versions})
+}
+
+func (h *Handler) journalGetNoteHistoryVersion(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	id := r.PathValue("id")
+	ts, err := parseHistoryTS(r.PathValue("ts"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := h.JournalStore.GetHistoryVersion(id, ts)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+func (h *Handler) journalRestoreNoteHistoryVersion(w http.ResponseWriter, r *http.Request) {
+	if h.JournalStore == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
+		return
+	}
+	id := r.PathValue("id")
+	ts, err := parseHistoryTS(r.PathValue("ts"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := h.JournalStore.RestoreHistoryVersion(id, ts)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	h.publishNote("journal", id, doc.Meta.UpdatedAt)
+	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+// parseHistoryTS parses a unix-millisecond timestamp path segment.
+func parseHistoryTS(s string) (int64, error) {
+	ts, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || ts <= 0 {
+		return 0, errors.New("invalid history timestamp")
+	}
+	return ts, nil
 }
 
 // --- Tags ---

@@ -15,6 +15,11 @@ import (
 // ErrNotFound is returned when a note id does not resolve to a file.
 var ErrNotFound = errors.New("note not found")
 
+// ErrConflict is returned when an update's optimistic-concurrency check fails:
+// the note changed since the caller read it, so the write is refused rather
+// than silently overwriting a concurrent edit.
+var ErrConflict = errors.New("note changed since read")
+
 // Store is a filesystem-backed collection of notes. Notes may live in nested
 // folders under Dir; each note is a "<id>.md" file whose frontmatter records
 // its path (the folder, relative to Dir) and title. Empty folders are tracked
@@ -29,6 +34,13 @@ type Store struct {
 
 	mu    sync.RWMutex
 	index map[string]string // id -> absolute path of "<id>.md"
+
+	// writeMu serializes read-modify-write mutations (create/update/delete/
+	// daily/copy/move). Without it, two concurrent requests can both read the
+	// same base state and then each write, clobbering the other's change (and,
+	// for Daily, creating two notes for the same date). It is separate from mu
+	// (which guards only the in-memory index) so reads stay concurrent.
+	writeMu sync.Mutex
 }
 
 // NewStore creates a Store rooted at dir, creating the directory if needed.
@@ -48,6 +60,10 @@ func (s *Store) buildIndex() {
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		// Skip history snapshots (they live under .history/<noteId>/).
+		if strings.Contains(filepath.ToSlash(p), "/"+historyDirName+"/") {
 			return nil
 		}
 		s.index[strings.TrimSuffix(d.Name(), ".md")] = p
@@ -146,6 +162,11 @@ func (s *Store) List() (ListResult, error) {
 			if rel == "." || rel == "" {
 				return nil
 			}
+			// Skip the hidden history directory (per-note snapshots) so its
+			// .md files are never treated as notes.
+			if d.Name() == historyDirName {
+				return filepath.SkipDir
+			}
 			folders = append(folders, FolderEntry{
 				Path: rel,
 				Name: d.Name(),
@@ -202,6 +223,8 @@ func (s *Store) Get(id string) (Document, error) {
 // writes it as a new file in the same folder. The title gets " (copy)"
 // appended if it doesn't already end with that.
 func (s *Store) Copy(id string) (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	doc, err := s.read(id)
 	if err != nil {
 		return Document{}, err
@@ -233,6 +256,8 @@ type CreateInput struct {
 // full document. If Path is set the note is created in that folder (created if
 // needed); the path is stored in frontmatter.
 func (s *Store) Create(in CreateInput) (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
 		title = "Untitled"
@@ -288,16 +313,20 @@ func (s *Store) DeleteFolder(folderPath string) error {
 // UpdateInput is the body for updating a note. Path is optional (nil = don't
 // change); an empty string moves the note to the root. The structured
 // collection fields are pointers so a nil value means "leave unchanged".
+// ExpectedUpdatedAt, when set, enables optimistic concurrency: if it does not
+// match the note's current updatedAt, Update returns ErrConflict instead of
+// overwriting a concurrent change.
 type UpdateInput struct {
-	Title    string  `json:"title"`
-	Body     string  `json:"body"`
-	Path     *string `json:"path,omitempty"`
-	Type     *string `json:"type,omitempty"`
-	Artist   *string `json:"artist,omitempty"`
-	Year     *int    `json:"year,omitempty"`
-	Genre    *string `json:"genre,omitempty"`
-	Wantlist *bool   `json:"wantlist,omitempty"`
-	Cover    *string `json:"cover,omitempty"`
+	Title            string  `json:"title"`
+	Body             string  `json:"body"`
+	Path             *string `json:"path,omitempty"`
+	Type             *string `json:"type,omitempty"`
+	Artist           *string `json:"artist,omitempty"`
+	Year             *int    `json:"year,omitempty"`
+	Genre            *string `json:"genre,omitempty"`
+	Wantlist         *bool   `json:"wantlist,omitempty"`
+	Cover            *string `json:"cover,omitempty"`
+	ExpectedUpdatedAt *string `json:"expectedUpdatedAt,omitempty"`
 }
 
 // Update rewrites a note's title and body, bumping updatedAt. The id and
@@ -306,11 +335,33 @@ type UpdateInput struct {
 // Inline #hashtags in the body are extracted and merged into the frontmatter
 // tags so they appear in the tag index.
 func (s *Store) Update(id string, in UpdateInput) (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	doc, err := s.read(id)
 	if err != nil {
 		return Document{}, err
 	}
 	oldPath := doc.Meta.Path
+
+	// Snapshot the pre-update version so the note's history is preserved.
+	// Best-effort: a history write failure must not block the save itself.
+	_, _ = s.snapshotHistory(doc)
+
+	// Optimistic concurrency: if the caller expected a specific updatedAt and
+	// the note has since changed, refuse to overwrite the newer content.
+	if in.ExpectedUpdatedAt != nil && *in.ExpectedUpdatedAt != "" {
+		if doc.Meta.UpdatedAt.Format(time.RFC3339Nano) != *in.ExpectedUpdatedAt &&
+			doc.Meta.UpdatedAt.Format(time.RFC3339) != *in.ExpectedUpdatedAt {
+			return Document{}, ErrConflict
+		}
+	}
+
+	// Never let a blank body wipe a note that has content. A save that sends
+	// an empty body (e.g. a race or a transient editor state) must not destroy
+	// the existing text.
+	if in.Body == "" && strings.TrimSpace(doc.Body) != "" {
+		in.Body = doc.Body
+	}
 
 	if title := strings.TrimSpace(in.Title); title != "" {
 		doc.Meta.Title = title
@@ -412,6 +463,8 @@ func extractInlineTags(body string) []string {
 // endpoint is idempotent. Empty parent folders are left in place so the tree
 // structure persists.
 func (s *Store) Delete(id string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	p, err := s.resolvePath(id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -456,8 +509,13 @@ func (s *Store) pruneEmptyDirs(dir string) {
 
 // Daily opens-or-creates today's journal note under "Journal". The note is
 // named by date (YYYY-MM-DD) and titled "YYYY-MM-DD". If it already exists it
-// is returned as-is; otherwise it is created.
+// is returned as-is; otherwise it is created. The whole check-then-create runs
+// under the write mutex so two concurrent calls can never create two notes for
+// the same date.
 func (s *Store) Daily() (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
 	now := time.Now().UTC()
 	date := now.Format("2006-01-02")
 	folder := "Journal"
@@ -472,14 +530,19 @@ func (s *Store) Daily() (Document, error) {
 		}
 	}
 
-	doc, err := s.Create(CreateInput{Title: date, Path: folder})
-	if err != nil {
-		return Document{}, err
+	// Create the note inline (rather than calling s.Create, which would
+	// re-acquire the write mutex and deadlock). Use the same `now` for both
+	// timestamps so updatedAt is never earlier than createdAt.
+	doc := Document{
+		Meta: Meta{
+			ID:        NewID(),
+			Title:     date,
+			Path:      folder,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Body: fmt.Sprintf("## %s\n\n", date),
 	}
-	// Seed the body with a header so the journal isn't empty. The default note
-	// title heading is H2 (##), so keep the daily header at the same level.
-	doc.Body = fmt.Sprintf("## %s\n\n", date)
-	doc.Meta.UpdatedAt = now
 	if err := s.write(doc); err != nil {
 		return Document{}, err
 	}

@@ -75,6 +75,7 @@ type NotesContextValue = {
   forceSave: () => Promise<void>;
   setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
+  refreshNoteBody: (id: string) => Promise<void>;
   // Multi-vault data for the advanced tree
   allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
   journalNotes: NoteMeta[];
@@ -912,6 +913,22 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Refetch a single note's full body and swap it into the cache. Used after
+  // restoring a history version so the editor reflects the restored content.
+  const refreshNoteBody = useCallback(
+    async (id: string) => {
+      const vaultId = noteVaultMap[id] ?? activeVaultId;
+      if (!vaultId) return;
+      try {
+        const note = await api.get(vaultId, id);
+        setNotesById((prev) => ({ ...prev, [id]: note }));
+      } catch {
+        // ignore transient failures
+      }
+    },
+    [noteVaultMap, activeVaultId],
+  );
+
   const removeTagFromNote = useCallback(async (vaultId: string, noteId: string, tag: string) => {
     const doc = await api.removeTag(vaultId, noteId, tag);
     setNotesById((prev) => ({ ...prev, [noteId]: doc }));
@@ -1024,6 +1041,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     async (id: string, input: Draft) => {
       const isJournal = journalIdsRef.current.has(id);
       if (!activeVaultId && !isJournal) return;
+      // Never let a blank body wipe a note that has content. A save that
+      // sends an empty body (e.g. a race or transient editor state) must not
+      // destroy the existing text.
+      const cached = notesByIdRef.current[id];
+      if (
+        (!input.body || input.body.trim() === "") &&
+        cached &&
+        cached.body &&
+        cached.body.trim() !== ""
+      ) {
+        return;
+      }
       const prev = inflight.current ?? Promise.resolve();
       const run = prev.then(async () => {
         setSaving(true);
@@ -1126,6 +1155,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       forceSave,
       setDraft,
       refresh,
+      refreshNoteBody,
       allVaultData,
       journalNotes,
       tagsByVault,
@@ -1182,6 +1212,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       forceSave,
       setDraft,
       refresh,
+      refreshNoteBody,
       allVaultData,
       journalNotes,
       tagsByVault,

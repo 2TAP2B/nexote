@@ -73,6 +73,11 @@ export type ImageNote = {
   title: string;
 };
 
+export type HistoryVersion = {
+  timestamp: string;
+  snippet: string;
+};
+
 export type ImageMeta = {
   name: string;
   path: string;
@@ -178,6 +183,28 @@ export const api = {
   remove: (vaultId: string, id: string) =>
     request<void>(`${vaultBase(vaultId)}/notes/${id}`, {
       method: "DELETE",
+    }),
+
+  // --- Note history (vault-scoped) ---
+  listHistory: (vaultId: string, id: string) =>
+    request<{ versions: HistoryVersion[] }>(
+      `${vaultBase(vaultId)}/notes/${id}/history`,
+    ),
+  getHistoryVersion: (vaultId: string, id: string, ts: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/${id}/history/${ts}`),
+  restoreHistoryVersion: (vaultId: string, id: string, ts: string) =>
+    request<Note>(`${vaultBase(vaultId)}/notes/${id}/history/${ts}/restore`, {
+      method: "POST",
+    }),
+
+  // --- Journal note history (vault-independent) ---
+  journalListHistory: (id: string) =>
+    request<{ versions: HistoryVersion[] }>(`/api/journal/notes/${id}/history`),
+  journalGetHistoryVersion: (id: string, ts: string) =>
+    request<Note>(`/api/journal/notes/${id}/history/${ts}`),
+  journalRestoreHistoryVersion: (id: string, ts: string) =>
+    request<Note>(`/api/journal/notes/${id}/history/${ts}/restore`, {
+      method: "POST",
     }),
 
   // --- Folders (vault-scoped) ---
