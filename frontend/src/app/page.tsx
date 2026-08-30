@@ -351,6 +351,12 @@ function AppShell() {
             open={Boolean(galleryCollection)}
             collection={galleryCollection}
             onClose={() => setGalleryCollection(null)}
+            onExit={() => {
+              // Leaving the gallery returns to the dashboard, not back to an
+              // item still open as the active note (which would loop).
+              setGalleryCollection(null);
+              void openTab(DASHBOARD_ID);
+            }}
             onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
             onCollectionChanged={setGalleryCollection}
           />

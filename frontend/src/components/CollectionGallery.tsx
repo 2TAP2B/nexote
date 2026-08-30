@@ -13,6 +13,7 @@ type Props = {
   open: boolean;
   collection: CollectionMeta;
   onClose: () => void;
+  onExit?: () => void;
   onOpenNote: (vaultId: string, id: string) => void;
   onCollectionChanged?: (c: CollectionMeta) => void;
 };
@@ -28,6 +29,7 @@ export default function CollectionGallery({
   open,
   collection,
   onClose,
+  onExit,
   onOpenNote,
   onCollectionChanged,
 }: Props) {
@@ -91,7 +93,7 @@ export default function CollectionGallery({
         <button
           type="button"
           aria-label="Close gallery"
-          onClick={onClose}
+          onClick={() => (onExit ? onExit() : onClose())}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-5 w-5" />
