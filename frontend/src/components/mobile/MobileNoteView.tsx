@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor";
 import AICommandPanel from "@/components/AICommandPanel";
+import CollectionItemHeader from "@/components/CollectionItemHeader";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import type { Note } from "@/lib/api";
@@ -286,6 +287,7 @@ export default function MobileNoteView({
           } as React.CSSProperties
         }
       >
+        {!rawMode && <CollectionItemHeader note={activeNote} mobile />}
         {rawMode ? (
           <RawMarkdownTextarea
             ref={rawTextareaRef}

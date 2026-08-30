@@ -24,6 +24,7 @@ import { generateNoteTitle } from "@/lib/ai";
 import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import ContextMenu from "@/components/ContextMenu";
 import AICommandPanel from "@/components/AICommandPanel";
+import CollectionItemHeader from "@/components/CollectionItemHeader";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
@@ -447,6 +448,7 @@ export default function EditorPane() {
         className="nexote-editor-scroll min-h-0 flex-1 overflow-y-auto"
         style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
       >
+        {!rawMode && <CollectionItemHeader note={activeNote} />}
         {rawMode ? (
           <RawMarkdownTextarea
             ref={rawTextareaRef}
