@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Disc3 } from "lucide-react";
+import { Disc3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
@@ -13,12 +13,11 @@ type Props = {
 
 // Read-only header shown above a collection item's editor body. Displays a
 // full-width banner of the item's cover image, then all custom fields in a
-// single inline line (label: value · label: value …) collapsed behind a
-// "show more" toggle by default. Only renders for type=collection-item notes;
-// the cover and fields live in frontmatter, so the body stays clean/editable.
+// single inline line (label: value · label: value · ...) below it. Only
+// renders for type=collection-item notes; the cover and fields live in
+// frontmatter, so the body stays clean and editable.
 export default function CollectionItemHeader({ note, mobile }: Props) {
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
-  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     void api.listCollections().then((res) => setCollections(res.collections ?? []));
@@ -48,7 +47,7 @@ export default function CollectionItemHeader({ note, mobile }: Props) {
     });
 
   return (
-    <div style={mobile ? { margin: 12 } : {}}>
+    <div style={mobile ? { margin: 12, marginBottom: 4 } : {}}>
       {/* Full-width banner cover */}
       <div
         className="flex w-full items-center justify-center overflow-hidden"
@@ -72,43 +71,14 @@ export default function CollectionItemHeader({ note, mobile }: Props) {
         )}
       </div>
 
-      {/* All fields on one inline line, collapsed behind the toggle */}
+      {/* All fields on one inline line */}
       {fieldPairs.length > 0 && (
-        <div
-          style={{
-            padding: "10px 4px",
-            borderBottom: "1px solid var(--border)",
-            marginBottom: 4,
-          }}
+        <p
+          className="px-1 pt-2 pb-1 text-sm leading-snug"
+          style={{ color: "var(--foreground)" }}
         >
-          <p
-            className="overflow-hidden text-sm leading-relaxed"
-            style={{
-              color: "var(--foreground)",
-              ...(expanded
-                ? { whiteSpace: "normal" }
-                : {
-                    whiteSpace: "nowrap",
-                    textOverflow: "ellipsis",
-                  }),
-            }}
-          >
-            {fieldPairs.join("  ·  ")}
-          </p>
-
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="mt-1 flex items-center gap-1 text-xs font-medium transition-colors hover:text-primary"
-            style={{ color: "var(--muted-foreground)" }}
-          >
-            <ChevronDown
-              className="h-3.5 w-3.5 transition-transform duration-200"
-              style={{ transform: expanded ? "rotate(180deg)" : undefined }}
-            />
-            {expanded ? "Show less" : "Show more"}
-          </button>
-        </div>
+          {fieldPairs.join("  ·  ")}
+        </p>
       )}
     </div>
   );

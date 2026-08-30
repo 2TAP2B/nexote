@@ -482,8 +482,7 @@ body {
   padding: 64px 64px 120px;
   font-size: var(--editor-font-size, 16px);
   line-height: 1.75;
-  font-weight: 400;
-  outline: none;
+  font-weight: 400;  outline: none;
 }
 
 /* The raw markdown editor is a textarea; keep it clean without a visible
@@ -494,6 +493,17 @@ body {
 }
 .milkdown-raw-textarea::-webkit-scrollbar {
   display: none;
+}
+
+/* When a collection item header is shown above the editor, shrink the
+ * editor's top padding so the note text sits close to the image/info line. */
+.has-collection-header .milkdown .ProseMirror {
+  padding-top: 24px;
+}
+@media (max-width: 768px) {
+  .has-collection-header .milkdown .ProseMirror {
+    padding-top: 16px;
+  }
 }
 
 @media (max-width: 768px) {

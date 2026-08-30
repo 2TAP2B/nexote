@@ -279,7 +279,10 @@ export default function MobileNoteView({
        * touch keyboard is open the scrollport shrinks so the caret stays
        * visible above it. */}
       <div
-        className="mob-editor-scroll h-full overflow-y-auto"
+        className={
+          "mob-editor-scroll h-full overflow-y-auto" +
+          (activeNote?.type === "collection-item" ? " has-collection-header" : "")
+        }
         style={
           {
             "--editor-font-size": `${settings.editorFontSize}px`,

@@ -445,7 +445,10 @@ export default function EditorPane() {
 
       {/* Editor — the wrapper scrolls (native page-style scrollbar) */}
       <div
-        className="nexote-editor-scroll min-h-0 flex-1 overflow-y-auto"
+        className={
+          "nexote-editor-scroll min-h-0 flex-1 overflow-y-auto" +
+          (activeNote?.type === "collection-item" ? " has-collection-header" : "")
+        }
         style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
       >
         {!rawMode && <CollectionItemHeader note={activeNote} />}
