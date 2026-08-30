@@ -1311,7 +1311,14 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
         >
           <button
             type="button"
-            onClick={() => setOpenMap((prev) => ({ ...prev, [node.path]: !open }))}
+            onClick={() => {
+              // A folder in the Collections vault maps to a collection. Open
+              // its gallery instead of just expanding the folder.
+              window.dispatchEvent(
+                new CustomEvent("nexote:open-collection", { detail: node.path }),
+              );
+              setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
+            }}
             className="flex items-center gap-2 min-w-0 flex-1"
             style={{ height: 33 }}
           >

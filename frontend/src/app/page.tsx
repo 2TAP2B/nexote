@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import CommandPalette from "@/components/CommandPalette";
+import CollectionGallery from "@/components/CollectionGallery";
 import EditorPane from "@/components/EditorPane";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import MobileBottomBar from "@/components/MobileBottomBar";
@@ -26,6 +27,8 @@ import SettingsPanel from "@/components/SettingsPanel";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
+import { api } from "@/lib/api";
+import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
 
 // Redirect mobile visitors to the dedicated /m mobile UI, unless the user
@@ -55,7 +58,7 @@ export default function Page() {
 }
 
 function AppShell() {
-  const { openDaily, openTab } = useNotes();
+  const { openDaily, openTab, openNoteInVault } = useNotes();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -64,6 +67,7 @@ function AppShell() {
   const [tagSelection, setTagSelection] = useState<string | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [treeControls, setTreeControls] = useState<TreeControls>({
     expandAll: () => {},
     collapseAll: () => {},
@@ -105,17 +109,27 @@ function AppShell() {
         setSidebarView("tags");
       }
     };
+    const onOpenCollection = (e: Event) => {
+      const folder = (e as CustomEvent).detail as string;
+      if (!folder) return;
+      void api.listCollections().then((res) => {
+        const col = (res.collections ?? []).find((c) => c.name === folder);
+        if (col) setGalleryCollection(col);
+      });
+    };
     window.addEventListener("nexote:toggle-sidebar", onToggle);
     window.addEventListener("nexote:open-palette", onOpenPalette);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
+    window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
     return () => {
       window.removeEventListener("nexote:toggle-sidebar", onToggle);
       window.removeEventListener("nexote:open-palette", onOpenPalette);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
+      window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
     };
   }, []);
 
@@ -321,6 +335,15 @@ function AppShell() {
           colorScheme={colorScheme}
           onColorSchemeChange={setColorScheme}
         />
+
+        {galleryCollection && (
+          <CollectionGallery
+            open={Boolean(galleryCollection)}
+            collection={galleryCollection}
+            onClose={() => setGalleryCollection(null)}
+            onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+          />
+        )}
       </div>
     </>
   );
