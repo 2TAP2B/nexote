@@ -15,6 +15,7 @@ import {
   Loader2,
   Sparkles,
   SquareArrowOutUpRight,
+  X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,7 +37,11 @@ const MilkdownEditorWrapper = dynamic<
   }
 >(() => import("@/components/MilkdownEditor"), { ssr: false });
 
-export default function EditorPane() {
+export default function EditorPane({
+  onCloseCollectionItem,
+}: {
+  onCloseCollectionItem?: () => void;
+}) {
   const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote, copyNote, refreshNoteBody } =
     useNotes();
 
@@ -280,6 +285,8 @@ export default function EditorPane() {
     void openTab(openTabs[next]);
   };
 
+  const isCollectionItem = activeNote?.type === "collection-item";
+
   return (
     <main className="flex min-w-0 flex-1 flex-col min-h-0 bg-background">
       {/* Title bar: nav arrows, breadcrumb, actions */}
@@ -287,6 +294,35 @@ export default function EditorPane() {
         className="flex shrink-0 items-center px-4"
         style={{ height: 36, borderBottom: "1px solid var(--border)" }}
       >
+        {/* Collection items: minimal bar with a close X to return to gallery */}
+        {isCollectionItem ? (
+          <>
+            <button
+              type="button"
+              aria-label="Close collection item"
+              title="Back to collection"
+              onClick={onCloseCollectionItem}
+              className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
+            >
+              <X size={15} />
+            </button>
+            <span
+              className="ml-2 truncate text-xs text-muted-foreground/60"
+              style={{ maxWidth: 400 }}
+            >
+              {activeNote.path ? `${activeNote.path} / ` : ""}{title}
+            </span>
+            <div className="flex-1" />
+            <span className="text-xs text-muted-foreground/40">
+              {saving ? (
+                <Loader2 className="inline h-3 w-3 animate-spin" />
+              ) : (
+                "Saved"
+              )}
+            </span>
+          </>
+        ) : (
+        <>
         {/* Left: nav arrows — cycle through open tabs */}
         <div className="flex items-center gap-1">
           <button
@@ -395,6 +431,8 @@ export default function EditorPane() {
             <Ellipsis size={15} />
           </button>
         </div>
+        </>
+        )}
       </div>
 
       {overflowMenu && activeNote && (

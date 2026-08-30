@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Braces, Ellipsis, Moon, PanelLeft, Sun } from "lucide-react";
+import { BookOpen, Braces, Ellipsis, Moon, PanelLeft, Sun, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +38,7 @@ type Props = {
   onNewNote: () => void;
   onOpenSettings: () => void;
   openDaily: () => Promise<void>;
+  onCloseCollectionItem?: () => void;
 };
 
 export default function MobileNoteView({
@@ -49,6 +50,7 @@ export default function MobileNoteView({
   onNewNote,
   onOpenSettings,
   openDaily,
+  onCloseCollectionItem,
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
     useNotes();
@@ -272,7 +274,13 @@ export default function MobileNoteView({
        * on scroll-up or at top. Transparent so the editor shows through.
        * In raw mode it stays pinned so the toggle-back button is always
        * reachable. */}
-      <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} rawMode={rawMode} />
+      <MobileTopBar
+        onOpenSidebar={onOpenSidebar}
+        onOverflow={onOverflow}
+        rawMode={rawMode}
+        isCollectionItem={activeNote?.type === "collection-item"}
+        onCloseCollectionItem={onCloseCollectionItem}
+      />
 
       {/* Editor — fullscreen, fills the entire area behind the top bar. The
        * H2 note name is the first line inside the editor (editable). While the
@@ -356,11 +364,15 @@ function MobileTopBar({
   onOverflow,
   rawMode = false,
   showThemeToggle = false,
+  isCollectionItem = false,
+  onCloseCollectionItem,
 }: {
   onOpenSidebar: () => void;
   onOverflow: (x: number, y: number) => void;
   rawMode?: boolean;
   showThemeToggle?: boolean;
+  isCollectionItem?: boolean;
+  onCloseCollectionItem?: () => void;
 }) {
   const hideChrome = useScrollHideChrome();
   const visible = rawMode || hideChrome;
@@ -368,6 +380,30 @@ function MobileTopBar({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && theme === "dark";
+
+  // Collection items use a minimal bar: just a close X to return to the
+  // gallery. No sidebar toggle / three-dot menu.
+  if (isCollectionItem) {
+    return (
+      <div
+        className="pointer-events-none fixed left-0 right-0 z-40 flex items-center px-4"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
+          paddingBottom: 8,
+          transform: visible ? "translateY(0)" : "translateY(-150%)",
+          opacity: visible ? 1 : 0,
+          transition: "transform 0.25s ease, opacity 0.2s ease",
+        }}
+      >
+        <div className="pointer-events-auto">
+          <CircleButton onClick={onCloseCollectionItem} ariaLabel="Close collection item">
+            <X size={20} />
+          </CircleButton>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="pointer-events-none fixed left-0 right-0 z-40 flex items-center justify-between px-4"

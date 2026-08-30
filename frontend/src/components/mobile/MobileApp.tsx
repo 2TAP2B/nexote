@@ -280,6 +280,15 @@ export default function MobileApp() {
         onNewNote={handleNewNote}
         onOpenSettings={() => setSettingsOpen(true)}
         openDaily={openDaily}
+        onCloseCollectionItem={() => {
+          // Return to the gallery of the collection that owns this item.
+          const col = activeNote?.collection;
+          if (!col) return;
+          void api.listCollections().then((res) => {
+            const found = (res.collections ?? []).find((c) => c.id === col);
+            if (found) setGalleryCollection(found);
+          });
+        }}
       />
 
       <MobileBottomPill

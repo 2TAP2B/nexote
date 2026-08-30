@@ -58,7 +58,7 @@ export default function Page() {
 }
 
 function AppShell() {
-  const { openDaily, openTab, openNoteInVault } = useNotes();
+  const { openDaily, openTab, openNoteInVault, activeNote } = useNotes();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -318,7 +318,17 @@ function AppShell() {
           )}
 
           <main className="flex min-w-0 flex-1 flex-col min-h-0 overflow-hidden">
-            <EditorPane />
+            <EditorPane
+              onCloseCollectionItem={() => {
+                const col = activeNote?.collection;
+                if (col) {
+                  void api.listCollections().then((res) => {
+                    const found = (res.collections ?? []).find((c) => c.id === col);
+                    if (found) setGalleryCollection(found);
+                  });
+                }
+              }}
+            />
           </main>
         </div>
 
