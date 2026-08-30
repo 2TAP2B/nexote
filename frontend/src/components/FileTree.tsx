@@ -40,7 +40,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
-import { api, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
@@ -198,10 +198,17 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const isFolderOpen = useCallback(
     (path: string) => openMap[path] ?? true,
     [openMap],
   );
+
+  // Load the collection definitions so collection cards can map an item's
+  // collection id to its display name for accurate counts.
+  useEffect(() => {
+    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+  }, []);
   // Recent excludes notes already pinned as shortcuts, so a note doesn't
   // appear in both the Shortcuts and Recent sections. Recent / Shortcuts /
   // Bookmarks are aggregated across ALL vaults so they work as one set for
@@ -215,6 +222,22 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     }
     return list;
   }, [vaults, allVaultData]);
+
+  // Map collection display name -> total item count aggregated across ALL
+  // vaults (items may live in any vault, not just the Collections vault).
+  // Used by the collection cards in the sidebar.
+  const collectionItemCounts = useMemo(() => {
+    const byId: Record<string, number> = {};
+    for (const n of allVaultNotes) {
+      if (n.collection) byId[n.collection] = (byId[n.collection] ?? 0) + 1;
+    }
+    const byName: Record<string, number> = {};
+    for (const c of collections) {
+      const count = byId[c.id] ?? 0;
+      if (count > 0) byName[c.name] = count;
+    }
+    return byName;
+  }, [allVaultNotes, collections]);
 
   const recentNotes = useMemo(
     () => allVaultNotes.filter((n) => !shortcuts.has(n.id)),
@@ -998,6 +1021,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
                         collectionsVault={vault.name === "Collections"}
+                        collectionItemCounts={collectionItemCounts}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
                         onOpen={(id) => openFromSection(`vault:${vault.id}`, id)}
@@ -1038,6 +1062,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
                         collectionsVault={vault.name === "Collections"}
+                        collectionItemCounts={collectionItemCounts}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
                         onOpen={(id) => {
@@ -1181,6 +1206,7 @@ type TreeChildProps = {
   setTreeSelectedNav?: (nav: string | null) => void;
   onOpen: (id: string) => void;
   collectionsVault?: boolean;
+  collectionItemCounts?: Record<string, number>;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onBookmark: (id: string) => void;
@@ -1374,8 +1400,8 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
 // A collection shown as a distinct card inside the Collections vault — not a
 // folder row. Clicking opens the collection's gallery.
 function CollectionCard(props: TreeChildProps & { node: TreeNode }) {
-  const { node } = props;
-  const itemCount = node.notes.length;
+  const { node, collectionItemCounts } = props;
+  const itemCount = collectionItemCounts?.[node.name] ?? 0;
 
   return (
     <li className="px-1.5">
