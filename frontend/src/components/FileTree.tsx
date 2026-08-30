@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Copy,
   Database,
+  Disc3,
   Edit3,
   FileText,
   FilePlus,
@@ -996,6 +997,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         activeId={activeId}
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
+                        collectionsVault={vault.name === "Collections"}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
                         onOpen={(id) => openFromSection(`vault:${vault.id}`, id)}
@@ -1035,6 +1037,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         activeId={activeId}
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
+                        collectionsVault={vault.name === "Collections"}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
                         onOpen={(id) => {
@@ -1177,6 +1180,7 @@ type TreeChildProps = {
   treeSelectedNav?: string | null;
   setTreeSelectedNav?: (nav: string | null) => void;
   onOpen: (id: string) => void;
+  collectionsVault?: boolean;
   onDelete: (id: string) => void;
   onCopy: (id: string) => void;
   onBookmark: (id: string) => void;
@@ -1214,9 +1218,13 @@ function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
   const childProps = { ...rest, sorted };
   return (
     <ul>
-      {folders.map((child) => (
-        <FolderItem key={child.path} {...childProps} node={child} depth={depth} />
-      ))}
+      {rest.collectionsVault
+        ? folders.map((child) => (
+            <CollectionCard key={child.path} {...childProps} node={child} depth={0} />
+          ))
+        : folders.map((child) => (
+            <FolderItem key={child.path} {...childProps} node={child} depth={depth} />
+          ))}
       {notes.map((n) => (
         <NoteItem
           key={n.id}
@@ -1359,6 +1367,53 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
           depth={depth + 1}
         />
       )}
+    </li>
+  );
+}
+
+// A collection shown as a distinct card inside the Collections vault — not a
+// folder row. Clicking opens the collection's gallery.
+function CollectionCard(props: TreeChildProps & { node: TreeNode }) {
+  const { node } = props;
+  const itemCount = node.notes.length;
+
+  return (
+    <li className="px-1.5">
+      <button
+        type="button"
+        data-folder-path={node.path}
+        onClick={() => {
+          window.dispatchEvent(
+            new CustomEvent("nexote:open-collection", { detail: node.path }),
+          );
+        }}
+        className="group flex w-full items-center gap-2.5 rounded-lg border border-border p-2 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+        style={{ background: "var(--background)" }}
+      >
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+          style={{ background: "color-mix(in oklab, var(--primary) 12%, transparent)", color: "var(--primary)" }}
+        >
+          <Disc3 className="h-4.5 w-4.5" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span
+            className="truncate"
+            style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}
+          >
+            {node.name}
+          </span>
+          <span
+            className="truncate"
+            style={{ fontSize: 11, color: "var(--muted-foreground)" }}
+          >
+            {itemCount > 0 ? `${itemCount} item${itemCount === 1 ? "" : "s"}` : "Empty collection"}
+          </span>
+        </span>
+        <ChevronRight
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5"
+        />
+      </button>
     </li>
   );
 }
