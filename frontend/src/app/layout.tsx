@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Lora } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import OfflineStatus from "@/lib/offline-status";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
@@ -75,6 +76,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
+          <OfflineStatus />
           <ServiceWorkerRegister />
         </ThemeProvider>
       </body>

@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { api, type FolderMeta, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { offlinePrecache } from "@/lib/offline-db";
 
 type Draft = { title: string; body: string };
 
@@ -388,6 +389,52 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Precache the full dataset into IndexedDB (offline mirror) and react to
+  // sync events from the service worker / offline indicator.
+  useEffect(() => {
+    let cancelled = false;
+    const precache = async () => {
+      try {
+        if (!vaults.length) return;
+        // Build the lists payload: vaults + per-vault note/folder lists +
+        // marks + tags + images + collections + journal list.
+        const lists: Record<string, unknown> = {
+          "/api/vaults": { vaults },
+          "/api/collections": await api.listCollections(),
+        };
+        for (const v of vaults) {
+          try {
+            const res = await api.list(v.id);
+            lists[`/api/vaults/${v.id}/notes`] = res;
+          } catch {}
+          try {
+            const [bm, sc] = await Promise.all([
+              api.listBookmarks(v.id),
+              api.listShortcuts(v.id),
+            ]);
+            lists[`/api/vaults/${v.id}/bookmarks`] = bm;
+            lists[`/api/vaults/${v.id}/shortcuts`] = sc;
+          } catch {}
+          try {
+            lists[`/api/vaults/${v.id}/tags`] = await api.listTags(v.id);
+          } catch {}
+        }
+        try {
+          lists["/api/journal/notes"] = await api.journalList();
+        } catch {}
+        if (cancelled) return;
+        await offlinePrecache({ lists, notes: {} });
+      } catch {
+        // Best-effort; the SW also caches GETs as they happen.
+      }
+    };
+    void precache();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vaults]);
+
   // Once every vault's membership is known, fetch the bodies of any open tabs
   // that aren't cached yet (the active note was fetched immediately; these are
   // the other, non-active tabs). Resolves each tab's owning vault via the map.
@@ -517,8 +564,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [activeVaultId]);
 
   // Load notes when the active vault changes.
-  useEffect(() => {
-    if (!activeVaultId) return;
+  useEffect(() => {    if (!activeVaultId) return;
     (async () => {
       setLoading(true);
       await refresh();
@@ -832,6 +878,28 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshJournal();
   }, [refreshJournal]);
+
+  // React to offline-sync completions and conflicts from the service worker.
+  useEffect(() => {
+    const onRefresh = () => {
+      void refresh();
+      void refreshAllMarks();
+      void refreshJournal();
+    };
+    const onConflicts = (e: Event) => {
+      const urls = (e as CustomEvent).detail as string[] | undefined;
+      if (!urls || urls.length === 0) return;
+      setError(
+        "Some offline changes were not applied because those notes were edited elsewhere.",
+      );
+    };
+    window.addEventListener("nexote:refresh-data", onRefresh);
+    window.addEventListener("nexote:sync-conflicts", onConflicts as EventListener);
+    return () => {
+      window.removeEventListener("nexote:refresh-data", onRefresh);
+      window.removeEventListener("nexote:sync-conflicts", onConflicts as EventListener);
+    };
+  }, [refresh, refreshAllMarks, refreshJournal]);
 
   // Live sync: subscribe to the backend's Server-Sent Events stream and, when
   // another client saves an open note, refetch its body and swap it in (the
