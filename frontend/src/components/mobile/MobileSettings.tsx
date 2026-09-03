@@ -6,6 +6,7 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  GitBranch,
   Heart,
   Home,
   Info,
@@ -25,6 +26,7 @@ import { useEffect, useState } from "react";
 
 import { formatTitle, useNotes } from "@/lib/notes-context";
 import { api } from "@/lib/api";
+import type { GitConfig, GitStatusInfo } from "@/lib/api";
 
 type Props = {
   open: boolean;
@@ -33,7 +35,7 @@ type Props = {
   onColorSchemeChange: (scheme: string) => void;
 };
 
-type Page = "root" | "appearance" | "vaults" | "editor" | "ai" | "about";
+type Page = "root" | "appearance" | "vaults" | "editor" | "ai" | "sync" | "about";
 
 const SCHEMES = [
   { value: "default", label: "Default", swatch: "#7c3aed" },
@@ -74,6 +76,13 @@ export default function MobileSettings({
     setVaultIcon,
     settings,
     updateSettings,
+    gitConfig,
+    gitStatus,
+    saveGitConfig,
+    gitInit,
+    refreshGitStatus,
+    gitPush,
+    gitPull,
   } = useNotes();
   const { theme, setTheme } = useTheme();
   const [page, setPage] = useState<Page>("root");
@@ -84,6 +93,9 @@ export default function MobileSettings({
   const [renameValue, setRenameValue] = useState("");
   const [aiTestState, setAiTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [aiTestMessage, setAiTestMessage] = useState("");
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitMsg, setGitMsg] = useState("");
+  const [gitCreds, setGitCreds] = useState({ username: "", password: "" });
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -138,12 +150,26 @@ export default function MobileSettings({
     setRenamingId(null);
   };
 
+  // Run a git action with busy state + a status message on success/failure.
+  const runGit = async (action: () => Promise<void>, okMsg: string) => {
+    setGitBusy(true);
+    setGitMsg("");
+    try {
+      await action();
+      setGitMsg(okMsg);
+    } catch (err) {
+      setGitMsg(err instanceof Error ? err.message : "Git operation failed");
+    }
+    setGitBusy(false);
+  };
+
   const pageTitle: Record<Page, string> = {
     root: "Settings",
     appearance: "Appearance",
     vaults: "Vaults",
     editor: "Editor",
     ai: "AI",
+    sync: "Git Sync",
     about: "About",
   };
 
@@ -229,6 +255,35 @@ export default function MobileSettings({
             onTest={handleTestAI}
           />
         )}
+        {page === "sync" && (
+          <SyncPage
+            gitConfig={gitConfig}
+            gitStatus={gitStatus}
+            busy={gitBusy}
+            msg={gitMsg}
+            creds={gitCreds}
+            setCreds={setGitCreds}
+            onSave={(cfg) => void saveGitConfig(cfg)}
+            onInit={() =>
+              void runGit(async () => {
+                await gitInit();
+              }, "Repository initialized.")
+            }
+            onPush={() =>
+              void runGit(
+                () => gitPush(gitCreds.username ? gitCreds : undefined),
+                "Pushed.",
+              )
+            }
+            onPull={() =>
+              void runGit(
+                () => gitPull(gitCreds.username ? gitCreds : undefined),
+                "Pulled.",
+              )
+            }
+            onRefresh={() => void refreshGitStatus()}
+          />
+        )}
         {page === "about" && <AboutPage />}
       </div>
     </div>
@@ -256,6 +311,8 @@ function RootPage({
       <NavRow icon={<PenLine size={18} />} label="Editor" onClick={() => onNavigate("editor")} />
       <Divider />
       <NavRow icon={<Zap size={18} />} label="AI" onClick={() => onNavigate("ai")} />
+      <Divider />
+      <NavRow icon={<GitBranch size={18} />} label="Git sync" onClick={() => onNavigate("sync")} />
       <Divider />
       <NavRow icon={<Info size={18} />} label="About" onClick={() => onNavigate("about")} />
     </Group>
@@ -600,6 +657,200 @@ function AIPage({
         </div>
       </Group>
     </>
+  );
+}
+
+// ── Git sync page ──────────────────────────────────────────────────
+
+function SyncPage({
+  gitConfig,
+  gitStatus,
+  busy,
+  msg,
+  creds,
+  setCreds,
+  onSave,
+  onInit,
+  onPush,
+  onPull,
+  onRefresh,
+}: {
+  gitConfig: GitConfig | null;
+  gitStatus: GitStatusInfo | null;
+  busy: boolean;
+  msg: string;
+  creds: { username: string; password: string };
+  setCreds: (c: { username: string; password: string }) => void;
+  onSave: (cfg: GitConfig) => void;
+  onInit: () => void;
+  onPush: () => void;
+  onPull: () => void;
+  onRefresh: () => void;
+}) {
+  if (!gitConfig) {
+    return (
+      <div className="px-6 py-8 text-center" style={{ fontSize: 13, color: "var(--mob-muted)" }}>
+        Loading…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Group label="Git sync">
+        <ToggleRow
+          label="Enable Git Sync"
+          desc="Auto-commit changes and optionally push to a remote"
+          checked={gitConfig.enabled}
+          onChange={(v) => onSave({ ...gitConfig, enabled: v })}
+        />
+      </Group>
+
+      {gitConfig.enabled && (
+        <>
+          <Group label="Repository">
+            <FieldInput
+              label="Remote URL"
+              hint="e.g. https://github.com/user/repo.git"
+              value={gitConfig.remote}
+              onChange={(v) => onSave({ ...gitConfig, remote: v })}
+              placeholder="https://github.com/user/repo.git"
+            />
+            <Divider />
+            <FieldInput
+              label="Branch"
+              hint="Default: main"
+              value={gitConfig.branch}
+              onChange={(v) => onSave({ ...gitConfig, branch: v })}
+              placeholder="main"
+            />
+            <Divider />
+            <FieldInput
+              label="Author name"
+              value={gitConfig.authorName}
+              onChange={(v) => onSave({ ...gitConfig, authorName: v })}
+            />
+            <Divider />
+            <FieldInput
+              label="Author email"
+              value={gitConfig.authorEmail}
+              onChange={(v) => onSave({ ...gitConfig, authorEmail: v })}
+            />
+          </Group>
+
+          <Group label="Options">
+            <ToggleRow
+              label="Include images"
+              desc="Sync uploaded images with notes"
+              checked={gitConfig.includeImages}
+              onChange={(v) => onSave({ ...gitConfig, includeImages: v })}
+            />
+            <Divider />
+            <ToggleRow
+              label="Auto-push"
+              desc="Push after every commit"
+              checked={gitConfig.autoPush}
+              onChange={(v) => onSave({ ...gitConfig, autoPush: v })}
+            />
+          </Group>
+
+          <Group label="Credentials (optional)">
+            <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
+              Only needed for HTTPS remotes. SSH keys work without credentials.
+            </div>
+            <FieldInput
+              label="Username"
+              value={creds.username}
+              onChange={(v) => setCreds({ ...creds, username: v })}
+              placeholder="Username / token name"
+            />
+            <Divider />
+            <FieldInput
+              label="Password / token"
+              value={creds.password}
+              onChange={(v) => setCreds({ ...creds, password: v })}
+              password
+            />
+          </Group>
+
+          <Group label="Actions">
+            <div className="flex flex-wrap gap-2 px-3 py-3">
+              <ActionBtn label="Init repo" onClick={onInit} disabled={busy} />
+              <ActionBtn label="Push" onClick={onPush} disabled={busy} />
+              <ActionBtn label="Pull" onClick={onPull} disabled={busy} />
+              <ActionBtn label="Refresh" onClick={onRefresh} disabled={busy} subtle />
+            </div>
+            {msg && (
+              <div className="px-3 pb-3 text-xs" style={{ color: "var(--mob-muted)" }}>
+                {msg}
+              </div>
+            )}
+          </Group>
+
+          {gitStatus && (
+            <Group label="Status">
+              {gitStatus.hasRepo ? (
+                <>
+                  <InfoRow
+                    label="State"
+                    value={gitStatus.clean ? "Clean" : `${gitStatus.dirtyFiles} uncommitted`}
+                  />
+                  <Divider />
+                  <InfoRow label="Branch" value={gitStatus.branch} />
+                  <Divider />
+                  <InfoRow label="Remote" value={gitStatus.remote || "none"} />
+                  {(gitStatus.ahead > 0 || gitStatus.behind > 0) && (
+                    <>
+                      <Divider />
+                      <InfoRow
+                        label="Sync"
+                        value={`${gitStatus.ahead} ahead · ${gitStatus.behind} behind`}
+                      />
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="px-3 py-3 text-xs" style={{ color: "var(--mob-muted)" }}>
+                  No repository yet. Tap "Init repo" to create one.
+                </div>
+              )}
+            </Group>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function ActionBtn({
+  label,
+  onClick,
+  disabled,
+  subtle,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  subtle?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-lg px-3.5 py-2 text-sm font-medium transition-opacity disabled:opacity-40"
+      style={
+        subtle
+          ? {
+              background: "transparent",
+              color: "var(--mob-text)",
+              border: "1px solid color-mix(in oklab, var(--mob-muted) 30%, transparent)",
+            }
+          : { background: "var(--mob-accent)", color: "#fff" }
+      }
+    >
+      {label}
+    </button>
   );
 }
 

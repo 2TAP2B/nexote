@@ -2470,7 +2470,7 @@ function TasksView({
   onOpenNote: (vaultId: string, noteId: string) => void;
   onToggle: (vaultId: string, noteId: string, line: number, checked: boolean) => void;
 }) {
-  const [showCompleted, setShowCompleted] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const unchecked = useMemo(
     () => tasks.filter((t) => !t.checked).sort((a, b) => a.noteTitle.localeCompare(b.noteTitle)),
@@ -2481,7 +2481,32 @@ function TasksView({
     [tasks],
   );
 
-  const renderTask = (t: TaskItem) => {
+  // Group open tasks by their owning note (unchecked is already note-sorted)
+  // so the list reads as sections instead of repeating the note name per row.
+  const groupedOpen = useMemo(() => {
+    const groups: {
+      vaultId: string;
+      noteId: string;
+      title: string;
+      tasks: TaskItem[];
+    }[] = [];
+    for (const t of unchecked) {
+      const last = groups[groups.length - 1];
+      if (last && last.vaultId === t.vaultId && last.noteId === t.noteId) {
+        last.tasks.push(t);
+      } else {
+        groups.push({
+          vaultId: t.vaultId,
+          noteId: t.noteId,
+          title: t.noteTitle || "Untitled",
+          tasks: [t],
+        });
+      }
+    }
+    return groups;
+  }, [unchecked]);
+
+  const renderTask = (t: TaskItem, showNote: boolean) => {
     const navKey = `task:${t.vaultId}:${t.noteId}:${t.line}`;
     const navSelected = treeSelectedNav === navKey;
     return (
@@ -2489,34 +2514,36 @@ function TasksView({
         <div
           data-task-key={`${t.vaultId}:${t.noteId}:${t.line}`}
           onMouseEnter={() => setTreeSelectedNav?.(navKey)}
-          className="group flex w-full items-start gap-2 transition-colors hover:bg-white/5"
+          className="group flex w-full items-start gap-2.5 transition-colors hover:bg-white/5"
           style={{
             paddingLeft: 14,
             paddingRight: 14,
-            paddingTop: 7,
-            paddingBottom: 7,
+            paddingTop: 6,
+            paddingBottom: 6,
             borderRadius: 5,
             background: navSelected ? "rgba(255,255,255,0.06)" : undefined,
           }}
         >
           <button
             type="button"
+            aria-label={t.checked ? "Mark as open" : "Mark as done"}
             onClick={(e) => {
               e.stopPropagation();
               onToggle(t.vaultId, t.noteId, t.line, !t.checked);
             }}
-            className="mt-0.5 flex shrink-0 items-center justify-center"
+            className="mt-0.5 flex shrink-0 items-center justify-center transition-colors"
             style={{
-              width: 20,
-              height: 20,
-              borderRadius: 5,
-              border: t.checked ? "2px solid var(--primary)" : "2px solid var(--muted-foreground)",
+              width: 18,
+              height: 18,
+              borderRadius: 6,
+              border: t.checked
+                ? "2px solid var(--primary)"
+                : "2px solid color-mix(in oklab, var(--muted-foreground) 55%, transparent)",
               background: t.checked ? "var(--primary)" : "transparent",
-              opacity: t.checked ? 1 : 0.5,
             }}
           >
             {t.checked && (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                 <path d="M2.5 6L5 8.5L9.5 3.5" stroke="var(--primary-foreground)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             )}
@@ -2542,7 +2569,9 @@ function TasksView({
               className="truncate"
               style={{ fontSize: 11, color: "var(--muted-foreground)", opacity: 0.7 }}
             >
-              {t.noteTitle || "Untitled"} · {t.vaultName} · {formatTime(t.updatedAt)}
+              {showNote
+                ? `${t.noteTitle || "Untitled"} · ${t.vaultName} · ${formatTime(t.updatedAt)}`
+                : `${t.vaultName} · ${formatTime(t.updatedAt)}`}
             </span>
           </button>
         </div>
@@ -2552,33 +2581,87 @@ function TasksView({
 
   return (
     <div className="pt-1">
-      {tasks.length === 0 && (
-        <div className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
-          No tasks found. Add "- [ ]" checkboxes to your notes.
+      {tasks.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+          <ListTodo size={20} style={{ color: "var(--muted-foreground)", opacity: 0.6 }} />
+          <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+            No tasks yet. Add &quot;- [ ]&quot; checkboxes to your notes.
+          </div>
         </div>
-      )}
-      <ul>
-        {unchecked.map((t) => renderTask(t))}
-      </ul>
-      {completed.length > 0 && (
-        <div className="mt-2">
-          <button
-            type="button"
-            onClick={() => setShowCompleted((v) => !v)}
-            className="flex w-full items-center gap-1 px-3 py-1 text-xs transition-colors hover:bg-white/5"
-            style={{ borderRadius: 5, color: "var(--muted-foreground)" }}
-          >
-            <ChevronRight
-              className={["h-3 w-3 shrink-0 transition-transform", showCompleted ? "rotate-90" : ""].join(" ")}
-            />
-            <span>Completed · {completed.length}</span>
-          </button>
-          {showCompleted && (
-            <ul>
-              {completed.map((t) => renderTask(t))}
-            </ul>
+      ) : (
+        <>
+          {/* Open tasks grouped by note */}
+          <ul>
+            {groupedOpen.map((g) => (
+              <li key={`${g.vaultId}:${g.noteId}`}>
+                <button
+                  type="button"
+                  onClick={() => onOpenNote(g.vaultId, g.noteId)}
+                  className="flex w-full items-center gap-1.5 transition-colors hover:bg-white/5"
+                  style={{ paddingLeft: 14, paddingRight: 14, paddingTop: 9, paddingBottom: 3, borderRadius: 5 }}
+                >
+                  <FileText
+                    size={11}
+                    className="shrink-0"
+                    style={{ color: "var(--muted-foreground)", opacity: 0.7 }}
+                  />
+                  <span
+                    className="truncate"
+                    style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)" }}
+                  >
+                    {g.title}
+                  </span>
+                  <span
+                    className="ml-auto shrink-0 rounded-full px-1.5"
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      color: "var(--primary)",
+                      background: "color-mix(in oklab, var(--primary) 10%, transparent)",
+                    }}
+                  >
+                    {g.tasks.length}
+                  </span>
+                </button>
+                <ul>
+                  {g.tasks.map((t) => renderTask(t, false))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+
+          {/* Completed */}
+          {completed.length > 0 && (
+            <div className="mt-2" style={{ borderTop: "1px solid color-mix(in oklab, var(--muted-foreground) 15%, transparent)" }}>
+              <button
+                type="button"
+                onClick={() => setShowCompleted((v) => !v)}
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 transition-colors hover:bg-white/5"
+                style={{ borderRadius: 5, color: "var(--muted-foreground)" }}
+              >
+                <ChevronRight
+                  className={["h-3 w-3 shrink-0 transition-transform", showCompleted ? "rotate-90" : ""].join(" ")}
+                />
+                <span style={{ fontSize: 11, fontWeight: 600 }}>Completed</span>
+                <span
+                  className="shrink-0 rounded-full px-1.5"
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 500,
+                    background: "color-mix(in oklab, var(--muted-foreground) 12%, transparent)",
+                  }}
+                >
+                  {completed.length}
+                </span>
+              </button>
+              {showCompleted && (
+                <ul>
+                  {completed.map((t) => renderTask(t, true))}
+                </ul>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

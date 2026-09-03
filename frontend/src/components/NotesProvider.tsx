@@ -1391,6 +1391,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       await refreshGitStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to init git repo");
+      throw e;
     }
   }, [refreshGitStatus]);
 
@@ -1400,6 +1401,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       await refreshGitStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Git push failed");
+      throw e;
     }
   }, [refreshGitStatus]);
 
@@ -1412,6 +1414,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       await refreshGitStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Git pull failed");
+      throw e;
     }
   }, [refresh, refreshAllMarks, refreshJournal, refreshGitStatus]);
 
