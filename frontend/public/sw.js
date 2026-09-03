@@ -116,19 +116,28 @@ async function outboxRemove(id) {
 // --- Precache: persist the full dataset (posted by the app) ---
 self.addEventListener("message", (e) => {
   const data = e.data;
-  if (!data || data.type !== "nexote:precache") return;
-  const { lists, notes } = data;
-  openDB().then(async (db) => {
-    const tx = db.transaction(["lists", "notes"], "readwrite");
-    const lStore = tx.objectStore("lists");
-    const nStore = tx.objectStore("notes");
-    for (const [url, value] of Object.entries(lists || {})) {
-      lStore.put({ id: url, value });
-    }
-    for (const [key, note] of Object.entries(notes || {})) {
-      nStore.put({ id: key, note });
-    }
-  });
+  if (!data) return;
+  if (data.type === "nexote:precache") {
+    const { lists, notes } = data;
+    openDB().then(async (db) => {
+      const tx = db.transaction(["lists", "notes"], "readwrite");
+      const lStore = tx.objectStore("lists");
+      const nStore = tx.objectStore("notes");
+      for (const [url, value] of Object.entries(lists || {})) {
+        lStore.put({ id: url, value });
+      }
+      for (const [key, note] of Object.entries(notes || {})) {
+        nStore.put({ id: key, note });
+      }
+    });
+    return;
+  }
+  // Window asks the SW to replay the outbox after a reconnect. The SW scope
+  // does not receive "online" events, so the window must trigger it.
+  if (data.type === "nexote:flush") {
+    flushOutbox();
+    return;
+  }
 });
 
 // --- Install / activate ---
@@ -192,9 +201,8 @@ async function flushOutbox() {
   } catch {}
 }
 
-self.addEventListener("online", () => {
-  flushOutbox();
-});
+// Note: the SW scope does not receive "online"/"offline" events — the window
+// side (OfflineStatus) detects reconnects and sends "nexote:flush" instead.
 
 // --- Fetch strategy ---
 self.addEventListener("fetch", (e) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
@@ -137,45 +137,9 @@ export default function MobileApp() {
     if (idx >= 0 && idx < openTabs.length - 1) void openTab(openTabs[idx + 1]);
   }, [openTabs, activeId, openTab]);
 
-  // Android PWA system-back handling: the back button should step back through
-  // the note history instead of closing the app. We push a history entry for
-  // each note the user opens and, on popstate, restore the previous tab. When
-  // the history is back to the dashboard, the next back exits the app.
-  const historyRef = useRef<string[]>([DASHBOARD_ID]);
-  const openTabRef = useRef(openTab);
-  openTabRef.current = openTab;
-  useEffect(() => {
-    if (!activeId || activeId === DASHBOARD_ID) return;
-    const last = historyRef.current[historyRef.current.length - 1];
-    if (last !== activeId) {
-      historyRef.current.push(activeId);
-      try {
-        window.history.pushState({ nexoteDepth: historyRef.current.length }, "");
-      } catch {
-        // ignore
-      }
-    }
-  }, [activeId]);
-
-  useEffect(() => {
-    const onPop = () => {
-      if (historyRef.current.length > 1) {
-        historyRef.current.pop();
-        const prev = historyRef.current[historyRef.current.length - 1];
-        void openTabRef.current(prev);
-        // Re-push so a subsequent back within the app returns here, and the
-        // final back (from the dashboard) exits the app.
-        try {
-          window.history.pushState({ nexoteDepth: historyRef.current.length }, "");
-        } catch {
-          // ignore
-        }
-      }
-      // At depth 1 (dashboard) we let the default back behavior exit the app.
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  // Android PWA system-back is now handled by real URL routing (pushState in
+  // NotesProvider). The browser history stack lets back/forward navigate
+  // between notes naturally; the final back exits the app.
 
   const handleNewNote = useCallback(() => {
     void create();

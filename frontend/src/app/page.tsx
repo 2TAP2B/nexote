@@ -15,7 +15,7 @@ import {
   SquareStack,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
@@ -36,16 +36,20 @@ import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
 // has explicitly chosen "View desktop" (nexote-force-desktop in localStorage).
 function MobileRedirect() {
   const router = useRouter();
+  const pathname = usePathname();
   useEffect(() => {
     try {
-      if (localStorage.getItem("nexote-force-desktop") === "1") return;
+      if (localStorage.getItem("nexote:force-desktop") === "1") return;
     } catch {
       // localStorage unavailable — skip redirect
     }
     const ua = navigator.userAgent;
     const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
-    if (isMobile) router.replace("/m");
-  }, [router]);
+    if (!isMobile) return;
+    // Preserve deep links: /note/<v>/<n> -> /m/note/<v>/<n>, etc.
+    const mobilePath = pathname === "/" ? "/m" : `/m${pathname}`;
+    router.replace(mobilePath);
+  }, [router, pathname]);
   return null;
 }
 

@@ -156,6 +156,50 @@ export function formatTitle(template: string, date = new Date()): string {
     .replace(/ss/g, pad(date.getSeconds()));
 }
 
+// --- URL helpers ---
+// The app uses pushState to reflect the active note in the URL without a page
+// reload. next.config.mjs rewrites /note/*, /journal/*, /dashboard back to the
+// SPA shell so deep links work on a fresh load.
+
+// Parse the current URL into { kind, vaultId?, noteId? } or null for the root.
+function parseNoteUrl(pathname: string): { kind: "note" | "journal" | "dashboard"; vaultId?: string; noteId?: string } | null {
+  // Strip a leading /m (mobile prefix) — routing logic is identical.
+  const p = pathname.replace(/^\/m(\/|$)/, "/");
+  if (p === "/" || p === "/dashboard") return { kind: "dashboard" };
+  const noteM = p.match(/^\/note\/([^/]+)\/([^/]+)\/?$/);
+  if (noteM) return { kind: "note", vaultId: noteM[1], noteId: noteM[2] };
+  const journalM = p.match(/^\/journal\/([^/]+)\/?$/);
+  if (journalM) return { kind: "journal", noteId: journalM[1] };
+  return null;
+}
+
+// Build the URL path for a given note id + vault context.
+function noteUrlPath(id: string, vaultId: string | null, isJournal: boolean, mobile: boolean): string {
+  const prefix = mobile ? "/m" : "";
+  if (id === DASHBOARD_ID) return `${prefix}/dashboard`;
+  if (isJournal) return `${prefix}/journal/${id}`;
+  return `${prefix}/note/${vaultId ?? ""}/${id}`;
+}
+
+// Push a new history entry for the active note (user navigation — back works).
+function pushNoteUrl(id: string, vaultId: string | null, isJournal: boolean) {
+  if (typeof window === "undefined") return;
+  const mobile = window.location.pathname.startsWith("/m");
+  const path = noteUrlPath(id, vaultId, isJournal, mobile);
+  if (window.location.pathname === path) return;
+  window.history.pushState({ nexoteId: id }, "", path);
+}
+
+// Replace the current history entry (used by closeTab so back doesn't re-open
+// the closed note).
+function replaceNoteUrl(id: string, vaultId: string | null, isJournal: boolean) {
+  if (typeof window === "undefined") return;
+  const mobile = window.location.pathname.startsWith("/m");
+  const path = noteUrlPath(id, vaultId, isJournal, mobile);
+  if (window.location.pathname === path) return;
+  window.history.replaceState({ nexoteId: id }, "", path);
+}
+
 export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [vaults, setVaults] = useState<VaultMeta[]>([]);
   const [activeVaultId, setActiveVaultId] = useState<string | null>(null);
@@ -191,9 +235,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const journalIdsRef = useRef<Set<string>>(new Set());
   // Mirrors of state for use inside the mount-once SSE effect (avoids stale
-  // closures over notesById / activeId).
+  // closures over notesById / activeId / activeVaultId).
   const notesByIdRef = useRef<Record<string, Note>>(notesById);
   const activeIdRef = useRef<string | null>(activeId);
+  const activeVaultIdRef = useRef<string | null>(activeVaultId);
 
   useEffect(() => {
     notesByIdRef.current = notesById;
@@ -202,6 +247,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    activeVaultIdRef.current = activeVaultId;
+  }, [activeVaultId]);
 
   // Persist open tabs + active note across refreshes.
   useEffect(() => {
@@ -291,6 +340,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // skeleton instead of the dashboard while the body loads) and the active
   // note's body is fetched right away using the last active vault (or journal).
   const restoreTabs = useCallback(async () => {
+    // If the URL named a specific note, the URL-nav effect already restored it.
+    if (urlNavRef.current) return;
     try {
       const storedTabs = localStorage.getItem("nexote:open-tabs");
       const storedActive = localStorage.getItem("nexote:active-id");
@@ -386,6 +437,90 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : "Failed to load vaults");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // URL-driven navigation: on mount, if the URL names a note (/note/<vaultId>/
+  // <noteId> or /journal/<id>), open it directly — this takes priority over
+  // localStorage restore. Also listen for popstate (browser back/forward).
+  const urlNavRef = useRef(false);
+  useEffect(() => {
+    const fromUrl = parseNoteUrl(window.location.pathname);
+    if (fromUrl && fromUrl.kind === "note" && fromUrl.vaultId && fromUrl.noteId) {
+      urlNavRef.current = true;
+      // Switch to the URL's vault, then open the note once the vault is ready.
+      setActiveVaultId(fromUrl.vaultId);
+      void (async () => {
+        try {
+          const note = await api.get(fromUrl.vaultId!, fromUrl.noteId!);
+          setNotesById((prev) => ({ ...prev, [note.id]: note }));
+          setOpenTabs((prev) => appendOpenTab(prev, note.id));
+          setActiveId(note.id);
+        } catch {
+          // note not found via deep link — fall back to restoreTabs
+          urlNavRef.current = false;
+        }
+        setRestoredTabs(true);
+      })();
+    } else if (fromUrl && fromUrl.kind === "journal" && fromUrl.noteId) {
+      urlNavRef.current = true;
+      void (async () => {
+        try {
+          journalIdsRef.current.add(fromUrl.noteId!);
+          const note = await api.journalGet(fromUrl.noteId!);
+          setNotesById((prev) => ({ ...prev, [note.id]: note }));
+          setOpenTabs((prev) => appendOpenTab(prev, note.id));
+          setActiveId(note.id);
+        } catch {
+          urlNavRef.current = false;
+        }
+        setRestoredTabs(true);
+      })();
+    }
+    // popstate: browser back/forward — open the note the URL names without
+    // pushing a new history entry.
+    const onPopState = () => {
+      const parsed = parseNoteUrl(window.location.pathname);
+      if (!parsed) return;
+      if (parsed.kind === "dashboard") {
+        setActiveId(DASHBOARD_ID);
+        return;
+      }
+      if (parsed.kind === "journal" && parsed.noteId) {
+        const nid = parsed.noteId;
+        journalIdsRef.current.add(nid);
+        void (async () => {
+          try {
+            if (!notesByIdRef.current[nid]) {
+              const note = await api.journalGet(nid);
+              setNotesById((prev) => ({ ...prev, [note.id]: note }));
+            }
+            setOpenTabs((prev) => appendOpenTab(prev, nid));
+            setActiveId(nid);
+          } catch {}
+        })();
+        return;
+      }
+      if (parsed.kind === "note" && parsed.vaultId && parsed.noteId) {
+        const vid = parsed.vaultId;
+        const nid = parsed.noteId;
+        if (vid !== activeVaultIdRef.current) {
+          setActiveVaultId(vid);
+        }
+        void (async () => {
+          try {
+            if (!notesByIdRef.current[nid]) {
+              const note = await api.get(vid, nid);
+              setNotesById((prev) => ({ ...prev, [note.id]: note }));
+            }
+            setOpenTabs((prev) => appendOpenTab(prev, nid));
+            setActiveId(nid);
+          } catch {}
+        })();
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -576,12 +711,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     async (id: string) => {
       if (id === DASHBOARD_ID) {
         setActiveId(DASHBOARD_ID);
+        pushNoteUrl(DASHBOARD_ID, null, false);
         return;
       }
       // Route to the note's owning vault (tabs are shared across all vaults).
       const vaultId = noteVaultMap[id] ?? activeVaultId;
       if (openTabs.includes(id)) {
         setActiveId(id);
+        pushNoteUrl(id, vaultId, journalIdsRef.current.has(id));
         if (vaultId && !notesById[id]) {
           try {
             const note = await api.get(vaultId, id);
@@ -595,6 +732,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (!vaultId) return;
       setActiveId(id);
       setOpenTabs((prev) => appendOpenTab(prev, id));
+      pushNoteUrl(id, vaultId, journalIdsRef.current.has(id));
       if (!notesById[id]) {
         try {
           const note = await api.get(vaultId, id);
@@ -624,6 +762,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       journalIdsRef.current.add(id);
       setActiveId(id);
       setOpenTabs((prev) => appendOpenTab(prev, id));
+      pushNoteUrl(id, null, true);
       if (!notesById[id]) {
         try {
           const note = await api.journalGet(id);
@@ -643,7 +782,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setActiveId((cur) => {
         if (cur !== id) return cur;
         const idx = prev.indexOf(id);
-        return next[idx] ?? next[idx - 1] ?? next[0] ?? null;
+        const newActive = next[idx] ?? next[idx - 1] ?? next[0] ?? null;
+        // Replace the URL so back doesn't re-open the closed tab.
+        if (newActive === DASHBOARD_ID || newActive === null) {
+          replaceNoteUrl(DASHBOARD_ID, null, false);
+        } else {
+          const vid = noteVaultMap[newActive] ?? activeVaultIdRef.current;
+          replaceNoteUrl(newActive, vid, journalIdsRef.current.has(newActive));
+        }
+        return newActive;
       });
       return next;
     });
@@ -652,7 +799,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       delete next[id];
       return next;
     });
-  }, []);
+  }, [noteVaultMap]);
 
   const create = useCallback(
     async (input?: { title?: string; path?: string }) => {
@@ -681,6 +828,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
         setOpenTabs((prev) => appendOpenTab(prev, note.id));
         setActiveId(note.id);
+        pushNoteUrl(note.id, activeVaultId, false);
         window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create note");
@@ -715,6 +863,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
         setOpenTabs((prev) => appendOpenTab(prev, note.id));
         setActiveId(note.id);
+        pushNoteUrl(note.id, vaultId, false);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to copy note");
       }
@@ -1045,6 +1194,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       void refreshJournal();
       setOpenTabs((prev) => appendOpenTab(prev, note.id));
       setActiveId(note.id);
+      pushNoteUrl(note.id, null, true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to open daily journal");
     }

@@ -26,6 +26,14 @@ const nextConfig = {
         source: "/api/:path*",
         destination: `${backend}/api/:path*`,
       },
+      // SPA deep-link routes — serve the same shell so the client can read the
+      // URL via window.location and resolve the note client-side.
+      { source: "/note/:vaultId/:noteId", destination: "/" },
+      { source: "/journal/:noteId", destination: "/" },
+      { source: "/dashboard", destination: "/" },
+      { source: "/m/note/:vaultId/:noteId", destination: "/m" },
+      { source: "/m/journal/:noteId", destination: "/m" },
+      { source: "/m/dashboard", destination: "/m" },
     ];
   },
 };

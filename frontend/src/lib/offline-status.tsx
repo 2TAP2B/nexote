@@ -41,6 +41,12 @@ export default function OfflineStatus() {
       setOnline(reachable);
       if (reachable) {
         try { localStorage.setItem("nexote:online", "1"); } catch {}
+        // If we just came back online with queued changes, tell the SW to flush.
+        const count = await offlineOutboxCount();
+        if (count > 0) {
+          setSyncing(true);
+          navigator.serviceWorker?.controller?.postMessage({ type: "nexote:flush" });
+        }
       } else {
         try { localStorage.setItem("nexote:online", "0"); } catch {}
       }
@@ -53,13 +59,7 @@ export default function OfflineStatus() {
 
   const handleOnline = useCallback(() => {
     void probe();
-    setSyncing(true);
-    window.setTimeout(() => {
-      setSyncing(false);
-      void refreshPending();
-      window.dispatchEvent(new CustomEvent("nexote:refresh-data"));
-    }, 1200);
-  }, [probe, refreshPending]);
+  }, [probe]);
 
   const handleOffline = useCallback(() => {
     setOnline(false);
@@ -81,11 +81,12 @@ export default function OfflineStatus() {
     window.addEventListener("offline", handleOffline);
     // Listen for the SW finishing a sync replay.
     const onSynced = (e: Event) => {
-      const conflicts = (e as MessageEvent).data as { conflicts?: string[] };
-      if (conflicts?.conflicts?.length) {
+      const msg = (e as MessageEvent).data as { type?: string; conflicts?: string[] };
+      if (!msg || msg.type !== "nexote:synced") return;
+      if (msg.conflicts?.length) {
         window.dispatchEvent(
           new CustomEvent("nexote:sync-conflicts", {
-            detail: conflicts.conflicts,
+            detail: msg.conflicts,
           }),
         );
       }
