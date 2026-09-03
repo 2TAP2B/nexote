@@ -2533,12 +2533,13 @@ function TasksView({
             }}
             className="mt-0.5 flex shrink-0 items-center justify-center transition-colors"
             style={{
-              width: 18,
-              height: 18,
+              width: 20,
+              height: 20,
+              minHeight: 20,
               borderRadius: 6,
               border: t.checked
                 ? "2px solid var(--primary)"
-                : "2px solid color-mix(in oklab, var(--muted-foreground) 55%, transparent)",
+                : "2px solid var(--muted-foreground)",
               background: t.checked ? "var(--primary)" : "transparent",
             }}
           >
