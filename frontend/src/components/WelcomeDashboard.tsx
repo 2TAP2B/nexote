@@ -172,7 +172,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
 
   return (
     <main className="flex flex-1 items-start justify-center overflow-y-auto bg-background p-6 md:p-10">
-      <div className="flex w-full max-w-3xl flex-col gap-6">
+      <div className="flex w-full max-w-3xl flex-col gap-8">
         {/* Hero */}
         <div className="flex flex-col items-center gap-2 pt-4 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: "var(--muted)" }}>
@@ -198,6 +198,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={shortcutNotes.length}
             open={shortcutsOpen}
             onToggle={toggleShortcuts}
+            tint={0}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "shortcuts" }))}
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -223,6 +224,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={recents.length}
             open={recentsOpen}
             onToggle={toggleRecents}
+            tint={1}
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {(recentsOpen ? recents : recents.slice(0, 3)).map((entry) => (
@@ -295,6 +297,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={bookmarkNotes.length}
             open={bookmarksOpen}
             onToggle={toggleBookmarks}
+            tint={0}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "bookmarks" }))}
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -320,6 +323,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={openTasks.length}
             open={tasksOpen}
             onToggle={toggleTasks}
+            tint={1}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))}
           >
             <div className="flex flex-col gap-1.5">
@@ -355,6 +359,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={allTags.length}
             open={tagsOpen}
             onToggle={toggleTags}
+            tint={0}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tags" }))}
           >
             <div className="flex flex-wrap gap-2">
@@ -435,6 +440,7 @@ function CollapsibleSection({
   onToggle,
   onViewAll,
   children,
+  tint = 0,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -443,9 +449,17 @@ function CollapsibleSection({
   onToggle: () => void;
   onViewAll?: () => void;
   children: React.ReactNode;
+  tint?: number;
 }) {
   return (
-    <section className="flex flex-col gap-2">
+    <section
+      className="flex flex-col gap-2 rounded-xl p-4"
+      style={{
+        background: tint % 2 === 0
+          ? "color-mix(in oklab, var(--muted) 30%, transparent)"
+          : "color-mix(in oklab, var(--background) 60%, var(--muted) 10%)",
+      }}
+    >
       <button type="button" onClick={onToggle} className="flex items-center gap-2">
         <span className="text-muted-foreground">{icon}</span>
         <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
