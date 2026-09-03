@@ -26,6 +26,7 @@ type Handler struct {
 	CollectionsStore  *notes.Store
 	JournalStore      *notes.Store
 	Events            *hub
+	GitSync           *notes.GitSync
 }
 
 // New creates a Handler backed by the given vault registry. The journal
@@ -80,6 +81,7 @@ func (h *Handler) Routes() http.Handler {
 
 	// Vault-scoped folder routes
 	mux.HandleFunc("POST /api/vaults/{vaultId}/folders", h.createFolder)
+	mux.HandleFunc("PUT /api/vaults/{vaultId}/folders/{path...}", h.renameFolder)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/folders/{path...}", h.deleteFolder)
 
 	// Vault-scoped image routes
@@ -124,6 +126,15 @@ func (h *Handler) Routes() http.Handler {
 	// AI proxy routes (vault-independent, forward to OpenAI-compatible APIs)
 	mux.HandleFunc("POST /api/ai/chat", h.aiChat)
 	mux.HandleFunc("POST /api/ai/test", h.aiTest)
+
+	// Git sync routes (vault-independent, operate on $NEXOTE_HOME root)
+	mux.HandleFunc("GET /api/git/config", h.getGitConfig)
+	mux.HandleFunc("PUT /api/git/config", h.setGitConfig)
+	mux.HandleFunc("POST /api/git/init", h.gitInit)
+	mux.HandleFunc("GET /api/git/status", h.gitStatus)
+	mux.HandleFunc("POST /api/git/push", h.gitPush)
+	mux.HandleFunc("POST /api/git/pull", h.gitPull)
+	mux.HandleFunc("GET /api/git/log", h.gitLog)
 
 	return h.cors(mux)
 }
@@ -190,6 +201,12 @@ func (h *Handler) createVault(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	// Attach git sync to the new vault's store if git is enabled.
+	if h.GitSync != nil {
+		if store, err := h.Registry.Store(vault.ID); err == nil {
+			store.SetGitSync(h.GitSync)
+		}
 	}
 	writeJSON(w, http.StatusCreated, vault)
 }
@@ -558,6 +575,31 @@ func (h *Handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) renameFolder(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	oldPath := r.PathValue("path")
+	var in struct {
+		NewPath string `json:"newPath"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if in.NewPath == "" {
+		writeError(w, http.StatusBadRequest, errors.New("newPath is required"))
+		return
+	}
+	if err := store.RenameFolder(oldPath, in.NewPath); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": in.NewPath})
 }
 
 // --- Images ---
@@ -1158,4 +1200,107 @@ func (h *Handler) toggleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toPayload(doc))
+}
+
+// --- Git sync handlers ---
+
+func (h *Handler) getGitConfig(w http.ResponseWriter, r *http.Request) {
+	if h.GitSync == nil {
+		writeJSON(w, http.StatusOK, notes.DefaultGitConfig)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.GitSync.Config())
+}
+
+func (h *Handler) setGitConfig(w http.ResponseWriter, r *http.Request) {
+	var cfg notes.GitConfig
+	if err := decodeBody(r, &cfg); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	// Persist to git.json at the registry root.
+	root := h.Registry.Root()
+	if err := notes.SaveGitConfig(root, cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	// Apply to the live GitSync (or create it if it was nil).
+	if h.GitSync != nil {
+		h.GitSync.SetConfig(cfg)
+	} else {
+		h.GitSync = notes.NewGitSync(root, cfg)
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+func (h *Handler) gitInit(w http.ResponseWriter, r *http.Request) {
+	if h.GitSync == nil {
+		writeError(w, http.StatusBadRequest, errors.New("git sync not configured"))
+		return
+	}
+	if err := h.GitSync.InitRepo(); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) gitStatus(w http.ResponseWriter, r *http.Request) {
+	if h.GitSync == nil {
+		writeJSON(w, http.StatusOK, notes.GitStatusInfo{Enabled: false, HasRepo: false})
+		return
+	}
+	info, err := h.GitSync.Status()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (h *Handler) gitPush(w http.ResponseWriter, r *http.Request) {
+	if h.GitSync == nil {
+		writeError(w, http.StatusBadRequest, errors.New("git sync not configured"))
+		return
+	}
+	var creds notes.GitCredentials
+	_ = decodeBody(r, &creds)
+	if err := h.GitSync.Push(r.Context(), creds); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) gitPull(w http.ResponseWriter, r *http.Request) {
+	if h.GitSync == nil {
+		writeError(w, http.StatusBadRequest, errors.New("git sync not configured"))
+		return
+	}
+	var creds notes.GitCredentials
+	_ = decodeBody(r, &creds)
+	if err := h.GitSync.Pull(r.Context(), creds); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *Handler) gitLog(w http.ResponseWriter, r *http.Request) {
+	if h.GitSync == nil {
+		writeJSON(w, http.StatusOK, []notes.GitCommitLog{})
+		return
+	}
+	limit := 10
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	log, err := h.GitSync.Log(limit)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []notes.GitCommitLog{})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"commits": log})
 }

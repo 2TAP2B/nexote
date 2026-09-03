@@ -63,7 +63,7 @@ export default function Page() {
 }
 
 function AppShell() {
-  const { openDaily, openTab, openNoteInVault, activeNote } = useNotes();
+  const { openDaily, openTab, openNoteInVault, activeNote, create } = useNotes();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -340,6 +340,18 @@ function AppShell() {
             />
           </main>
         </div>
+
+        {/* Floating new-note button (desktop only) */}
+        <button
+          type="button"
+          aria-label="New note"
+          title="New note"
+          onClick={() => void create()}
+          className="fixed bottom-6 right-6 z-30 hidden md:flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+          style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+        >
+          <FilePlus className="h-5 w-5" />
+        </button>
 
         <MobileBottomBar onOpenPalette={() => setPaletteOpen(true)} />
 

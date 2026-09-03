@@ -197,6 +197,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     isJournalNote,
     noteVaultMap,
     openDaily,
+    renameFolder,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
@@ -763,6 +764,15 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         await renameVault(vaultId, newTitle);
         return;
       }
+      // Handle folder rename — id is "folder:<oldPath>"
+      if (id.startsWith("folder:")) {
+        const oldPath = id.slice(7);
+        const parent = oldPath.includes("/") ? oldPath.slice(0, oldPath.lastIndexOf("/")) : "";
+        const newPath = parent ? `${parent}/${newTitle}` : newTitle;
+        if (oldPath === newPath) return;
+        await renameFolder(oldPath, newPath);
+        return;
+      }
       const cached = notesById[id];
       if (!cached) return;
       await save(id, {
@@ -770,7 +780,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         body: replaceOrAddTitleHeading(cached.body, newTitle),
       });
     },
-    [notesById, save, renameVault],
+    [notesById, save, renameVault, renameFolder],
   );
 
   // Move a note to a new path via context, then refresh.
@@ -1278,10 +1288,14 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
     onDeleteFolder,
     treeSelectedNav,
     setTreeSelectedNav,
+    renaming,
+    setRenaming,
+    onRename,
   } = props;
   const open = isFolderOpen(node.path);
   const isDragOver = dragOverPath === node.path;
   const isSelected = treeSelectedNav === `folder:${node.path}`;
+  const isFolderRenaming = renaming?.id === `folder:${node.path}`;
 
   return (
     <li>
@@ -1315,6 +1329,13 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               onClick: () => onNewFolderInFolder(node.path),
             },
             { label: "", onClick: () => {}, separator: true },
+            {
+              label: "Rename folder",
+              icon: <Edit3 className="h-4 w-4" />,
+              onClick: () => {
+                setRenaming({ id: `folder:${node.path}`, value: node.name });
+              },
+            },
             {
               label: "Delete folder",
               icon: <Trash2 className="h-4 w-4" />,
@@ -1363,7 +1384,29 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
             ) : (
               <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--muted-foreground)" }} />
             )}
-            <span className="truncate" style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>{node.name}</span>
+            {isFolderRenaming ? (
+              <input
+                autoFocus
+                value={renaming.value}
+                onChange={(e) => setRenaming({ id: `folder:${node.path}`, value: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    onRename(`folder:${node.path}`, renaming.value.trim() || node.name);
+                    setRenaming(null);
+                  }
+                  if (e.key === "Escape") setRenaming(null);
+                }}
+                onBlur={() => {
+                  onRename(`folder:${node.path}`, renaming.value.trim() || node.name);
+                  setRenaming(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="min-w-0 flex-1 rounded border border-border px-1 py-0.5 text-xs"
+                style={{ color: "var(--foreground)", background: "var(--background)" }}
+              />
+            ) : (
+              <span className="truncate" style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>{node.name}</span>
+            )}
           </button>
           <button
             type="button"

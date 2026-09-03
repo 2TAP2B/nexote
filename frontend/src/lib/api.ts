@@ -107,6 +107,34 @@ export type ImageMeta = {
   usedBy?: ImageNote[];
 };
 
+export type GitConfig = {
+  enabled: boolean;
+  remote: string;
+  branch: string;
+  authorName: string;
+  authorEmail: string;
+  includeImages: boolean;
+  autoPush: boolean;
+};
+
+export type GitStatusInfo = {
+  enabled: boolean;
+  hasRepo: boolean;
+  clean: boolean;
+  ahead: number;
+  behind: number;
+  branch: string;
+  remote: string;
+  dirtyFiles: number;
+};
+
+export type GitCommitLogEntry = {
+  hash: string;
+  message: string;
+  author: string;
+  when: string;
+};
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -261,6 +289,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ path }),
     }),
+  renameFolder: (vaultId: string, oldPath: string, newPath: string) =>
+    request<{ path: string }>(`${vaultBase(vaultId)}/folders/${oldPath}`, {
+      method: "PUT",
+      body: JSON.stringify({ newPath }),
+    }),
   removeFolder: (vaultId: string, path: string) =>
     request<void>(`${vaultBase(vaultId)}/folders/${path}`, {
       method: "DELETE",
@@ -353,4 +386,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify(config),
     }),
+
+  // --- Git sync (vault-independent, operates on $NEXOTE_HOME root) ---
+  gitGetConfig: () =>
+    request<GitConfig>("/api/git/config"),
+  gitSetConfig: (config: GitConfig) =>
+    request<GitConfig>("/api/git/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    }),
+  gitInit: () =>
+    request<{ ok: boolean }>("/api/git/init", { method: "POST" }),
+  gitStatus: () =>
+    request<GitStatusInfo>("/api/git/status"),
+  gitPush: (creds?: { username?: string; password?: string }) =>
+    request<{ ok: boolean }>("/api/git/push", {
+      method: "POST",
+      body: JSON.stringify(creds ?? {}),
+    }),
+  gitPull: (creds?: { username?: string; password?: string }) =>
+    request<{ ok: boolean }>("/api/git/pull", {
+      method: "POST",
+      body: JSON.stringify(creds ?? {}),
+    }),
+  gitLog: (limit?: number) =>
+    request<{ commits: GitCommitLogEntry[] }>(`/api/git/log${limit ? `?limit=${limit}` : ""}`),
 };

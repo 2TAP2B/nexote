@@ -15,6 +15,7 @@ import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
+import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import MobileBottomPill from "./MobileBottomPill";
 import MobileNoteView from "./MobileNoteView";
@@ -43,6 +44,8 @@ export default function MobileApp() {
     openNoteInVault,
     isJournalNote,
     refreshNoteBody,
+    save,
+    notesById,
   } = useNotes();
 
   // --- Screen / overlay state ---
@@ -316,9 +319,16 @@ export default function MobileApp() {
             setOverflowOpen(false);
             setMoveTo(id);
           }}
-          onRename={() => {
-            // Rename deferred — close the menu. Inline rename can be added later.
+          onRename={(id) => {
             setOverflowOpen(false);
+            const note = notesById[id];
+            const current = note?.title ?? "Untitled";
+            const next = window.prompt("Rename note", current);
+            if (!next || next.trim() === current) return;
+            const title = next.trim() || "Untitled";
+            if (note) {
+              void save(id, { title, body: replaceOrAddTitleHeading(note.body, title) });
+            }
           }}
           onHistory={(id) => {
             setOverflowOpen(false);

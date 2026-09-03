@@ -6,6 +6,7 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  GitBranch,
   GraduationCap,
   Heart,
   Home,
@@ -16,6 +17,7 @@ import {
   Music,
   Palette,
   PenLine,
+  RefreshCw,
   Settings,
   Settings2,
   Shield,
@@ -38,7 +40,7 @@ type Props = {
   onColorSchemeChange?: (scheme: string) => void;
 };
 
-type CategoryId = "appearance" | "vaults" | "editor" | "ai" | "shortcuts" | "about";
+type CategoryId = "appearance" | "vaults" | "editor" | "ai" | "sync" | "shortcuts" | "about";
 
 const CATEGORIES: {
   id: CategoryId;
@@ -49,6 +51,7 @@ const CATEGORIES: {
   { id: "vaults", label: "Vaults", icon: <FolderPlus className="h-4 w-4" /> },
   { id: "editor", label: "Editor", icon: <PenLine className="h-4 w-4" /> },
   { id: "ai", label: "AI", icon: <Zap className="h-4 w-4" /> },
+  { id: "sync", label: "Sync", icon: <GitBranch className="h-4 w-4" /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard className="h-4 w-4" /> },
   { id: "about", label: "About", icon: <Info className="h-4 w-4" /> },
 ];
@@ -77,6 +80,14 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
     setVaultIcon,
     settings,
     updateSettings,
+    gitConfig,
+    gitStatus,
+    refreshGitConfig,
+    saveGitConfig,
+    gitInit,
+    refreshGitStatus,
+    gitPush,
+    gitPull,
   } = useNotes();
   const { theme, setTheme } = useTheme();
   const [activeCategory, setActiveCategory] = useState<CategoryId>("appearance");
@@ -87,6 +98,9 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
   const [mounted, setMounted] = useState(false);
   const [aiTestState, setAiTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [aiTestMessage, setAiTestMessage] = useState("");
+  const [gitBusy, setGitBusy] = useState(false);
+  const [gitMsg, setGitMsg] = useState("");
+  const [gitCreds, setGitCreds] = useState({ username: "", password: "" });
 
   useEffect(() => setMounted(true), []);
 
@@ -519,6 +533,253 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {activeCategory === "sync" && (
+              <div className="flex flex-col gap-3 p-4">
+                <SectionHeader icon={<GitBranch className="h-4 w-4" />} title="Git Sync" />
+
+                {!gitConfig ? (
+                  <div className="text-sm text-muted-foreground">Loading…</div>
+                ) : (
+                  <>
+                    {/* Enable toggle */}
+                    <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+                      <div>
+                        <div className="text-sm font-medium text-foreground">Enable Git Sync</div>
+                        <div className="text-xs text-muted-foreground">Auto-commit changes and optionally push to a remote</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={gitConfig.enabled}
+                        onChange={(e) => {
+                          const next = { ...gitConfig, enabled: e.target.checked };
+                          void saveGitConfig(next);
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </label>
+
+                    {gitConfig.enabled && (
+                      <>
+                        <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2">
+                          <span className="text-sm text-foreground">Remote URL</span>
+                          <span className="text-xs text-muted-foreground">e.g. https://github.com/user/repo.git</span>
+                          <input
+                            type="text"
+                            value={gitConfig.remote}
+                            onChange={(e) => {
+                              const next = { ...gitConfig, remote: e.target.value };
+                              void saveGitConfig(next);
+                            }}
+                            placeholder="https://github.com/user/repo.git"
+                            className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2">
+                          <span className="text-sm text-foreground">Branch</span>
+                          <span className="text-xs text-muted-foreground">Default: main</span>
+                          <input
+                            type="text"
+                            value={gitConfig.branch}
+                            onChange={(e) => {
+                              const next = { ...gitConfig, branch: e.target.value };
+                              void saveGitConfig(next);
+                            }}
+                            placeholder="main"
+                            className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                          />
+                        </label>
+                        <div className="flex gap-3">
+                          <label className="flex flex-1 flex-col gap-1 rounded-lg border border-border px-3 py-2">
+                            <span className="text-sm text-foreground">Author name</span>
+                            <input
+                              type="text"
+                              value={gitConfig.authorName}
+                              onChange={(e) => {
+                                const next = { ...gitConfig, authorName: e.target.value };
+                                void saveGitConfig(next);
+                              }}
+                              className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                            />
+                          </label>
+                          <label className="flex flex-1 flex-col gap-1 rounded-lg border border-border px-3 py-2">
+                            <span className="text-sm text-foreground">Author email</span>
+                            <input
+                              type="text"
+                              value={gitConfig.authorEmail}
+                              onChange={(e) => {
+                                const next = { ...gitConfig, authorEmail: e.target.value };
+                                void saveGitConfig(next);
+                              }}
+                              className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                            />
+                          </label>
+                        </div>
+
+                        {/* Toggles */}
+                        <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                          <span className="text-sm text-foreground">Include images in sync</span>
+                          <input
+                            type="checkbox"
+                            checked={gitConfig.includeImages}
+                            onChange={(e) => {
+                              const next = { ...gitConfig, includeImages: e.target.checked };
+                              void saveGitConfig(next);
+                            }}
+                            className="h-4 w-4"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                          <span className="text-sm text-foreground">Auto-push after each commit</span>
+                          <input
+                            type="checkbox"
+                            checked={gitConfig.autoPush}
+                            onChange={(e) => {
+                              const next = { ...gitConfig, autoPush: e.target.checked };
+                              void saveGitConfig(next);
+                            }}
+                            className="h-4 w-4"
+                          />
+                        </label>
+
+                        {/* Credentials (for HTTPS remotes — SSH uses keys) */}
+                        <div className="rounded-lg border border-border px-3 py-2.5">
+                          <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                            Credentials (optional — for HTTPS remotes)
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={gitCreds.username}
+                              onChange={(e) => setGitCreds((c) => ({ ...c, username: e.target.value }))}
+                              placeholder="Username / token name"
+                              className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                            />
+                            <input
+                              type="password"
+                              value={gitCreds.password}
+                              onChange={(e) => setGitCreds((c) => ({ ...c, password: e.target.value }))}
+                              placeholder="Password / token"
+                              className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={gitBusy}
+                            onClick={async () => {
+                              setGitBusy(true);
+                              setGitMsg("");
+                              try {
+                                await gitInit();
+                                await refreshGitStatus();
+                                setGitMsg("Repository initialized.");
+                              } catch (e) {
+                                setGitMsg(e instanceof Error ? e.message : "Init failed");
+                              }
+                              setGitBusy(false);
+                            }}
+                            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/50"
+                          >
+                            Init repo
+                          </button>
+                          <button
+                            type="button"
+                            disabled={gitBusy}
+                            onClick={async () => {
+                              setGitBusy(true);
+                              setGitMsg("");
+                              try {
+                                await gitPush(gitCreds.username ? gitCreds : undefined);
+                                setGitMsg("Pushed.");
+                              } catch (e) {
+                                setGitMsg(e instanceof Error ? e.message : "Push failed");
+                              }
+                              setGitBusy(false);
+                            }}
+                            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/50"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Push
+                          </button>
+                          <button
+                            type="button"
+                            disabled={gitBusy}
+                            onClick={async () => {
+                              setGitBusy(true);
+                              setGitMsg("");
+                              try {
+                                await gitPull(gitCreds.username ? gitCreds : undefined);
+                                setGitMsg("Pulled.");
+                              } catch (e) {
+                                setGitMsg(e instanceof Error ? e.message : "Pull failed");
+                              }
+                              setGitBusy(false);
+                            }}
+                            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/50"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5 rotate-180" />
+                            Pull
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void refreshGitStatus()}
+                            className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted/50"
+                          >
+                            Refresh status
+                          </button>
+                        </div>
+
+                        {/* Status */}
+                        {gitStatus && (
+                          <div className="rounded-lg border border-border px-3 py-2.5 text-sm">
+                            {gitStatus.hasRepo ? (
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-muted-foreground">Status</span>
+                                  <span className="text-foreground">
+                                    {gitStatus.clean ? "Clean" : `${gitStatus.dirtyFiles} uncommitted change${gitStatus.dirtyFiles === 1 ? "" : "s"}`}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-muted-foreground">Branch</span>
+                                  <span className="text-foreground">{gitStatus.branch}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-muted-foreground">Remote</span>
+                                  <span className="text-foreground truncate ml-2">{gitStatus.remote || "none"}</span>
+                                </div>
+                                {(gitStatus.ahead > 0 || gitStatus.behind > 0) && (
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">Sync</span>
+                                    <span className="text-foreground">
+                                      {gitStatus.ahead > 0 && `${gitStatus.ahead} ahead`}
+                                      {gitStatus.ahead > 0 && gitStatus.behind > 0 && " · "}
+                                      {gitStatus.behind > 0 && `${gitStatus.behind} behind`}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-muted-foreground">
+                                No repository yet. Click "Init repo" to create one.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {gitMsg && (
+                          <div className="text-xs text-muted-foreground">{gitMsg}</div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
               </div>
             )}
 

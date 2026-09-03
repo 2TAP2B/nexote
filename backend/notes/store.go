@@ -41,6 +41,10 @@ type Store struct {
 	// for Daily, creating two notes for the same date). It is separate from mu
 	// (which guards only the in-memory index) so reads stay concurrent.
 	writeMu sync.Mutex
+
+	// gitSync is an optional git auto-commit hook. When non-nil, it triggers a
+	// debounced commit after each mutation. Set via SetGitSync.
+	gitSync *GitSync
 }
 
 // NewStore creates a Store rooted at dir, creating the directory if needed.
@@ -49,6 +53,19 @@ func NewStore(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create notes dir: %w", err)
 	}
 	return &Store{Dir: dir}, nil
+}
+
+// SetGitSync attaches an optional git auto-commit hook. Pass nil to disable.
+func (s *Store) SetGitSync(gs *GitSync) {
+	s.gitSync = gs
+}
+
+// afterWrite triggers a debounced git commit if gitSync is configured. Called
+// after writeMu is released so git I/O never blocks other writers.
+func (s *Store) afterWrite() {
+	if s.gitSync != nil {
+		s.gitSync.commitDebounced()
+	}
 }
 
 // buildIndex walks the tree once and records every "<id>.md" file's absolute
@@ -229,6 +246,7 @@ func (s *Store) Get(id string) (Document, error) {
 func (s *Store) Copy(id string) (Document, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	doc, err := s.read(id)
 	if err != nil {
 		return Document{}, err
@@ -262,6 +280,7 @@ type CreateInput struct {
 func (s *Store) Create(in CreateInput) (Document, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
 		title = "Untitled"
@@ -288,6 +307,10 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 // store root). Intermediate folders are created as needed. Returns an error
 // if the folder already exists.
 func (s *Store) CreateFolder(folderPath string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
+
 	p := sanitizePath(folderPath)
 	if p == "" {
 		return fmt.Errorf("folder path cannot be empty")
@@ -303,6 +326,10 @@ func (s *Store) CreateFolder(folderPath string) error {
 // The path is relative to the store root. Missing folders are treated as
 // success for idempotency.
 func (s *Store) DeleteFolder(folderPath string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
+
 	p := sanitizePath(folderPath)
 	if p == "" {
 		return fmt.Errorf("folder path cannot be empty")
@@ -311,6 +338,69 @@ func (s *Store) DeleteFolder(folderPath string) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("delete folder: %w", err)
 	}
+	return nil
+}
+
+// RenameFolder renames a folder (and everything inside it) by moving it to a
+// new path. Both oldPath and newPath are relative to the store root. All notes
+// in the subtree keep their relative paths; their frontmatter Path field is
+// updated to reflect the new location.
+func (s *Store) RenameFolder(oldPath, newPath string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
+
+	oldRel := sanitizePath(oldPath)
+	newRel := sanitizePath(newPath)
+	if oldRel == "" || newRel == "" {
+		return fmt.Errorf("folder path cannot be empty")
+	}
+	if oldRel == newRel {
+		return nil
+	}
+
+	oldDir := filepath.Join(s.Dir, filepath.FromSlash(oldRel))
+	newDir := filepath.Join(s.Dir, filepath.FromSlash(newRel))
+
+	if _, err := os.Stat(oldDir); os.IsNotExist(err) {
+		return fmt.Errorf("folder not found: %s", oldRel)
+	}
+	if _, err := os.Stat(newDir); err == nil {
+		return fmt.Errorf("folder already exists: %s", newRel)
+	}
+
+	// Move the directory tree.
+	if err := os.MkdirAll(filepath.Dir(newDir), 0o755); err != nil {
+		return fmt.Errorf("create parent folder: %w", err)
+	}
+	if err := os.Rename(oldDir, newDir); err != nil {
+		return fmt.Errorf("rename folder: %w", err)
+	}
+
+	// Update the Path field in every note's frontmatter within the moved tree.
+	list, err := s.List()
+	if err != nil {
+		return nil
+	}
+	for _, entry := range list.Notes {
+		if !strings.HasPrefix(entry.Path, oldRel+"/") && entry.Path != oldRel {
+			continue
+		}
+		doc, err := s.read(entry.ID)
+		if err != nil {
+			continue
+		}
+		// Replace the old prefix with the new one.
+		if entry.Path == oldRel {
+			doc.Meta.Path = newRel
+		} else {
+			doc.Meta.Path = newRel + entry.Path[len(oldRel):]
+		}
+		if err := s.write(doc); err != nil {
+			continue
+		}
+	}
+
 	return nil
 }
 
@@ -343,6 +433,7 @@ type UpdateInput struct {
 func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	doc, err := s.read(id)
 	if err != nil {
 		return Document{}, err
@@ -477,6 +568,7 @@ func extractInlineTags(body string) []string {
 func (s *Store) Delete(id string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	p, err := s.resolvePath(id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -527,6 +619,7 @@ func (s *Store) pruneEmptyDirs(dir string) {
 func (s *Store) Daily() (Document, error) {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 
 	now := time.Now().UTC()
 	date := now.Format("2006-01-02")

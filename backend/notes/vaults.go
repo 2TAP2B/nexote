@@ -43,6 +43,11 @@ func (r *VaultRegistry) registryPath() string {
 	return filepath.Join(r.root, "vaults.json")
 }
 
+// Root returns the root directory the registry manages ($NEXOTE_HOME).
+func (r *VaultRegistry) Root() string {
+	return r.root
+}
+
 func (r *VaultRegistry) vaultsDir() string {
 	return filepath.Join(r.root, "vaults")
 }

@@ -98,8 +98,8 @@ export default function MobileSidebar({
         className="mob-sidebar-panel nexote-sidebar absolute flex h-full flex-col"
         data-open={open ? "1" : "0"}
         style={{
-          width: "85vw",
-          maxWidth: 380,
+          width: "90vw",
+          maxWidth: 520,
           background: "var(--mob-bg)",
           borderRight: "1px solid var(--mob-surface)",
           left: 0,

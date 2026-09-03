@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { api, type FolderMeta, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { offlinePrecache } from "@/lib/offline-db";
 
 type Draft = { title: string; body: string };
@@ -66,6 +66,7 @@ type NotesContextValue = {
   moveNoteToVault: (noteId: string, dstVaultId: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
+  renameFolder: (oldPath: string, newPath: string) => Promise<void>;
   moveNote: (id: string, path: string) => Promise<void>;
   openDaily: () => Promise<void>;
   remove: (id: string) => Promise<void>;
@@ -98,6 +99,15 @@ type NotesContextValue = {
   refreshAllMarks: () => Promise<void>;
   settings: AppSettings;
   updateSettings: (patch: Partial<AppSettings>) => void;
+  // Git sync
+  gitConfig: GitConfig | null;
+  gitStatus: GitStatusInfo | null;
+  refreshGitConfig: () => Promise<void>;
+  saveGitConfig: (config: GitConfig) => Promise<void>;
+  gitInit: () => Promise<void>;
+  refreshGitStatus: () => Promise<void>;
+  gitPush: (creds?: { username?: string; password?: string }) => Promise<void>;
+  gitPull: (creds?: { username?: string; password?: string }) => Promise<void>;
 };
 
 export const DASHBOARD_ID = "__dashboard__";
@@ -272,6 +282,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [activeId, restoredTabs]);
 
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [gitConfig, setGitConfig] = useState<GitConfig | null>(null);
+  const [gitStatus, setGitStatus] = useState<GitStatusInfo | null>(null);
 
   useEffect(() => {
     try {
@@ -990,6 +1002,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [activeVaultId, refresh],
   );
 
+  const renameFolder = useCallback(
+    async (oldPath: string, newPath: string) => {
+      if (!activeVaultId) return;
+      try {
+        await api.renameFolder(activeVaultId, oldPath, newPath);
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to rename folder");
+      }
+    },
+    [activeVaultId, refresh],
+  );
+
   const moveNote = useCallback(
     async (id: string, path: string) => {
       if (!activeVaultId) return;
@@ -1334,6 +1359,67 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       : null;
   const isDashboardActive = activeId === DASHBOARD_ID;
 
+  // --- Git sync actions ---
+  const refreshGitConfig = useCallback(async () => {
+    try {
+      setGitConfig(await api.gitGetConfig());
+    } catch {
+      setGitConfig(null);
+    }
+  }, []);
+
+  const refreshGitStatus = useCallback(async () => {
+    try {
+      setGitStatus(await api.gitStatus());
+    } catch {
+      setGitStatus(null);
+    }
+  }, []);
+
+  const saveGitConfig = useCallback(async (config: GitConfig) => {
+    try {
+      await api.gitSetConfig(config);
+      setGitConfig(config);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save git config");
+    }
+  }, []);
+
+  const gitInit = useCallback(async () => {
+    try {
+      await api.gitInit();
+      await refreshGitStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to init git repo");
+    }
+  }, [refreshGitStatus]);
+
+  const gitPush = useCallback(async (creds?: { username?: string; password?: string }) => {
+    try {
+      await api.gitPush(creds);
+      await refreshGitStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Git push failed");
+    }
+  }, [refreshGitStatus]);
+
+  const gitPull = useCallback(async (creds?: { username?: string; password?: string }) => {
+    try {
+      await api.gitPull(creds);
+      await refresh();
+      await refreshAllMarks();
+      await refreshJournal();
+      await refreshGitStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Git pull failed");
+    }
+  }, [refresh, refreshAllMarks, refreshJournal, refreshGitStatus]);
+
+  useEffect(() => {
+    void refreshGitConfig();
+    void refreshGitStatus();
+  }, [refreshGitConfig, refreshGitStatus]);
+
   const value = useMemo<NotesContextValue>(
     () => ({
       vaults,
@@ -1363,6 +1449,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       moveNoteToVault,
       createFolder,
       removeFolder,
+      renameFolder,
       moveNote,
       openDaily,
       remove,
@@ -1391,6 +1478,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       refreshAllMarks,
       settings,
       updateSettings,
+      gitConfig,
+      gitStatus,
+      refreshGitConfig,
+      saveGitConfig,
+      gitInit,
+      refreshGitStatus,
+      gitPush,
+      gitPull,
     }),
     [
       vaults,
@@ -1420,6 +1515,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       moveNoteToVault,
       createFolder,
       removeFolder,
+      renameFolder,
       moveNote,
       openDaily,
       remove,

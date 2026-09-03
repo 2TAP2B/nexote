@@ -49,6 +49,32 @@ func main() {
 		}
 	}
 
+	// Load git-sync config and attach to all stores if enabled.
+	gitCfg, err := notes.LoadGitConfig(home)
+	if err != nil {
+		log.Printf("git config: %v", err)
+	}
+	if gitCfg.Enabled {
+		gs := notes.NewGitSync(home, gitCfg)
+		h.GitSync = gs
+		// Attach to every existing vault store.
+		if vaults, err := registry.List(); err == nil {
+			for _, v := range vaults {
+				if store, err := registry.Store(v.ID); err == nil {
+					store.SetGitSync(gs)
+				}
+			}
+		}
+		// Attach to journal + collections stores.
+		if h.JournalStore != nil {
+			h.JournalStore.SetGitSync(gs)
+		}
+		if h.CollectionsStore != nil {
+			h.CollectionsStore.SetGitSync(gs)
+		}
+		log.Printf("git sync enabled (remote: %s, branch: %s)", gitCfg.Remote, gitCfg.Branch)
+	}
+
 	// Migrate legacy type:vinyl notes into a "Vinyls" collection.
 	migrateVinyls(registry, h.Collections, collectionsVaultID)
 
