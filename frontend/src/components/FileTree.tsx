@@ -2667,8 +2667,8 @@ function CalendarView({
         <button
           type="button"
           onClick={goToday}
-          className="flex-1 truncate text-center text-xs font-medium"
-          style={{ color: "var(--foreground)" }}
+          className="flex-1 truncate text-center"
+          style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}
           title="Jump to today"
         >
           {monthName}
@@ -2688,8 +2688,8 @@ function CalendarView({
         {weekdays.map((w, i) => (
           <div
             key={i}
-            className="text-center text-[10px] font-medium"
-            style={{ color: "var(--muted-foreground)", opacity: 0.6 }}
+            className="text-center"
+            style={{ fontSize: 10, fontWeight: 500, color: "var(--muted-foreground)", opacity: 0.6 }}
           >
             {w}
           </div>
@@ -2709,8 +2709,9 @@ function CalendarView({
               key={i}
               type="button"
               onClick={() => handleDayClick(day)}
-              className="relative flex h-8 items-center justify-center rounded-md text-xs transition-colors"
+              className="relative flex h-8 items-center justify-center rounded-md transition-colors"
               style={{
+                fontSize: 13,
                 color: isToday
                   ? "var(--primary)"
                   : "var(--muted-foreground)",
@@ -2740,8 +2741,8 @@ function CalendarView({
         <button
           type="button"
           onClick={onOpenDaily}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
-          style={{ color: "var(--foreground)" }}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 transition-colors hover:bg-muted/50"
+          style={{ fontSize: 12, fontWeight: 500, color: "var(--foreground)" }}
         >
           <CalendarDays size={13} style={{ color: "var(--primary)" }} />
           Open today&apos;s note
@@ -2776,8 +2777,9 @@ function CalendarView({
                       style={{ color: isActive ? "var(--primary)" : "var(--muted-foreground)", opacity: 0.7 }}
                     />
                     <span
-                      className="truncate text-xs"
+                      className="truncate"
                       style={{
+                        fontSize: 13,
                         fontWeight: isActive ? 600 : 400,
                         color: isActive ? "var(--primary)" : "var(--foreground)",
                       }}
@@ -2831,7 +2833,7 @@ function CollectionsView({
       {sorted.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
           <Disc3 size={20} style={{ color: "var(--muted-foreground)", opacity: 0.6 }} />
-          <div className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+          <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
             No collections yet. Click + to create one.
           </div>
         </div>
