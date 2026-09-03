@@ -198,7 +198,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={shortcutNotes.length}
             open={shortcutsOpen}
             onToggle={toggleShortcuts}
-            tint={0}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "shortcuts" }))}
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -224,7 +223,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={recents.length}
             open={recentsOpen}
             onToggle={toggleRecents}
-            tint={1}
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {(recentsOpen ? recents : recents.slice(0, 3)).map((entry) => (
@@ -297,7 +295,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={bookmarkNotes.length}
             open={bookmarksOpen}
             onToggle={toggleBookmarks}
-            tint={0}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "bookmarks" }))}
           >
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -323,7 +320,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={openTasks.length}
             open={tasksOpen}
             onToggle={toggleTasks}
-            tint={1}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))}
           >
             <div className="flex flex-col gap-1.5">
@@ -359,7 +355,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             count={allTags.length}
             open={tagsOpen}
             onToggle={toggleTags}
-            tint={0}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tags" }))}
           >
             <div className="flex flex-wrap gap-2">
@@ -440,7 +435,6 @@ function CollapsibleSection({
   onToggle,
   onViewAll,
   children,
-  tint = 0,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -449,15 +443,12 @@ function CollapsibleSection({
   onToggle: () => void;
   onViewAll?: () => void;
   children: React.ReactNode;
-  tint?: number;
 }) {
   return (
     <section
       className="flex flex-col gap-2 rounded-xl p-4"
       style={{
-        background: tint % 2 === 0
-          ? "color-mix(in oklab, var(--muted) 30%, transparent)"
-          : "color-mix(in oklab, var(--background) 60%, var(--muted) 10%)",
+        background: "color-mix(in oklab, var(--muted) 30%, transparent)",
       }}
     >
       <button type="button" onClick={onToggle} className="flex items-center gap-2">

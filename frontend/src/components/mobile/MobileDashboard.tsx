@@ -225,7 +225,6 @@ export default function MobileDashboard({
           count={shortcutNotes.length}
           open={shortcutsOpen}
           onToggle={toggleShortcuts}
-          tint={0}
           onViewAll={() =>
             window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "shortcuts" }))
           }
@@ -264,7 +263,6 @@ export default function MobileDashboard({
           count={recents.length}
           open={recentsOpen}
           onToggle={toggleRecents}
-          tint={1}
         >
           <div className="flex flex-col gap-1.5">
             {(recentsOpen ? recents : recents.slice(0, 3)).map((entry) => (
@@ -310,7 +308,6 @@ export default function MobileDashboard({
           count={bookmarkNotes.length}
           open={bookmarksOpen}
           onToggle={toggleBookmarks}
-          tint={0}
           onViewAll={() =>
             window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "bookmarks" }))
           }
@@ -338,7 +335,6 @@ export default function MobileDashboard({
           count={openTasks.length}
           open={tasksOpen}
           onToggle={toggleTasks}
-          tint={1}
           onViewAll={() =>
             window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))
           }
@@ -384,7 +380,6 @@ export default function MobileDashboard({
           count={allTags.length}
           open={tagsOpen}
           onToggle={toggleTags}
-          tint={0}
           onViewAll={() =>
             window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tags" }))
           }
@@ -440,7 +435,6 @@ function CollapsibleSection({
   onToggle,
   onViewAll,
   children,
-  tint = 0,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -449,15 +443,12 @@ function CollapsibleSection({
   onToggle: () => void;
   onViewAll?: () => void;
   children: React.ReactNode;
-  tint?: number;
 }) {
   return (
     <section
       className="flex flex-col gap-2 rounded-2xl p-3"
       style={{
-        background: tint % 2 === 0
-          ? "color-mix(in oklab, var(--mob-surface) 50%, transparent)"
-          : "color-mix(in oklab, var(--mob-card) 60%, transparent)",
+        background: "color-mix(in oklab, var(--mob-surface) 50%, transparent)",
       }}
     >
       <button
