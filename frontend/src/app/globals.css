@@ -708,7 +708,11 @@ body {
   --crepe-color-on-surface: var(--mob-text);
   --crepe-color-on-surface-variant: var(--mob-muted);
   --crepe-color-outline: var(--mob-muted);
-  --muted-foreground: var(--mob-muted);
+  /* NOTE: do NOT redefine --muted-foreground here. --mob-muted is derived
+   * from --muted-foreground above, so redefining it would create a circular
+   * reference — both vars become invalid and every border/color using them
+   * silently collapses (e.g. border-style: none). The dark scheme already
+   * provides the right value since .dark is forced on the mobile root. */
   --border: var(--mob-surface);
   --sidebar: var(--mob-bg);
   --icon-rail: var(--mob-bg);

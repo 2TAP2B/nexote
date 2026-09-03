@@ -2537,9 +2537,7 @@ function TasksView({
               height: 20,
               minHeight: 20,
               borderRadius: 6,
-              border: t.checked
-                ? "2px solid var(--primary)"
-                : "2px solid var(--muted-foreground)",
+              border: "2px solid var(--primary)",
               background: t.checked ? "var(--primary)" : "transparent",
             }}
           >
