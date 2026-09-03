@@ -1,77 +1,37 @@
 # Nexote
 
-A markdown note-taking web app built with [Milkdown](https://milkdown.dev) on the
-frontend and a small Go backend that stores notes as plain `.md` files with YAML
-frontmatter.
+A self-hosted markdown note-taking web app: a small **Go** backend that stores
+notes as plain `.md` files with YAML frontmatter, and a **Next.js 16 / React 19 /
+Milkdown Crepe** frontend. No database — your notes are just files on disk.
+
+> **Deeper docs:** [`overview.md`](./overview.md) for the full architecture & API,
+> and [`AGENTS.md`](./AGENTS.md) for AI agents (file index + invariants).
+
+## Features
+Multi-vault · nested folders · typed collections with custom fields · per-note
+history + restore · tasks · daily journal · streaming AI assistant (key stays on
+the server) · image upload/migration · bookmarks & shortcuts · tags · real-time
+sync (SSE) · offline/PWA queueing · a separate mobile app at `/m`.
 
 ## Stack
-
 - **Frontend**: Next.js 16 (app router), React 19, Tailwind CSS v4, Milkdown
-  (Crepe editor via `@milkdown/react`), `next-themes` for light/dark/system.
-- **Backend**: Go 1.25, stdlib `net/http`, `gopkg.in/yaml.v3`. Notes are files
-  on disk — no database.
+  (Crepe via `@milkdown/react`), `next-themes` for light/dark/system.
+- **Backend**: Go 1.25, stdlib `net/http`, `gopkg.in/yaml.v3`. Notes are files on
+  disk — no database.
 - **Devshell**: Nix flake providing Go, Node, pnpm, gopls, typescript-language-server.
 
 ## Notes format
-
-Each note is a single file in the notes directory (`.notes-dev/` by default):
-
-```markdown
----
-id: <id>
-title: <title>
-createdAt: <RFC3339>
-updatedAt: <RFC3339>
----
-<markdown body>
-```
-
-The directory is configurable via `NEXOTE_NOTES_DIR`; the backend listens on
-`NEXOTE_PORT` (default `8080`).
-
-## API
-
-| Method | Path              | Body                     | Description            |
-| ------ | ----------------- | ------------------------ | ---------------------- |
-| GET    | `/api/notes`      | —                        | List note metadata     |
-| GET    | `/api/notes/{id}` | —                        | Get a note with body   |
-| POST   | `/api/notes`      | `{ "title"?: string }`   | Create a note          |
-| PUT    | `/api/notes/{id}` | `{ "title"?, "body"? }`  | Update a note          |
-| DELETE | `/api/notes/{id}` | —                        | Delete a note (204)    |
-
-During development the Next.js dev server proxies `/api/*` to the Go backend
-(see `frontend/next.config.mjs`), so the app uses same-origin URLs.
-
-## Theming
-
-v0.0.1 uses a neutral frame palette with a mauve/purple accent, defined as CSS
-variables in `frontend/src/app/globals.css`. The same variables feed Milkdown's
-Crepe `frame` theme via `.milkdown` overrides, so the editor and the app shell
-share one palette. A light/dark/system toggle lives in the sidebar
-(`next-themes`).
-
-v0.0.2 fixes dark-mode editor rendering: Crepe's theme CSS is imported in
-`globals.css` before the overrides, and dark overrides are scoped under
-`.dark .milkdown` (higher specificity) so the editor follows the app theme in
-both light and dark. The editor uses the full pane width with responsive
-padding, and the layout is mobile-responsive (sidebar slides in on small
-screens).
+Each note is one file (`<id>.md`) with YAML frontmatter holding its metadata
+(`id`, `title`, `path`, timestamps, `tags`, and collection fields) plus a markdown
+body. The data directory is `$NEXOTE_HOME` (default `~/.nexote`; dev may use
+`.notes-dev/`). Notes live in nested folders under `vaults/<vaultId>/`.
 
 ## Getting started
-
 Enter the devshell (requires [direnv](https://direnv.net) + Nix with flakes):
 
 ```bash
 direnv allow
 ```
-
-Run both servers (from the repo root):
-
-```bash
-trap 'kill 0' EXIT; (cd backend && go run .) & (cd frontend && pnpm dev) & wait
-```
-
-Then open <http://localhost:3000>.
 
 First-time frontend install:
 
@@ -79,29 +39,23 @@ First-time frontend install:
 cd frontend && pnpm install
 ```
 
-## Checks
+Run both servers (from the repo root):
 
 ```bash
+(cd backend && go run .) & (cd frontend && pnpm dev) & wait
+```
+
+Then open <http://localhost:3000>. The Go API listens on `:8080`
+(`NEXOTE_PORT`); in dev Next.js proxies `/api/*` to it (see
+`frontend/next.config.mjs`), so the app uses same-origin URLs. For production, run
+a reverse proxy in front of both, or use the single-container Docker build
+(`Dockerfile`, `docker-compose.yml`).
+
+## Checks
+```bash
 # backend
-cd backend && go vet ./... && go build ./... && go test ./...
+cd backend && go build ./... && go vet ./... && go test ./...
 
 # frontend
-cd frontend && pnpm typecheck && pnpm build
-```
-
-## Project layout
-
-```
-nexote/
-├── flake.nix                # nix devshell
-├── backend/                 # Go REST API
-│   ├── main.go
-│   ├── api/handler.go
-│   └── notes/{store,frontmatter,id}.go
-└── frontend/                # Next.js + Milkdown
-    └── src/
-        ├── app/             # layout, page, globals.css
-        ├── components/      # MilkdownEditor, Sidebar, EditorPane, ThemeToggle,
-        │                    # NotesProvider, DeleteConfirm, Shortcuts
-        └── lib/             # api client, notes context
+cd frontend && pnpm typecheck && pnpm lint
 ```

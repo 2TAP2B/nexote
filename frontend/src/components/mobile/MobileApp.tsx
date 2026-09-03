@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
+import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
@@ -53,6 +54,7 @@ export default function MobileApp() {
   const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
+  const [collectionFormOpen, setCollectionFormOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [treeControls, setTreeControls] = useState<TreeControls | null>(null);
   const [moveTo, setMoveTo] = useState<string | null>(null);
@@ -63,11 +65,18 @@ export default function MobileApp() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   // Persist the sidebar section (tree/recent/shortcuts/bookmarks/tags/tasks/
-  // images/journal) + selected tag across reloads, so the app reopens where the
-  // user left off instead of dropping back to the root note tree.
+  // collections/journal) + selected tag across reloads, so the app reopens where
+  // the user left off instead of dropping back to the root note tree.
   useEffect(() => {
     const saved = localStorage.getItem("nexote:sidebar-view");
-    if (saved && saved !== "tree") setSidebarView(saved as SidebarView);
+    if (saved && saved !== "tree") {
+      // "images" was removed — fall back to tree if it was the last view.
+      if (saved === "images") {
+        localStorage.removeItem("nexote:sidebar-view");
+      } else {
+        setSidebarView(saved as SidebarView);
+      }
+    }
     const tag = localStorage.getItem("nexote:selected-tag");
     if (tag) setSelectedTag(tag);
   }, []);
@@ -212,12 +221,15 @@ export default function MobileApp() {
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
+    const onNewCollection = () => setCollectionFormOpen(true);
+    window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
+      window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
 
@@ -408,6 +420,15 @@ export default function MobileApp() {
           onCollectionChanged={setGalleryCollection}
         />
       )}
+
+      <CollectionFormDialog
+        open={collectionFormOpen}
+        onClose={() => setCollectionFormOpen(false)}
+        onSaved={() => {
+          setCollectionFormOpen(false);
+          window.dispatchEvent(new CustomEvent("nexote:refresh-data"));
+        }}
+      />
     </div>
   );
 }

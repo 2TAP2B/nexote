@@ -10,7 +10,7 @@ import {
   FileStack,
   FolderPlus,
   Hash,
-  Images,
+  Library,
   ListTodo,
   Star,
   X,
@@ -39,7 +39,7 @@ const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }
   { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
   { icon: Hash, label: "Tags", view: "tags" },
   { icon: ListTodo, label: "Tasks", view: "tasks" },
-  { icon: Images, label: "Images", view: "images" },
+  { icon: Library, label: "Collections", view: "collections" },
   { icon: CalendarDays, label: "Daily", view: "journal" },
 ];
 

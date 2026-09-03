@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import CommandPalette from "@/components/CommandPalette";
+import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
 import EditorPane from "@/components/EditorPane";
 import FileTree, { type TreeControls } from "@/components/FileTree";
@@ -68,6 +69,7 @@ function AppShell() {
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
+  const [collectionFormOpen, setCollectionFormOpen] = useState(false);
   const [treeControls, setTreeControls] = useState<TreeControls>({
     expandAll: () => {},
     collapseAll: () => {},
@@ -123,6 +125,8 @@ function AppShell() {
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
+    const onNewCollection = () => setCollectionFormOpen(true);
+    window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
       window.removeEventListener("nexote:toggle-sidebar", onToggle);
       window.removeEventListener("nexote:open-palette", onOpenPalette);
@@ -130,6 +134,7 @@ function AppShell() {
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
+      window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
 
@@ -361,6 +366,15 @@ function AppShell() {
             onCollectionChanged={setGalleryCollection}
           />
         )}
+
+        <CollectionFormDialog
+          open={collectionFormOpen}
+          onClose={() => setCollectionFormOpen(false)}
+          onSaved={() => {
+            setCollectionFormOpen(false);
+            window.dispatchEvent(new CustomEvent("nexote:refresh-data"));
+          }}
+        />
       </div>
     </>
   );
@@ -373,7 +387,7 @@ const VIEW_TITLES: Record<Exclude<SidebarView, "tree">, string> = {
   journal: "Daily notes",
   tags: "Tags",
   tasks: "Tasks",
-  images: "Images",
+  collections: "Collections",
 };
 
 function SidebarHeader({

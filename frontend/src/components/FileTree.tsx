@@ -5,6 +5,7 @@ import {
   ArrowDownUp,
   Bookmark,
   BookmarkCheck,
+  CalendarDays,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -195,6 +196,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     toggleTaskItem,
     isJournalNote,
     noteVaultMap,
+    openDaily,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
@@ -205,9 +207,13 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   );
 
   // Load the collection definitions so collection cards can map an item's
-  // collection id to its display name for accurate counts.
+  // collection id to its display name for accurate counts. Also reload on
+  // nexote:refresh-data (e.g. after a new collection is created).
   useEffect(() => {
-    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+    const reload = () => void api.listCollections().then((res) => setCollections(res.collections ?? []));
+    reload();
+    window.addEventListener("nexote:refresh-data", reload);
+    return () => window.removeEventListener("nexote:refresh-data", reload);
   }, []);
   // Recent excludes notes already pinned as shortcuts, so a note doesn't
   // appear in both the Shortcuts and Recent sections. Recent / Shortcuts /
@@ -256,7 +262,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     journal: "journal",
     tags: "tags",
     tasks: "tasks",
-    images: "images",
+    collections: "collections",
   };
 
   // Shortcuts nav list (sorted by updatedAt desc to match the detailed view)
@@ -906,26 +912,15 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
               shortcuts={shortcuts}
             />
           ) : view === "journal" ? (
-            <DetailedNoteList
-              notes={journalNotes}
-              notesById={notesById}
+            <CalendarView
+              journalNotes={journalNotes}
               activeId={activeId}
-              activeSource={activeSource}
-              sourceTag="journal"
-              treeSelectedNav={treeSelectedNav}
-              setTreeSelectedNav={setTreeSelectedNav}
-              onOpen={(id) => {
+              onOpenNote={(id) => {
                 sectionOpenRef.current = true;
                 setActiveSource("journal");
                 void openJournalNote(id);
               }}
-              onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
-              onDelete={setPendingDelete}
-              onCopy={copyNote}
-              onBookmark={toggleBookmark}
-              onShortcut={toggleShortcut}
-              bookmarks={bookmarks}
-              shortcuts={shortcuts}
+              onOpenDaily={() => void openDaily()}
             />
           ) : view === "tags" ? (
             <TagsView
@@ -953,16 +948,16 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
               onOpenNote={openNoteInVault}
               onToggle={toggleTaskItem}
             />
-          ) : view === "images" ? (
-            <ImagesView
-              vaults={vaults}
-              onOpenNote={openNoteInVault}
-              onOpenJournalNote={openJournalNote}
+          ) : view === "collections" ? (
+            <CollectionsView
+              collections={collections}
+              collectionItemCounts={collectionItemCounts}
             />
           ) : (
             <>
-              {/* Vault sections */}
-              {vaults.map((vault) => {
+              {/* Vault sections — skip the "Collections" vault; collections have
+                  their own sidebar view now. */}
+              {vaults.filter((v) => v.name !== "Collections").map((vault) => {
                 const vaultData = allVaultData[vault.id];
                 if (!vaultData) return null;
                 const isExpanded = vaultExpandedMap[vault.id] ?? true;
@@ -2541,6 +2536,318 @@ function TasksView({
             </ul>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// --- Calendar / Journal view ---
+// A month grid where days with journal notes show a dot. Clicking a day that
+// has a note opens it; clicking today opens-or-creates the daily note. Below
+// the grid is a compact list of the selected month's notes.
+function CalendarView({
+  journalNotes,
+  activeId,
+  onOpenNote,
+  onOpenDaily,
+}: {
+  journalNotes: { id: string; title: string; updatedAt: string }[];
+  activeId: string | null;
+  onOpenNote: (id: string) => void;
+  onOpenDaily: () => void;
+}) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [cursor, setCursor] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  // Map "YYYY-MM-DD" -> note id for quick lookup.
+  const notesByDate = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const n of journalNotes) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(n.title)) m[n.title] = n.id;
+    }
+    return m;
+  }, [journalNotes]);
+
+  const monthNotes = useMemo(
+    () =>
+      journalNotes
+        .filter((n) => n.title.startsWith(`${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}`))
+        .sort((a, b) => b.title.localeCompare(a.title)),
+    [journalNotes, cursor],
+  );
+
+  const firstDay = new Date(cursor.year, cursor.month, 1);
+  const startWeekday = (firstDay.getDay() + 6) % 7; // Mon=0 … Sun=6
+  const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
+  const monthName = firstDay.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
+
+  const goPrev = () =>
+    setCursor((c) => (c.month === 0 ? { year: c.year - 1, month: 11 } : { year: c.year, month: c.month - 1 }));
+  const goNext = () =>
+    setCursor((c) => (c.month === 11 ? { year: c.year + 1, month: 0 } : { year: c.year, month: c.month + 1 }));
+  const goToday = () => {
+    const d = new Date();
+    setCursor({ year: d.getFullYear(), month: d.getMonth() });
+  };
+
+  const handleDayClick = (day: number) => {
+    const dateStr = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const noteId = notesByDate[dateStr];
+    if (noteId) {
+      onOpenNote(noteId);
+    } else if (dateStr === todayStr) {
+      onOpenDaily();
+    }
+  };
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <div className="pt-1">
+      {/* Month navigation */}
+      <div className="mb-1 flex items-center gap-1 px-2">
+        <button
+          type="button"
+          aria-label="Previous month"
+          onClick={goPrev}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={goToday}
+          className="flex-1 truncate text-center text-xs font-medium"
+          style={{ color: "var(--foreground)" }}
+          title="Jump to today"
+        >
+          {monthName}
+        </button>
+        <button
+          type="button"
+          aria-label="Next month"
+          onClick={goNext}
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+
+      {/* Weekday header */}
+      <div className="mb-0.5 grid grid-cols-7 px-2">
+        {weekdays.map((w, i) => (
+          <div
+            key={i}
+            className="text-center text-[10px] font-medium"
+            style={{ color: "var(--muted-foreground)", opacity: 0.6 }}
+          >
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div className="grid grid-cols-7 gap-0.5 px-1.5">
+        {cells.map((day, i) => {
+          if (day === null) return <div key={i} />;
+          const dateStr = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const hasNote = Boolean(notesByDate[dateStr]);
+          const isToday = dateStr === todayStr;
+          const isActive = hasNote && notesByDate[dateStr] === activeId;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => handleDayClick(day)}
+              className="relative flex h-8 items-center justify-center rounded-md text-xs transition-colors"
+              style={{
+                color: isToday
+                  ? "var(--primary)"
+                  : hasNote
+                    ? "var(--foreground)"
+                    : "var(--muted-foreground)",
+                fontWeight: isToday ? 600 : 400,
+                background: isActive
+                  ? "color-mix(in oklab, var(--primary) 18%, transparent)"
+                  : isToday
+                    ? "color-mix(in oklab, var(--primary) 8%, transparent)"
+                    : "transparent",
+                border: isToday && !isActive ? "1px solid color-mix(in oklab, var(--primary) 30%, transparent)" : "1px solid transparent",
+              }}
+            >
+              {day}
+              {hasNote && (
+                <span
+                  className="absolute bottom-1 h-1 w-1 rounded-full"
+                  style={{ background: isActive ? "var(--primary)" : "var(--muted-foreground)", opacity: 0.7 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Today button */}
+      <div className="mt-1.5 px-2">
+        <button
+          type="button"
+          onClick={onOpenDaily}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
+          style={{ color: "var(--foreground)" }}
+        >
+          <CalendarDays size={13} style={{ color: "var(--primary)" }} />
+          Open today&apos;s note
+        </button>
+      </div>
+
+      {/* Month's notes list */}
+      {monthNotes.length > 0 && (
+        <div className="mt-2">
+          <div
+            className="px-3 pb-1 pt-1.5"
+            style={{ fontSize: 11, fontWeight: 500, color: "var(--muted-foreground)" }}
+          >
+            {monthNotes.length} note{monthNotes.length === 1 ? "" : "s"} this month
+          </div>
+          <ul>
+            {monthNotes.map((n) => {
+              const isActive = n.id === activeId;
+              return (
+                <li key={n.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenNote(n.id)}
+                    className="group flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-white/5"
+                    style={{
+                      background: isActive ? "rgba(255,255,255,0.10)" : undefined,
+                    }}
+                  >
+                    <CalendarDays
+                      size={13}
+                      className="shrink-0"
+                      style={{ color: isActive ? "var(--primary)" : "var(--muted-foreground)", opacity: 0.7 }}
+                    />
+                    <span
+                      className="truncate text-xs"
+                      style={{
+                        fontWeight: isActive ? 600 : 400,
+                        color: isActive ? "var(--primary)" : "var(--foreground)",
+                      }}
+                    >
+                      {n.title}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Collections view ---
+// Lists every collection as a card with item count. Clicking a card dispatches
+// nexote:open-collection, which page.tsx / MobileApp.tsx handle by opening the
+// fullscreen CollectionGallery overlay.
+function CollectionsView({
+  collections,
+  collectionItemCounts,
+}: {
+  collections: CollectionMeta[];
+  collectionItemCounts: Record<string, number>;
+}) {
+  const sorted = [...collections].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return (
+    <div className="pt-1">
+      <div className="mb-1.5 flex items-center justify-end px-1.5">
+        <button
+          type="button"
+          aria-label="New collection"
+          title="New collection"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("nexote:new-collection"),
+            )
+          }
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+        >
+          <FilePlus size={15} />
+        </button>
+      </div>
+      {sorted.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+          <Disc3 size={20} style={{ color: "var(--muted-foreground)", opacity: 0.6 }} />
+          <div className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+            No collections yet. Click + to create one.
+          </div>
+        </div>
+      ) : (
+        <ul className="space-y-1 px-1.5">
+          {sorted.map((col) => {
+            const itemCount = collectionItemCounts[col.id] ?? 0;
+            return (
+              <li key={col.id}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("nexote:open-collection", {
+                        detail: col.name,
+                      }),
+                    )
+                  }
+                  className="group flex w-full items-center gap-2.5 rounded-lg border border-border p-2 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+                  style={{ background: "var(--background)" }}
+                >
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                    style={{ background: "color-mix(in oklab, var(--primary) 12%, transparent)", color: "var(--primary)" }}
+                  >
+                    <Disc3 className="h-4.5 w-4.5" />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span
+                      className="truncate"
+                      style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}
+                    >
+                      {col.name}
+                    </span>
+                    <span
+                      className="truncate"
+                      style={{ fontSize: 11, color: "var(--muted-foreground)" }}
+                    >
+                      {itemCount > 0
+                        ? `${itemCount} item${itemCount === 1 ? "" : "s"}`
+                        : "Empty collection"}
+                    </span>
+                  </span>
+                  {col.pinned && (
+                    <Star
+                      className="h-3.5 w-3.5 shrink-0"
+                      style={{ color: "var(--primary)", fill: "var(--primary)" }}
+                    />
+                  )}
+                  <ChevronRight
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5"
+                  />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

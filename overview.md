@@ -1,175 +1,164 @@
 # Nexote — Project Overview
 
-A markdown note-taking web app. WYSIWYG editing via Milkdown (Crepe), a small
-Go backend that stores notes as plain `.md` files with YAML frontmatter, and a
-Nix flake devshell. Built on NixOS.
+A self-hosted markdown note-taking web app. WYSIWYG editing via Milkdown (Crepe),
+a small Go backend that stores notes as plain `.md` files with YAML frontmatter,
+and a Nix flake devshell. Built on NixOS.
 
-## Status
+> **Agent orientation:** see [`AGENTS.md`](./AGENTS.md) for the file index,
+> task→file cheat sheet, and do-not-break invariants. This document is the human
+> architecture overview.
 
-- **v0.0.1** (tagged `v0.0.1`, commit `6502566`): working end-to-end.
-  - Go REST API (list/get/create/update/delete) over filesystem notes.
-  - Next.js 16 + React 19 + Tailwind v4 + Milkdown Crepe editor.
-  - Neutral frame palette with mauve/purple accent; next-themes
-    light/dark/system toggle.
-  - Debounced autosave; sidebar list; title input.
-- **v0.0.2** (tagged `v0.0.2`): dark-mode editor fix, full-width + responsive,
-  search, keyboard shortcuts, delete confirmation, Go unit tests, foldable
-  sidebar, nicer fonts (Inter/Lora/JetBrains Mono).
-- **v0.0.3** (tagged `v0.0.3`): lucide icons everywhere (no emojis), modern
-  rounded UI, responsive editor container with proper padding/margin, mobile
-  swipe gestures to open/close the sidebar.
-- **v0.0.4** (in progress): Obsidian-style UI — ribbon + file tree + tabs +
-  command palette + daily journal, plus backend folder/path support.
-  - Backend: notes may live in nested folders; `Meta.Path` records the folder
-    (relative to the store root). `List` walks recursively; `Create` accepts a
-    `path`; `GET /api/notes/daily` opens-or-creates today's journal under
-    `Journal/`. Path sanitization rejects `..` and absolute paths.
-  - Ribbon: far-left icon strip (Files, Search, Daily, Command palette,
-    Settings) that switches the sidebar view.
-  - FileTree: collapsible tree built from note paths, with folder/note icons,
-    active highlighting, inline delete (with confirm).
-  - Tabs: open notes render as a tab bar above the editor; click to focus,
-    middle-click or X to close; the provider caches full notes by id so tab
-    switches are instant.
-  - Command palette: `Cmd/Ctrl+P` fuzzy-jump to any note by title.
-  - Daily journal: one-click (ribbon icon) opens today's `Journal/YYYY-MM-DD`
-    note, creating it with a seeded header if absent.
-  - Provider rewrite: `openTabs`/`activeId`/`notesById` replace the single
-    `selectedId`; `openTab`/`closeTab`/`openDaily` added.
+## Feature set (current)
+- **Multi-vault** — many isolated note directories, managed via the API/UI.
+- **Nested folders** — notes live in `<id>.md` files under nested paths per vault.
+- **Collections** — typed sets with custom fields (`text|number|boolean|date`),
+  rendered as a gallery; includes the built-in "Vinyls" collection.
+- **Per-note history** — full-file snapshots on every save, browsable + restorable.
+- **Tasks** — lightweight task list across notes.
+- **Daily journal** — one-click today's note (pseudo vault id `"journal"`).
+- **AI assistant** — streaming chat through a Go proxy to any OpenAI-compatible
+  endpoint; the browser never sees the API key.
+- **Images** — upload into a note's folder, referenced from markdown, migrated on
+  note move (cross-folder and cross-vault).
+- **Bookmarks & shortcuts** — pinned note ID lists per vault.
+- **Tags** — stored in frontmatter; listable/filterable.
+- **Real-time sync** — Server-Sent Events broadcast note changes to open clients.
+- **Offline / PWA** — IndexedDB outbox + service worker replay queued writes on
+  reconnect (AI requests are never queued).
+- **Mobile app** — a separate, touch-first UI at `/m`.
 
 ## Architecture
 
 ```
 nexote/
-├── flake.nix                # nix devshell: go_1_25, nodejs_22, pnpm, gopls, ...
+├── flake.nix                # nix devshell: go_1_25, nodejs_22, pnpm, gopls, tsserver
 ├── .envrc                   # use flake (direnv)
-├── backend/                 # Go 1.25, module "nexote"
-│   ├── main.go              # server bootstrap, env config
-│   ├── api/handler.go       # REST handlers + CORS, JSON via stdlib
+├── backend/                 # Go 1.25, module "nexote", stdlib + gopkg.in/yaml.v3
+│   ├── main.go              # bootstrap: NEXOTE_HOME, port, registry + collections vault + journal
+│   ├── api/
+│   │   ├── handler.go       # Handler + ALL REST routes + CORS/preflight (route table ~L51–126)
+│   │   ├── events.go        # SSE hub: real-time note-change broadcast
+│   │   └── ai.go            # AI proxy (chat/test → OpenAI-compatible, relays upstream SSE)
 │   └── notes/
-│       ├── store.go         # filesystem CRUD: <id>.md files
-│       ├── frontmatter.go   # YAML frontmatter encode/decode (gopkg.in/yaml.v3)
-│       └── id.go            # base64url random id (~16 chars)
-└── frontend/                # Next.js 16 app router
-    ├── next.config.mjs      # rewrites /api/* -> http://localhost:8080
-    ├── postcss.config.mjs   # @tailwindcss/postcss
+│       ├── store.go         # core Store: filesystem CRUD, id→path index, two locks
+│       ├── frontmatter.go   # Meta + Document; YAML frontmatter encode/decode
+│       ├── id.go            # NewID(): 16-char base64url
+│       ├── vaults.go        # VaultMeta + VaultRegistry (vaults.json)
+│       ├── collections.go   # CollectionMeta/Field + CollectionRegistry
+│       ├── history.go       # per-note snapshots under .history/<id>/<ms>.md
+│       ├── images.go        # image upload/list/read/delete + move migration
+│       └── bookmarks.go     # idList backing Bookmarks + Shortcuts
+└── frontend/                # Next.js 16 app router, React 19, Tailwind v4, Milkdown Crepe
+    ├── next.config.mjs      # rewrites /api/* → Go; compress:false (SSE); output:"standalone"
+    ├── public/sw.js         # service worker: offline outbox replay (never queues /api/ai/)
     └── src/
-        ├── app/
-        │   ├── layout.tsx   # ThemeProvider (next-themes, attribute=class)
-        │   ├── page.tsx     # NotesProvider + Sidebar + EditorPane
-        │   └── globals.css  # Tailwind v4 theme tokens + .milkdown overrides
-        ├── components/
-        │   ├── MilkdownEditor.tsx  # Crepe via @milkdown/react, dynamic ssr:false
-        │   ├── NotesProvider.tsx   # context: tabs (openTabs/activeId/notesById), CRUD, daily
-        │   ├── Ribbon.tsx          # far-left icon strip (files/search/daily/command)
-        │   ├── FileTree.tsx        # collapsible tree from note paths + delete
-        │   ├── SearchView.tsx      # sidebar search view
-        │   ├── TabBar.tsx          # open notes as tabs
-        │   ├── CommandPalette.tsx  # Cmd/Ctrl+P fuzzy jump to note
-        │   ├── EditorPane.tsx      # title input + editor, debounced autosave
-        │   ├── ThemeToggle.tsx     # light/dark/system cycle (lucide icons)
-        │   ├── DeleteConfirm.tsx   # accessible confirm dialog (lucide icons)
-        │   ├── Shortcuts.tsx       # Cmd/Ctrl+N, S, P
-        │   └── useSwipeSidebar.ts  # mobile swipe-to-open/close hook
-        └── lib/
-            ├── api.ts             # fetch wrapper, types (Note, NoteMeta, NoteInput)
-            └── notes-context.ts   # re-export NotesProvider/useNotes + types
+        ├── app/             # desktop shell (page.tsx, layout.tsx) + /m mobile app
+        ├── components/      # NotesProvider, MilkdownEditor, FileTree, galleries, panels, mobile/*
+        └── lib/             # api.ts (client+types), ai.ts, offline-db.ts, note-utils.ts
 ```
 
 ## Data model
 
-Notes are files in `NEXOTE_NOTES_DIR` (default `.notes-dev/`), one per note:
+Notes are files under `$NEXOTE_HOME` (default `~/.nexote`; dev may use `.notes-dev`),
+one per note:
 
 ```markdown
 ---
-id: <id>
+id: <16-char base64url>
 title: <title>
-path: <optional folder, e.g. "Journal/2026">
+path: <optional folder, e.g. "Journal/2026">   # "" = vault root
 createdAt: <RFC3339>
 updatedAt: <RFC3339>
+tags: [ ... ]
+type: <e.g. "vinyl">
+# collection-specific fields (artist, year, genre, wantlist, cover, collection, fields{})
 ---
 <markdown body>
 ```
 
-- `id`: 12 random bytes, base64url, no padding (e.g. `b3xiI9Ya2mQh`).
-- `path`: folder relative to the store root; empty for root-level notes. The
-  file lives at `<dir>/<path>/<id>.md`.
-- Timestamps are UTC, serialized as RFC3339-with-millis in the API JSON.
+- `id`: 12 random bytes → base64url, no padding = 16 chars (`notes/id.go`).
+- `path`: folder relative to the vault root; the file lives at
+  `<vaultDir>/<path>/<id>.md`.
+- **Storage tree** (under `$NEXOTE_HOME`):
+  - `vaults/<vaultId>/…` — note files + nested folders. Registry: `vaults.json`.
+  - A dedicated **"Collections"** vault is auto-created to hold collection notes.
+  - `journal/` — daily journal notes (pseudo id `"journal"`).
+  - `collections.json` — collection registry (`CollectionMeta` + custom fields).
 
 ## API (Go, `:8080`)
 
-| Method | Path              | Body                                  | Returns          |
-| ------ | ----------------- | ------------------------------------- | ---------------- |
-| GET    | `/api/notes`      | —                                     | `NoteMeta[]`     |
-| GET    | `/api/notes/daily`| —                                     | `Note`           |
-| GET    | `/api/notes/{id}` | —                                     | `Note`           |
-| POST   | `/api/notes`      | `{ "title"?, "path"? }`               | `Note` (201)     |
-| PUT    | `/api/notes/{id}` | `{ "title"?, "body"? }`               | `Note`           |
-| DELETE | `/api/notes/{id}` | —                                     | 204              |
+All note/bookmark/folder routes are scoped under a vault. Full table in
+`backend/api/handler.go` (~L51–126); the frontend mirror is `frontend/src/lib/api.ts`.
 
-Errors: `{ "error": "<msg>" }` with appropriate status. `GET/PUT` on missing
-id → 404. CORS open (`*`) for dev. Next.js proxies `/api/*` → Go in dev so the
-app is same-origin.
+| Group | Routes |
+| --- | --- |
+| Vaults | `GET/POST /api/vaults`, `PUT/PATCH/DELETE /api/vaults/{id}` (rename/icon/delete) |
+| Collections | `GET/POST /api/collections`, `PUT/PATCH(pin)/DELETE /api/collections/{id}` |
+| Notes | `GET/POST /api/vaults/{vaultId}/notes` (+`/copy`,`/move`), `GET/PUT/DELETE …/notes/{id}` |
+| History | `GET …/notes/{id}/history`, `GET …/history/{ts}`, `POST …/history/{ts}/restore` |
+| Folders | `POST /api/vaults/{vaultId}/folders`, `DELETE …/folders/{path...}` |
+| Images | `POST …/notes/{id}/images`, `GET …/images`, `GET/DELETE …/images/{path...}` |
+| Bookmarks | `GET/POST …/bookmarks`, `DELETE …/bookmarks/{id}` |
+| Shortcuts | `GET/POST …/shortcuts`, `DELETE …/shortcuts/{id}` |
+| Tags | `GET …/tags`, `POST/DELETE …/notes/{id}/tags…`, `POST …/tags/rename`, `DELETE …/tags/{tag...}` |
+| Journal | `GET /api/journal/daily`, `GET /api/journal/notes`, `GET/PUT/DELETE …/notes/{id}`, history routes |
+| Tasks | `GET/PUT /api/tasks` |
+| AI | `POST /api/ai/chat` (streaming), `POST /api/ai/test` |
+| Events | `GET /api/events` (SSE) |
+
+Errors: `{ "error": "<msg>" }` with the appropriate status; missing id → 404. CORS
+open for dev. Next.js proxies `/api/*` → Go in dev so the app is same-origin.
 
 ## Frontend behavior
 
-- `NotesProvider` holds the list + selected note; `useNotes()` consumes it.
-- Selecting a note fetches its full body; the editor is keyed by note id so
-  swapping notes remounts the Crepe instance with the new `defaultValue`.
-- Editor emits markdown via `crepe.on(listener => listener.markdownUpdated(...))`;
-  `EditorPane` debounces saves (800ms) and serializes in-flight saves per id
-  to keep updates ordered.
-- Theme: `next-themes` with `attribute="class"`, `defaultTheme="system"`. The
-  sidebar toggle cycles light → dark → system.
+- `NotesProvider` (`src/components/NotesProvider.tsx`) is the single source of
+  truth: all app state (vaults, notes/tabs, active note, collections, tasks,
+  bookmarks, shortcuts) plus every CRUD action. Components consume it via
+  `useNotes()`.
+- The editor (`MilkdownEditor.tsx`) is keyed by note id; swapping notes remounts
+  Crepe with the new markdown. Saves are debounced and serialized per id.
+- **Real-time:** an `EventSource` on `/api/events` refetches a note when it
+  changes elsewhere (the SSE stream needs `compress:false` in Next config).
+- **Offline:** writes that fail while offline go into an IndexedDB outbox
+  (`lib/offline-db.ts`) and are replayed by the service worker on reconnect.
+  `/api/ai/*` is deliberately never queued.
+- **Mobile** (`/m`, `src/components/mobile/*`) is a separate, touch-first app
+  sharing the same provider + API client.
 
-## Theming details
+## Theming
 
-`globals.css` defines a neutral frame palette with a mauve/purple accent as
-CSS variables (`--background`, `--foreground`, `--muted`, `--border`,
-`--primary` = violet-600/400, `--accent`, `--ring`, ...), exposed to Tailwind v4
-via `@theme`. The same vars are mapped onto Crepe's `frame` theme variables on
-`.milkdown` (`--crepe-color-*`) so the editor and shell share one palette.
-
-**Known issue (v0.0.2 to fix):** the editor stays light in dark mode because
-Crepe's `frame.css` sets hardcoded light values on `.milkdown` and the override
-order is not guaranteed when CSS is imported from separate modules. Fix: import
-the Crepe theme CSS in `globals.css` before the override block so the overrides
-win the cascade; also scope dark overrides under `.dark .milkdown` for safety.
-
-**Fixed in v0.0.2:** Crepe's `common/style.css` and `frame.css` are now imported
-at the top of `globals.css` (before our overrides), and dark overrides live
-under `.dark .milkdown` (specificity 0,2,0 vs Crepe's 0,1,0) so the editor
-follows the app theme in both light and dark. The component no longer imports
-the theme CSS itself, removing the nondeterministic ordering.
+`globals.css` defines a neutral frame palette with a mauve/purple accent as CSS
+variables, exposed to Tailwind v4 via `@theme` and mapped onto Crepe's `frame`
+theme on `.milkdown`. Crepe theme CSS is imported before the overrides so they win
+the cascade; dark overrides are scoped under `.dark .milkdown`. `next-themes`
+drives light/dark/system.
 
 ## Tooling / checks
 
 ```bash
-direnv allow                       # enter devshell
+direnv allow                       # enter devshell (or: nix develop)
 # backend
-cd backend && go vet ./... && go build ./...
+cd backend && go build ./... && go vet ./... && go test ./...
 # frontend
-cd frontend && pnpm typecheck && pnpm build
+cd frontend && pnpm install && pnpm typecheck && pnpm lint
 # run both
-trap 'kill 0' EXIT; (cd backend && go run .) & (cd frontend && pnpm dev) & wait
+(cd backend && go run .) & (cd frontend && pnpm dev) & wait
 ```
 
-Nix flake: `nix develop .#devShells.x86_64-linux.default -c <cmd>` works
-without direnv. Note: `go_1_23` is EOL on nixos-unstable; we use `go_1_25`.
+Nix flake: `nix develop .#devShells.x86_64-linux.default -c <cmd>` works without
+direnv. We use `go_1_25` (`go_1_23` is EOL on nixos-unstable).
 
 ## Conventions
 
-- Go: stdlib `net/http` with Go 1.22+ method-pattern routing
-  (`mux.HandleFunc("GET /api/notes/{id}", ...)`), `r.PathValue("id")`.
-- Frontend: app router, `"use client"` where hooks/DOM are needed, dynamic
-  import for Milkdown (`ssr: false`), `@/*` path alias to `src/*`.
+- Go: stdlib `net/http` with method-pattern routing
+  (`mux.HandleFunc("GET /api/vaults/{vaultId}/notes/{id}", ...)`), `r.PathValue(...)`.
+- Frontend: app router, `"use client"` where hooks/DOM are needed, dynamic import
+  for Milkdown (`ssr: false`), `@/*` path alias to `src/*`.
 - No comments in code unless asked.
-- Notes dir and `.next/` are gitignored; `.notes-dev/` is dev data, not
-  committed.
+- `.notes-dev/`, `.next/`, and note data are gitignored / not committed.
 
-## Next versions (rough ideas)
+## Roadmap
 
-- v0.0.3: tags/folders, full-text search index, note count badges.
-- v0.0.4: auth, multi-user, sync.
-- later: collaboration (Y.js), image upload, export, single-binary Go serve
-  of built Next.js static export.
+The forward-looking feature plan (tags, previews, multi-select, search filters,
+properties, dual-pane, calendar, settings toggles) lives at
+`.opencode/plans/notebook-navigator-features.md`.

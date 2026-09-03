@@ -6,7 +6,7 @@ import {
   Clock,
   FileStack,
   Hash,
-  Images,
+  Library,
   ListTodo,
   Settings,
   Star,
@@ -23,7 +23,7 @@ export type SidebarView =
   | "journal"
   | "tags"
   | "tasks"
-  | "images";
+  | "collections";
 
 type RibbonProps = {
   activeView: SidebarView;
@@ -52,7 +52,7 @@ export default function Ribbon({
     { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
     { icon: Hash, label: "Tags", view: "tags" },
     { icon: ListTodo, label: "Tasks", view: "tasks" },
-    { icon: Images, label: "Images", view: "images" },
+    { icon: Library, label: "Collections", view: "collections" },
     { icon: CalendarDays, label: "Daily notes", view: "journal", daily: true },
   ];
 
