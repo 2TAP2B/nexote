@@ -347,8 +347,7 @@ export default function MobileDashboard({
             {(tasksOpen ? openTasks : openTasks.slice(0, 3)).map((t) => (
               <div
                 key={`${t.vaultId}-${t.noteId}-${t.line}`}
-                className="flex min-h-[52px] items-center gap-3 rounded-2xl px-3 py-2"
-                style={{ background: "var(--mob-card)" }}
+                className="flex min-h-[48px] items-center gap-3 rounded-xl px-2 py-1.5"
               >
                 <button
                   type="button"
@@ -552,12 +551,11 @@ function NoteRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-[56px] items-center gap-3 rounded-2xl px-3 py-2 text-left transition-[transform,background] active:scale-[0.98]"
-      style={{ background: "var(--mob-card)" }}
+      className="flex min-h-[52px] items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-[transform,background] active:scale-[0.98] active:bg-white/5"
     >
       <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-        style={{ background: "var(--mob-surface)", color: "var(--mob-accent)" }}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+        style={{ color: "var(--mob-accent)" }}
       >
         {icon}
       </span>

@@ -330,7 +330,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               {(tasksOpen ? openTasks : openTasks.slice(0, 3)).map((t) => (
                 <div
                   key={`${t.vaultId}-${t.noteId}-${t.line}`}
-                  className="flex items-center gap-3 rounded-lg border border-border px-3 py-2"
+                  className="flex items-center gap-3 rounded-lg px-2 py-1.5"
                 >
                   <button
                     type="button"
@@ -513,7 +513,7 @@ function NoteCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+      className="group flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/50"
     >
       {icon}
       <div className="flex min-w-0 flex-1 flex-col">
