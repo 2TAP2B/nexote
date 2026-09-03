@@ -2673,20 +2673,26 @@ function CalendarView({
                   : hasNote
                     ? "var(--foreground)"
                     : "var(--muted-foreground)",
-                fontWeight: isToday ? 600 : 400,
+                fontWeight: isToday || hasNote ? 600 : 400,
                 background: isActive
                   ? "color-mix(in oklab, var(--primary) 18%, transparent)"
-                  : isToday
-                    ? "color-mix(in oklab, var(--primary) 8%, transparent)"
-                    : "transparent",
-                border: isToday && !isActive ? "1px solid color-mix(in oklab, var(--primary) 30%, transparent)" : "1px solid transparent",
+                  : hasNote && !isToday
+                    ? "color-mix(in oklab, var(--primary) 6%, transparent)"
+                    : isToday
+                      ? "color-mix(in oklab, var(--primary) 8%, transparent)"
+                      : "transparent",
+                border: isToday && !isActive
+                  ? "1px solid color-mix(in oklab, var(--primary) 30%, transparent)"
+                  : hasNote && !isToday
+                    ? "1px solid color-mix(in oklab, var(--primary) 15%, transparent)"
+                    : "1px solid transparent",
               }}
             >
               {day}
               {hasNote && (
                 <span
-                  className="absolute bottom-1 h-1 w-1 rounded-full"
-                  style={{ background: isActive ? "var(--primary)" : "var(--muted-foreground)", opacity: 0.7 }}
+                  className="absolute bottom-0.5 h-1 w-1 rounded-full"
+                  style={{ background: isActive ? "var(--primary)" : "var(--primary)", opacity: isActive ? 1 : 0.5 }}
                 />
               )}
             </button>
