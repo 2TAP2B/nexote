@@ -1382,6 +1382,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setGitConfig(config);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save git config");
+      throw e;
     }
   }, []);
 

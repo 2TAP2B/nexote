@@ -105,6 +105,8 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
     const items: RecentEntry[] = [];
     for (const v of vaults) {
       for (const n of allVaultData[v.id]?.notes ?? []) {
+        // Collection items live in their gallery, not the note lists.
+        if (n.collection) continue;
         items.push({ id: n.id, title: n.title, path: n.path, updatedAt: n.updatedAt, vaultId: v.id, source: "vault" });
       }
     }
@@ -162,7 +164,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
       .map(([name, count]) => ({ name, count }));
   }, [tagsByVault]);
 
-  const pinned = collections.filter((c) => c.pinned);
+  const pinned = collections.filter((c) => c.pinned && !c.hidden);
 
   const [recentsOpen, toggleRecents] = useSectionState("recents", true);
   const [shortcutsOpen, toggleShortcuts] = useSectionState("shortcuts", true);

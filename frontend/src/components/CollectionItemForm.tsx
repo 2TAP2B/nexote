@@ -1,12 +1,12 @@
 "use client";
 
-import { Disc3, ImagePlus, Loader2, X } from "lucide-react";
+import { Disc3, ImagePlus, Loader2, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { cacheImage } from "@/lib/image-cache";
 import { useNotes } from "@/lib/notes-context";
-import type { CollectionMeta, NoteMeta } from "@/lib/api";
+import type { CollectionMeta, MetadataSearchResult, NoteMeta } from "@/lib/api";
 
 type Props = {
   open: boolean;
@@ -36,6 +36,55 @@ export default function CollectionItemForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Metadata lookup state ──
+  // The source is determined by the collection's schema: a "discogsId" field
+  // enables Discogs lookups, an "isbn" field enables book (ISBN) lookups.
+  const schemaKeys = collection.fields.map((f) => f.key);
+  const lookupSource = schemaKeys.includes("discogsId")
+    ? "discogs"
+    : schemaKeys.includes("isbn")
+      ? "book"
+      : null;
+  const lookupKeyField = lookupSource === "discogs" ? "discogsId" : "isbn";
+  const [lookupValue, setLookupValue] = useState("");
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<MetadataSearchResult[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Apply a metadata result: title, mapped fields, and a cover preview from
+  // the remote URL. Everything stays manually editable afterwards.
+  const applyMetadata = (res: {
+    title: string;
+    artists?: string[];
+    year?: string;
+    genres?: string[];
+    label?: string;
+    catno?: string;
+    pages?: string;
+    coverUrl?: string;
+  }) => {
+    setTitle((prev) => prev.trim() || res.title);
+    setCoverPreview(res.coverUrl ?? "");
+    setFieldValues((prev) => {
+      const next = { ...prev };
+      const put = (key: string, value?: string) => {
+        if (!value || next[key]) return; // don't overwrite filled fields
+        next[key] = value;
+      };
+      if (res.artists?.length) put("artist", res.artists.join(", "));
+      put("author", res.artists?.join(", "));
+      put("year", res.year);
+      if (res.genres?.length) put("genre", res.genres[0]);
+      put("label", res.label);
+      put("publisher", res.label);
+      put("catno", res.catno);
+      put("pages", res.pages);
+      return next;
+    });
+  };
 
   const isEdit = Boolean(note);
 
@@ -106,6 +155,22 @@ export default function CollectionItemForm({
         const meta = await api.uploadImage(vaultId, noteId, coverFile);
         void cacheImage(meta.url, coverFile);
         coverUrl = meta.url;
+      } else if (!coverFile && coverUrl && /^https?:\/\//.test(coverUrl)) {
+        // Remote cover from a metadata lookup — download it into the vault
+        // via the backend so it stays available offline.
+        try {
+          const meta = await api.metadataCover({ vaultId, noteId, url: coverUrl });
+          coverUrl = meta.url;
+        } catch {
+          // Cover download failed — keep referencing the remote URL.
+        }
+      }
+
+      // Remember the lookup key in its schema field (discogsId / isbn) if the
+      // user only entered it in the lookup bar.
+      const storedFields = { ...fieldValues };
+      if (lookupSource && lookupValue.trim() && !storedFields[lookupKeyField]) {
+        storedFields[lookupKeyField] = lookupValue.trim();
       }
 
       await api.update(vaultId, noteId, {
@@ -113,7 +178,7 @@ export default function CollectionItemForm({
         type: "collection-item",
         collection: collection.id,
         cover: coverUrl || null,
-        fields: fieldValues,
+        fields: storedFields,
       });
 
       await refresh();
@@ -127,6 +192,75 @@ export default function CollectionItemForm({
   };
 
   const currentCover = coverPreview || cover;
+
+  // Fetch metadata for the entered lookup key (Discogs release id or ISBN).
+  const runLookup = async () => {
+    const key = lookupValue.trim();
+    if (!key || !lookupSource) return;
+    setLookupLoading(true);
+    setError(null);
+    try {
+      const res =
+        lookupSource === "discogs"
+          ? await api.discogsRelease(key)
+          : await api.bookLookup(key);
+      applyMetadata(res);
+      // After a fresh lookup the note may not exist yet — remember the cover
+      // URL so submit() can download it into the vault.
+      setCoverFile(null);
+      setCover(res.coverUrl ?? "");
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : `Lookup failed (${lookupSource})`,
+      );
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  // Free-text search across the collection's source.
+  const runSearch = async () => {
+    const q = searchQ.trim();
+    if (!q || !lookupSource) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const res =
+        lookupSource === "discogs"
+          ? await api.discogsSearch(q)
+          : await api.bookSearch(q);
+      setSearchResults(res.results ?? []);
+      setSearchOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Search failed");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Pick a search result: fetch its full metadata by id and fill the form.
+  const pickSearchResult = async (hit: MetadataSearchResult) => {
+    setSearchOpen(false);
+    setLookupValue(hit.externalId);
+    if (lookupSource === "book") {
+      // Book search results only carry a summary — the ISBN is needed for
+      // the full lookup. Fall back to applying what we have.
+      setTitle((prev) => prev.trim() || hit.title);
+      setCoverPreview(hit.coverUrl ?? "");
+      return;
+    }
+    setLookupLoading(true);
+    try {
+      const res = await api.discogsRelease(hit.externalId);
+      applyMetadata(res);
+      setCover(res.coverUrl ?? "");
+      setCoverFile(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Lookup failed");
+    } finally {
+      setLookupLoading(false);
+    }
+  };
 
   return (
     <div
@@ -203,6 +337,101 @@ export default function CollectionItemForm({
           className="hidden"
           onChange={(e) => pickFile(e.target.files?.[0])}
         />
+
+        {/* Metadata lookup — only when the schema supports it (discogsId /
+            isbn field present). Fill the form from Discogs / Google Books. */}
+        {lookupSource && (
+          <div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 p-3">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 shrink-0 text-primary" />
+              <span className="text-xs font-medium text-foreground">
+                {lookupSource === "discogs"
+                  ? "Discogs lookup — enter a release ID, or search by name"
+                  : "Book lookup — enter an ISBN, or search by title"}
+              </span>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={lookupValue}
+                onChange={(e) => setLookupValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void runLookup();
+                  }
+                }}
+                placeholder={lookupSource === "discogs" ? "Release ID (e.g. 123456)" : "ISBN"}
+                className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+              />
+              <button
+                type="button"
+                onClick={() => void runLookup()}
+                disabled={lookupLoading || !lookupValue.trim()}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {lookupLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                Fetch
+              </button>
+            </div>
+
+            {/* Free-text search */}
+            <div className="mt-2 flex gap-2">
+              <input
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void runSearch();
+                  }
+                }}
+                placeholder={lookupSource === "discogs" ? "Search artist + title…" : "Search title / author…"}
+                className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring"
+              />
+              <button
+                type="button"
+                onClick={() => void runSearch()}
+                disabled={searching || !searchQ.trim()}
+                className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
+              >
+                {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Search"}
+              </button>
+            </div>
+
+            {/* Search results */}
+            {searchOpen && searchResults.length > 0 && (
+              <ul className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-border">
+                {searchResults.map((hit) => (
+                  <li key={`${hit.source}-${hit.externalId}`}>
+                    <button
+                      type="button"
+                      onClick={() => void pickSearchResult(hit)}
+                      className="flex w-full items-center gap-2.5 border-b border-border px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-muted/50"
+                    >
+                      {hit.coverUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={hit.coverUrl} alt="" className="h-9 w-9 shrink-0 rounded object-cover" />
+                      ) : (
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+                          <Disc3 size={14} />
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-foreground">{hit.title}</span>
+                        {hit.subtitle && (
+                          <span className="block truncate text-xs text-muted-foreground">{hit.subtitle}</span>
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {searchOpen && searchResults.length === 0 && (
+              <div className="mt-2 px-1 text-xs text-muted-foreground">No results.</div>
+            )}
+          </div>
+        )}
 
         {/* Custom fields */}
         {collection.fields.length > 0 && (

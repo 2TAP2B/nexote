@@ -32,6 +32,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useNotes, formatTitle } from "@/lib/notes-context";
 import { api } from "@/lib/api";
+import type { CollectionMeta, GitConfig, MetadataConfig } from "@/lib/api";
 
 type Props = {
   open: boolean;
@@ -101,6 +102,68 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
   const [gitBusy, setGitBusy] = useState(false);
   const [gitMsg, setGitMsg] = useState("");
   const [gitCreds, setGitCreds] = useState({ username: "", password: "" });
+  const [collections, setCollections] = useState<CollectionMeta[]>([]);
+  // Local draft for the git config — inputs write here instantly (typing
+  // works), the change is persisted to the backend on blur. Re-synced from
+  // the provider whenever the panel opens or the remote config changes.
+  const [gitDraft, setGitDraft] = useState<GitConfig | null>(null);
+  // Metadata (Discogs) config draft — same draft pattern as the git config.
+  const [metadataDraft, setMetadataDraft] = useState<MetadataConfig>({ discogsToken: "" });
+  const [mdConfig, setMdConfig] = useState<MetadataConfig>({ discogsToken: "" });
+  const [mdTestState, setMdTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [mdTestMessage, setMdTestMessage] = useState("");
+  const setDraftField = (patch: Partial<GitConfig>) => {
+    setGitDraft((d) => (d ? { ...d, ...patch } : d));
+  };
+
+  // Hydrate the draft when the panel opens or the remote config arrives.
+  useEffect(() => {
+    if (gitConfig) setGitDraft(gitConfig);
+  }, [gitConfig]);
+
+  // Load collections for the visibility toggles when the panel opens.
+  useEffect(() => {
+    if (!open) return;
+    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+  }, [open]);
+
+  // Load the metadata (Discogs) config when the panel opens.
+  useEffect(() => {
+    if (!open) return;
+    void api
+      .getMetadataConfig()
+      .then((cfg) => {
+        setMdConfig(cfg);
+        setMetadataDraft(cfg);
+      })
+      .catch(() => {});
+  }, [open]);
+
+  // Verify the Discogs token against the Discogs API (via a search probe).
+  const handleTestDiscogs = async () => {
+    setMdTestState("testing");
+    setMdTestMessage("");
+    try {
+      // Save the draft first so the backend probe uses the entered token.
+      await api.setMetadataConfig(metadataDraft);
+      setMdConfig(metadataDraft);
+      const res = await fetch(
+        "/api/metadata/discogs/search?q=test",
+        { cache: "no-store" },
+      );
+      if (res.ok) {
+        setMdTestState("ok");
+        setMdTestMessage("Token works");
+      } else {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMdTestState("error");
+        setMdTestMessage(body?.error ?? `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      setMdTestState("error");
+      setMdTestMessage(err instanceof Error ? err.message : "Test failed");
+    }
+  };
 
   useEffect(() => setMounted(true), []);
 
@@ -240,6 +303,47 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
             {activeCategory === "vaults" && (
               <div className="flex flex-col gap-3 p-4">
                 <SectionHeader icon={<FolderPlus className="h-4 w-4" />} title="Vaults" />
+
+                {/* Collection visibility */}
+                <div className="flex flex-col gap-1 rounded-lg border border-border p-2">
+                  <div className="px-1 py-1 text-xs font-medium text-muted-foreground">
+                    Collections — hide a collection to remove it from the app
+                    without deleting its notes.
+                  </div>
+                  {collections.length === 0 && (
+                    <div className="px-1 py-1 text-xs text-muted-foreground/70">
+                      No collections.
+                    </div>
+                  )}
+                  {collections.map((col) => (
+                    <div
+                      key={col.id}
+                      className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-muted/50"
+                    >
+                      <span className="text-sm text-foreground">
+                        {col.name}
+                        {col.builtIn && (
+                          <span className="ml-2 text-xs text-muted-foreground">built-in</span>
+                        )}
+                      </span>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={!col.hidden}
+                          onChange={(e) => {
+                            const hidden = !e.target.checked;
+                            void api
+                              .setCollectionHidden(col.id, hidden)
+                              .then(() => void api.listCollections().then((res) => setCollections(res.collections ?? [])))
+                              .catch(() => {});
+                          }}
+                          className="h-4 w-4"
+                        />
+                        {col.hidden ? "hidden" : "visible"}
+                      </label>
+                    </div>
+                  ))}
+                </div>
 
                 {/* Vault list */}
                 <div className="flex flex-col gap-1">
@@ -508,6 +612,57 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                     </span>
                   )}
                 </div>
+
+                {/* Metadata lookups (Discogs) */}
+                <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                  Discogs token for collection item lookups (Vinyls). Books
+                  lookups work without a key. Get a free personal token at
+                  dev.discogs.com — it is stored server-side only.
+                </div>
+                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">Discogs token</span>
+                  <span className="text-xs text-muted-foreground">
+                    e.g. aBc123XyZ… (personal access token)
+                  </span>
+                  <input
+                    type="password"
+                    value={metadataDraft.discogsToken}
+                    onChange={(e) =>
+                      setMetadataDraft({ discogsToken: e.target.value })
+                    }
+                    onBlur={() =>
+                      metadataDraft !== mdConfig &&
+                      void api
+                        .setMetadataConfig(metadataDraft)
+                        .then((cfg) => {
+                          setMdConfig(cfg);
+                          setMetadataDraft(cfg);
+                        })
+                        .catch(() => {})
+                    }
+                    placeholder="Personal access token"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                  />
+                </label>
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleTestDiscogs()}
+                    disabled={mdTestState === "testing" || !metadataDraft.discogsToken.trim()}
+                    className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {mdTestState === "testing" ? "Testing…" : "Test token"}
+                  </button>
+                  {mdTestMessage && (
+                    <span
+                      className={`text-xs ${
+                        mdTestState === "ok" ? "text-green-500" : "text-red-500"
+                      }`}
+                    >
+                      {mdTestMessage}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 
@@ -540,11 +695,11 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
               <div className="flex flex-col gap-3 p-4">
                 <SectionHeader icon={<GitBranch className="h-4 w-4" />} title="Git Sync" />
 
-                {!gitConfig ? (
+                {!gitDraft ? (
                   <div className="text-sm text-muted-foreground">Loading…</div>
                 ) : (
                   <>
-                    {/* Enable toggle */}
+                    {/* Enable toggle — persists immediately */}
                     <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
                       <div>
                         <div className="text-sm font-medium text-foreground">Enable Git Sync</div>
@@ -552,27 +707,32 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                       </div>
                       <input
                         type="checkbox"
-                        checked={gitConfig.enabled}
-                        onChange={(e) => {
-                          const next = { ...gitConfig, enabled: e.target.checked };
-                          void saveGitConfig(next);
+                        checked={gitDraft.enabled}
+                        onChange={async (e) => {
+                          const next = { ...gitDraft, enabled: e.target.checked };
+                          setGitDraft(next);
+                          setGitMsg("");
+                          try {
+                            await saveGitConfig(next);
+                            await refreshGitStatus();
+                          } catch (err) {
+                            setGitMsg(err instanceof Error ? err.message : "Save failed");
+                          }
                         }}
                         className="h-4 w-4"
                       />
                     </label>
 
-                    {gitConfig.enabled && (
+                    {gitDraft.enabled && (
                       <>
                         <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2">
                           <span className="text-sm text-foreground">Remote URL</span>
                           <span className="text-xs text-muted-foreground">e.g. https://github.com/user/repo.git</span>
                           <input
                             type="text"
-                            value={gitConfig.remote}
-                            onChange={(e) => {
-                              const next = { ...gitConfig, remote: e.target.value };
-                              void saveGitConfig(next);
-                            }}
+                            value={gitDraft.remote}
+                            onChange={(e) => setDraftField({ remote: e.target.value })}
+                            onBlur={() => gitDraft !== gitConfig && void saveGitConfig(gitDraft).catch(() => {})}
                             placeholder="https://github.com/user/repo.git"
                             className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                           />
@@ -582,11 +742,9 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                           <span className="text-xs text-muted-foreground">Default: main</span>
                           <input
                             type="text"
-                            value={gitConfig.branch}
-                            onChange={(e) => {
-                              const next = { ...gitConfig, branch: e.target.value };
-                              void saveGitConfig(next);
-                            }}
+                            value={gitDraft.branch}
+                            onChange={(e) => setDraftField({ branch: e.target.value })}
+                            onBlur={() => gitDraft !== gitConfig && void saveGitConfig(gitDraft).catch(() => {})}
                             placeholder="main"
                             className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                           />
@@ -596,11 +754,9 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                             <span className="text-sm text-foreground">Author name</span>
                             <input
                               type="text"
-                              value={gitConfig.authorName}
-                              onChange={(e) => {
-                                const next = { ...gitConfig, authorName: e.target.value };
-                                void saveGitConfig(next);
-                              }}
+                              value={gitDraft.authorName}
+                              onChange={(e) => setDraftField({ authorName: e.target.value })}
+                              onBlur={() => gitDraft !== gitConfig && void saveGitConfig(gitDraft).catch(() => {})}
                               className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                             />
                           </label>
@@ -608,25 +764,28 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                             <span className="text-sm text-foreground">Author email</span>
                             <input
                               type="text"
-                              value={gitConfig.authorEmail}
-                              onChange={(e) => {
-                                const next = { ...gitConfig, authorEmail: e.target.value };
-                                void saveGitConfig(next);
-                              }}
+                              value={gitDraft.authorEmail}
+                              onChange={(e) => setDraftField({ authorEmail: e.target.value })}
+                              onBlur={() => gitDraft !== gitConfig && void saveGitConfig(gitDraft).catch(() => {})}
                               className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                             />
                           </label>
                         </div>
 
-                        {/* Toggles */}
+                        {/* Toggles — persist immediately */}
                         <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
                           <span className="text-sm text-foreground">Include images in sync</span>
                           <input
                             type="checkbox"
-                            checked={gitConfig.includeImages}
-                            onChange={(e) => {
-                              const next = { ...gitConfig, includeImages: e.target.checked };
-                              void saveGitConfig(next);
+                            checked={gitDraft.includeImages}
+                            onChange={async (e) => {
+                              const next = { ...gitDraft, includeImages: e.target.checked };
+                              setGitDraft(next);
+                              try {
+                                await saveGitConfig(next);
+                              } catch (err) {
+                                setGitMsg(err instanceof Error ? err.message : "Save failed");
+                              }
                             }}
                             className="h-4 w-4"
                           />
@@ -635,10 +794,15 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                           <span className="text-sm text-foreground">Auto-push after each commit</span>
                           <input
                             type="checkbox"
-                            checked={gitConfig.autoPush}
-                            onChange={(e) => {
-                              const next = { ...gitConfig, autoPush: e.target.checked };
-                              void saveGitConfig(next);
+                            checked={gitDraft.autoPush}
+                            onChange={async (e) => {
+                              const next = { ...gitDraft, autoPush: e.target.checked };
+                              setGitDraft(next);
+                              try {
+                                await saveGitConfig(next);
+                              } catch (err) {
+                                setGitMsg(err instanceof Error ? err.message : "Save failed");
+                              }
                             }}
                             className="h-4 w-4"
                           />
@@ -774,7 +938,12 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                         )}
 
                         {gitMsg && (
-                          <div className="text-xs text-muted-foreground">{gitMsg}</div>
+                          <div
+                            className="text-xs"
+                            style={{ color: /failed|error/i.test(gitMsg) ? "#f87171" : "var(--muted-foreground)" }}
+                          >
+                            {gitMsg}
+                          </div>
                         )}
                       </>
                     )}

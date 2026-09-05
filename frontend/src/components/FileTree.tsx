@@ -220,11 +220,25 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   // appear in both the Shortcuts and Recent sections. Recent / Shortcuts /
   // Bookmarks are aggregated across ALL vaults so they work as one set for
   // every vault, regardless of which vault is currently active.
+  // Collection item notes are excluded: they belong to their collection
+  // gallery, not the generic note lists.
   const allVaultNotes = useMemo(() => {
     const list: (NoteMeta & { vaultId: string })[] = [];
     for (const v of vaults) {
       for (const n of allVaultData[v.id]?.notes ?? []) {
-        list.push({ ...n, vaultId: v.id });
+        if (!n.collection) list.push({ ...n, vaultId: v.id });
+      }
+    }
+    return list;
+  }, [vaults, allVaultData]);
+
+  // Collection item notes (notes tagged with a collection), aggregated across
+  // ALL vaults. Used only for the collection item counts.
+  const allCollectionNotes = useMemo(() => {
+    const list: (NoteMeta & { vaultId: string })[] = [];
+    for (const v of vaults) {
+      for (const n of allVaultData[v.id]?.notes ?? []) {
+        if (n.collection) list.push({ ...n, vaultId: v.id });
       }
     }
     return list;
@@ -235,7 +249,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   // Used by the collection cards in the sidebar.
   const collectionItemCounts = useMemo(() => {
     const byId: Record<string, number> = {};
-    for (const n of allVaultNotes) {
+    for (const n of allCollectionNotes) {
       if (n.collection) byId[n.collection] = (byId[n.collection] ?? 0) + 1;
     }
     const byName: Record<string, number> = {};
@@ -244,7 +258,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       if (count > 0) byName[c.name] = count;
     }
     return byName;
-  }, [allVaultNotes, collections]);
+  }, [allCollectionNotes, collections]);
 
   const recentNotes = useMemo(
     () => allVaultNotes.filter((n) => !shortcuts.has(n.id)),
@@ -966,18 +980,20 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
           ) : (
             <>
               {/* Vault sections — skip the "Collections" vault; collections have
-                  their own sidebar view now. */}
+                  their own sidebar view now. Collection item notes are excluded
+                  from the tree: they live in their collection gallery. */}
               {vaults.filter((v) => v.name !== "Collections").map((vault) => {
                 const vaultData = allVaultData[vault.id];
                 if (!vaultData) return null;
                 const isExpanded = vaultExpandedMap[vault.id] ?? true;
                 const isActiveVault = vault.id === activeVault?.id;
-                const vaultTree = buildTree(vaultData.notes, vaultData.folders);
+                const vaultNotes = vaultData.notes.filter((n) => !n.collection);
+                const vaultTree = buildTree(vaultNotes, vaultData.folders);
                 return (
                   <CollapsibleSection
                     key={vault.id}
                     title={vault.name}
-                    count={vaultData.notes.length}
+                    count={vaultNotes.length}
                     expanded={isExpanded}
                     onToggle={() =>
                       setVaultExpandedMap((prev) => ({
@@ -2890,7 +2906,9 @@ function CollectionsView({
   collections: CollectionMeta[];
   collectionItemCounts: Record<string, number>;
 }) {
-  const sorted = [...collections].sort((a, b) => {
+  const sorted = collections
+    .filter((c) => !c.hidden)
+    .sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     return a.name.localeCompare(b.name);
   });

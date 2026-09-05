@@ -60,6 +60,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/collections", h.createCollection)
 	mux.HandleFunc("PUT /api/collections/{id}", h.updateCollection)
 	mux.HandleFunc("PATCH /api/collections/{id}/pin", h.setCollectionPinned)
+	mux.HandleFunc("PATCH /api/collections/{id}/hidden", h.setCollectionHidden)
 	mux.HandleFunc("DELETE /api/collections/{id}", h.deleteCollection)
 
 	// Change notification stream (Server-Sent Events)
@@ -135,6 +136,15 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/git/push", h.gitPush)
 	mux.HandleFunc("POST /api/git/pull", h.gitPull)
 	mux.HandleFunc("GET /api/git/log", h.gitLog)
+
+	// Metadata lookup routes (vault-independent, proxy Discogs + Books)
+	mux.HandleFunc("GET /api/metadata/config", h.getMetadataConfig)
+	mux.HandleFunc("PUT /api/metadata/config", h.setMetadataConfig)
+	mux.HandleFunc("GET /api/metadata/discogs/release", h.discogsRelease)
+	mux.HandleFunc("GET /api/metadata/discogs/search", h.discogsSearch)
+	mux.HandleFunc("GET /api/metadata/book", h.bookLookup)
+	mux.HandleFunc("GET /api/metadata/book/search", h.bookSearch)
+	mux.HandleFunc("POST /api/metadata/cover", h.metadataCover)
 
 	return h.cors(mux)
 }
@@ -335,6 +345,27 @@ func (h *Handler) setCollectionPinned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	col, err := h.Collections.SetPinned(id, in.Pinned)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, col)
+}
+
+func (h *Handler) setCollectionHidden(w http.ResponseWriter, r *http.Request) {
+	if h.Collections == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("collections not available"))
+		return
+	}
+	id := r.PathValue("id")
+	var in struct {
+		Hidden bool `json:"hidden"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	col, err := h.Collections.SetHidden(id, in.Hidden)
 	if err != nil {
 		h.writeRegistryError(w, err)
 		return
@@ -1224,11 +1255,31 @@ func (h *Handler) setGitConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	// Apply to the live GitSync (or create it if it was nil).
+	// Hot-apply: create/update the live GitSync, attach it to every store
+	// (vaults + journal + collections), and auto-init the repo when enabling —
+	// so the toggle takes effect immediately without a backend restart.
 	if h.GitSync != nil {
 		h.GitSync.SetConfig(cfg)
 	} else {
 		h.GitSync = notes.NewGitSync(root, cfg)
+	}
+	if vaults, err := h.Registry.List(); err == nil {
+		for _, v := range vaults {
+			if store, err := h.Registry.Store(v.ID); err == nil {
+				store.SetGitSync(h.GitSync)
+			}
+		}
+	}
+	if h.JournalStore != nil {
+		h.JournalStore.SetGitSync(h.GitSync)
+	}
+	if h.CollectionsStore != nil {
+		h.CollectionsStore.SetGitSync(h.GitSync)
+	}
+	if cfg.Enabled {
+		// Lazily init the repo (no-op if it already exists) so the first
+		// auto-commit after enabling has a repo to commit into.
+		_ = h.GitSync.InitRepo()
 	}
 	writeJSON(w, http.StatusOK, cfg)
 }

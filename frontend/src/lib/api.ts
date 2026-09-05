@@ -52,6 +52,8 @@ export type CollectionMeta = {
   icon?: string;
   pinned: boolean;
   fields: CollectionField[];
+  builtIn?: boolean;
+  hidden?: boolean;
 };
 
 export type FolderMeta = {
@@ -211,6 +213,11 @@ export const api = {
     request<CollectionMeta>(`/api/collections/${id}/pin`, {
       method: "PATCH",
       body: JSON.stringify({ pinned }),
+    }),
+  setCollectionHidden: (id: string, hidden: boolean) =>
+    request<CollectionMeta>(`/api/collections/${id}/hidden`, {
+      method: "PATCH",
+      body: JSON.stringify({ hidden }),
     }),
   deleteCollection: (id: string) =>
     request<void>(`/api/collections/${id}`, { method: "DELETE" }),
@@ -411,4 +418,56 @@ export const api = {
     }),
   gitLog: (limit?: number) =>
     request<{ commits: GitCommitLogEntry[] }>(`/api/git/log${limit ? `?limit=${limit}` : ""}`),
+
+  // --- Metadata lookup (Discogs + Books, proxied through the backend) ---
+  getMetadataConfig: () =>
+    request<MetadataConfig>("/api/metadata/config"),
+  setMetadataConfig: (config: MetadataConfig) =>
+    request<MetadataConfig>("/api/metadata/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    }),
+  discogsRelease: (id: string) =>
+    request<MetadataResult>(`/api/metadata/discogs/release?id=${encodeURIComponent(id)}`),
+  discogsSearch: (q: string) =>
+    request<{ results: MetadataSearchResult[] }>(
+      `/api/metadata/discogs/search?q=${encodeURIComponent(q)}`,
+    ),
+  bookLookup: (isbn: string) =>
+    request<MetadataResult>(`/api/metadata/book?isbn=${encodeURIComponent(isbn)}`),
+  bookSearch: (q: string) =>
+    request<{ results: MetadataSearchResult[] }>(
+      `/api/metadata/book/search?q=${encodeURIComponent(q)}`,
+    ),
+  metadataCover: (input: { vaultId: string; noteId: string; url: string }) =>
+    request<{ url: string }>("/api/metadata/cover", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+};
+
+export type MetadataConfig = {
+  discogsToken: string;
+};
+
+export type MetadataResult = {
+  source: string;
+  externalId: string;
+  title: string;
+  artists?: string[];
+  year?: string;
+  genres?: string[];
+  label?: string;
+  catno?: string;
+  pages?: string;
+  coverUrl?: string;
+  description?: string;
+};
+
+export type MetadataSearchResult = {
+  source: string;
+  externalId: string;
+  title: string;
+  subtitle?: string;
+  coverUrl?: string;
 };

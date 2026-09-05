@@ -26,7 +26,7 @@ import { useEffect, useState } from "react";
 
 import { formatTitle, useNotes } from "@/lib/notes-context";
 import { api } from "@/lib/api";
-import type { GitConfig, GitStatusInfo } from "@/lib/api";
+import type { CollectionMeta, GitConfig, GitStatusInfo, MetadataConfig } from "@/lib/api";
 
 type Props = {
   open: boolean;
@@ -263,7 +263,7 @@ export default function MobileSettings({
             msg={gitMsg}
             creds={gitCreds}
             setCreds={setGitCreds}
-            onSave={(cfg) => void saveGitConfig(cfg)}
+            onSave={(cfg) => saveGitConfig(cfg)}
             onInit={() =>
               void runGit(async () => {
                 await gitInit();
@@ -403,6 +403,11 @@ function VaultsPage({
   setNewVaultIcon: (v: string) => void;
   handleCreate: () => void;
 }) {
+  const [collections, setCollections] = useState<CollectionMeta[]>([]);
+  useEffect(() => {
+    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+  }, []);
+
   return (
     <>
       <Group label="Your vaults">
@@ -510,6 +515,47 @@ function VaultsPage({
       <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
         Double-tap a vault name to rename. Tap to switch active vault.
       </div>
+
+      <Group label="Collections">
+        {collections.length === 0 ? (
+          <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
+            No collections.
+          </div>
+        ) : (
+          collections.map((col, i) => (
+            <div key={col.id}>
+              {i > 0 && <Divider />}
+              <div className="flex items-center justify-between gap-3 px-3" style={{ minHeight: 56 }}>
+                <span className="text-[15px]" style={{ color: "var(--mob-text)" }}>
+                  {col.name}
+                  {col.builtIn && (
+                    <span className="ml-2 text-xs" style={{ color: "var(--mob-muted)" }}>built-in</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void api
+                      .setCollectionHidden(col.id, !col.hidden)
+                      .then(() => void api.listCollections().then((res) => setCollections(res.collections ?? [])))
+                      .catch(() => {})
+                  }
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium transition-opacity"
+                  style={{
+                    background: col.hidden ? "var(--mob-surface)" : "var(--mob-accent)",
+                    color: col.hidden ? "var(--mob-muted)" : "#fff",
+                  }}
+                >
+                  {col.hidden ? "Hidden" : "Visible"}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
+          Hide a collection to remove it from the app without deleting its notes.
+        </div>
+      </Group>
     </>
   );
 }
@@ -656,6 +702,102 @@ function AIPage({
           )}
         </div>
       </Group>
+      <DiscogsSection />
+    </>
+  );
+}
+
+// ── Discogs token (metadata lookups) ───────────────────────────────
+
+function DiscogsSection() {
+  const [draft, setDraft] = useState<MetadataConfig>({ discogsToken: "" });
+  const [saved, setSaved] = useState<MetadataConfig>({ discogsToken: "" });
+  const [testState, setTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
+
+  useEffect(() => {
+    void api
+      .getMetadataConfig()
+      .then((cfg) => {
+        setSaved(cfg);
+        setDraft(cfg);
+      })
+      .catch(() => {});
+  }, []);
+
+  const persist = async () => {
+    if (draft === saved) return;
+    try {
+      const cfg = await api.setMetadataConfig(draft);
+      setSaved(cfg);
+      setDraft(cfg);
+    } catch {
+      /* keep the draft so nothing the user typed is lost */
+    }
+  };
+
+  const handleTest = async () => {
+    setTestState("testing");
+    setTestMessage("");
+    try {
+      await api.setMetadataConfig(draft);
+      setSaved(draft);
+      const res = await fetch("/api/metadata/discogs/search?q=test", {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        setTestState("ok");
+        setTestMessage("Token works");
+      } else {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setTestState("error");
+        setTestMessage(body?.error ?? `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      setTestState("error");
+      setTestMessage(err instanceof Error ? err.message : "Test failed");
+    }
+  };
+
+  return (
+    <>
+      <Group label="Metadata lookups">
+        <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
+          Discogs token for Vinyls collection lookups. Books lookups work
+          without a key. Free token at dev.discogs.com — stored server-side
+          only.
+        </div>
+        <FieldInput
+          label="Discogs token"
+          hint="Personal access token"
+          value={draft.discogsToken}
+          onChange={(v) => setDraft({ discogsToken: v })}
+          onBlur={() => void persist()}
+          password
+          placeholder="Personal access token"
+        />
+      </Group>
+      <Group label="Token test">
+        <div className="flex items-center gap-3 px-3 py-3">
+          <button
+            type="button"
+            onClick={() => void handleTest()}
+            disabled={testState === "testing" || !draft.discogsToken.trim()}
+            className="rounded-lg px-4 py-2 text-sm font-medium transition-opacity disabled:opacity-40"
+            style={{ background: "var(--mob-accent)", color: "#fff" }}
+          >
+            {testState === "testing" ? "Testing…" : "Test token"}
+          </button>
+          {testMessage && (
+            <span
+              className="text-xs"
+              style={{ color: testState === "ok" ? "#4ade80" : "#f87171" }}
+            >
+              {testMessage}
+            </span>
+          )}
+        </div>
+      </Group>
     </>
   );
 }
@@ -681,13 +823,32 @@ function SyncPage({
   msg: string;
   creds: { username: string; password: string };
   setCreds: (c: { username: string; password: string }) => void;
-  onSave: (cfg: GitConfig) => void;
+  onSave: (cfg: GitConfig) => Promise<void>;
   onInit: () => void;
   onPush: () => void;
   onPull: () => void;
   onRefresh: () => void;
 }) {
-  if (!gitConfig) {
+  // Local draft — inputs write here instantly, changes persist on blur
+  // (toggles persist immediately). Re-synced whenever the remote config changes.
+  const [draft, setDraft] = useState<GitConfig | null>(gitConfig);
+  const [saveMsg, setSaveMsg] = useState("");
+  useEffect(() => {
+    setDraft(gitConfig);
+  }, [gitConfig]);
+  const setField = (patch: Partial<GitConfig>) => {
+    setDraft((d) => (d ? { ...d, ...patch } : d));
+  };
+  const persist = async (cfg: GitConfig) => {
+    try {
+      await onSave(cfg);
+      setSaveMsg("");
+    } catch (err) {
+      setSaveMsg(err instanceof Error ? err.message : "Save failed");
+    }
+  };
+
+  if (!gitConfig || !draft) {
     return (
       <div className="px-6 py-8 text-center" style={{ fontSize: 13, color: "var(--mob-muted)" }}>
         Loading…
@@ -701,40 +862,48 @@ function SyncPage({
         <ToggleRow
           label="Enable Git Sync"
           desc="Auto-commit changes and optionally push to a remote"
-          checked={gitConfig.enabled}
-          onChange={(v) => onSave({ ...gitConfig, enabled: v })}
+          checked={draft.enabled}
+          onChange={async (v) => {
+            const next = { ...draft, enabled: v };
+            setDraft(next);
+            await persist(next);
+          }}
         />
       </Group>
 
-      {gitConfig.enabled && (
+      {draft.enabled && (
         <>
           <Group label="Repository">
             <FieldInput
               label="Remote URL"
               hint="e.g. https://github.com/user/repo.git"
-              value={gitConfig.remote}
-              onChange={(v) => onSave({ ...gitConfig, remote: v })}
+              value={draft.remote}
+              onChange={(v) => setField({ remote: v })}
+              onBlur={() => draft !== gitConfig && void persist(draft)}
               placeholder="https://github.com/user/repo.git"
             />
             <Divider />
             <FieldInput
               label="Branch"
               hint="Default: main"
-              value={gitConfig.branch}
-              onChange={(v) => onSave({ ...gitConfig, branch: v })}
+              value={draft.branch}
+              onChange={(v) => setField({ branch: v })}
+              onBlur={() => draft !== gitConfig && void persist(draft)}
               placeholder="main"
             />
             <Divider />
             <FieldInput
               label="Author name"
-              value={gitConfig.authorName}
-              onChange={(v) => onSave({ ...gitConfig, authorName: v })}
+              value={draft.authorName}
+              onChange={(v) => setField({ authorName: v })}
+              onBlur={() => draft !== gitConfig && void persist(draft)}
             />
             <Divider />
             <FieldInput
               label="Author email"
-              value={gitConfig.authorEmail}
-              onChange={(v) => onSave({ ...gitConfig, authorEmail: v })}
+              value={draft.authorEmail}
+              onChange={(v) => setField({ authorEmail: v })}
+              onBlur={() => draft !== gitConfig && void persist(draft)}
             />
           </Group>
 
@@ -742,15 +911,23 @@ function SyncPage({
             <ToggleRow
               label="Include images"
               desc="Sync uploaded images with notes"
-              checked={gitConfig.includeImages}
-              onChange={(v) => onSave({ ...gitConfig, includeImages: v })}
+              checked={draft.includeImages}
+              onChange={async (v) => {
+                const next = { ...draft, includeImages: v };
+                setDraft(next);
+                await persist(next);
+              }}
             />
             <Divider />
             <ToggleRow
               label="Auto-push"
               desc="Push after every commit"
-              checked={gitConfig.autoPush}
-              onChange={(v) => onSave({ ...gitConfig, autoPush: v })}
+              checked={draft.autoPush}
+              onChange={async (v) => {
+                const next = { ...draft, autoPush: v };
+                setDraft(next);
+                await persist(next);
+              }}
             />
           </Group>
 
@@ -780,9 +957,12 @@ function SyncPage({
               <ActionBtn label="Pull" onClick={onPull} disabled={busy} />
               <ActionBtn label="Refresh" onClick={onRefresh} disabled={busy} subtle />
             </div>
-            {msg && (
-              <div className="px-3 pb-3 text-xs" style={{ color: "var(--mob-muted)" }}>
-                {msg}
+            {(msg || saveMsg) && (
+              <div
+                className="px-3 pb-3 text-xs"
+                style={{ color: /failed|error/i.test(msg + saveMsg) ? "#f87171" : "var(--mob-muted)" }}
+              >
+                {saveMsg || msg}
               </div>
             )}
           </Group>
@@ -1036,6 +1216,7 @@ function FieldInput({
   hint,
   value,
   onChange,
+  onBlur,
   placeholder,
   password,
 }: {
@@ -1043,6 +1224,7 @@ function FieldInput({
   hint?: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   password?: boolean;
 }) {
@@ -1054,6 +1236,7 @@ function FieldInput({
         type={password ? "password" : "text"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         className="mt-0.5 w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors"
         style={{

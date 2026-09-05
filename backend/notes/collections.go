@@ -30,11 +30,13 @@ type CollectionField struct {
 // folder inside the Collections vault; its items are notes with
 // type=collection-item and collection=<id>.
 type CollectionMeta struct {
-	ID     string            `json:"id"`
-	Name   string            `json:"name"`
-	Icon   string            `json:"icon,omitempty"`
-	Pinned bool              `json:"pinned"`
-	Fields []CollectionField `json:"fields"`
+	ID      string            `json:"id"`
+	Name    string            `json:"name"`
+	Icon    string            `json:"icon,omitempty"`
+	Pinned  bool              `json:"pinned"`
+	Fields  []CollectionField `json:"fields"`
+	BuiltIn bool              `json:"builtIn,omitempty"`
+	Hidden  bool              `json:"hidden,omitempty"`
 }
 
 // CollectionRegistry manages the list of collections, persisted as
@@ -174,6 +176,30 @@ func (r *CollectionRegistry) SetPinned(id string, pinned bool) (CollectionMeta, 
 	return CollectionMeta{}, ErrNotFound
 }
 
+// SetHidden toggles whether a collection is visible in the app. Hidden
+// collections keep their items — nothing is deleted, they are just not
+// rendered in the UI.
+func (r *CollectionRegistry) SetHidden(id string, hidden bool) (CollectionMeta, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cols, err := r.readLocked()
+	if err != nil {
+		return CollectionMeta{}, err
+	}
+	for i, c := range cols {
+		if c.ID == id {
+			c.Hidden = hidden
+			cols[i] = c
+			if err := r.writeLocked(cols); err != nil {
+				return CollectionMeta{}, err
+			}
+			return c, nil
+		}
+	}
+	return CollectionMeta{}, ErrNotFound
+}
+
 // Delete removes a collection definition.
 func (r *CollectionRegistry) Delete(id string) error {
 	r.mu.Lock()
@@ -219,6 +245,98 @@ func (r *CollectionRegistry) writeLocked(cols []CollectionMeta) error {
 		return err
 	}
 	return os.WriteFile(r.registryPath(), data, 0o644)
+}
+
+// Built-in collection definitions. Ensured on startup; the user can hide
+// them in the UI but their notes and definitions persist.
+var builtInCollections = []struct {
+	ID    string
+	Name  string
+	Icon  string
+	Fields []CollectionField
+}{
+	{
+		ID:   "vinyls",
+		Name: "Vinyls",
+		Icon: "Music",
+		Fields: []CollectionField{
+			{Key: "discogsId", Label: "Discogs ID", Type: FieldText},
+			{Key: "artist", Label: "Artist", Type: FieldText},
+			{Key: "year", Label: "Year", Type: FieldText},
+			{Key: "genre", Label: "Genre", Type: FieldText},
+			{Key: "label", Label: "Label", Type: FieldText},
+			{Key: "catno", Label: "Cat #", Type: FieldText},
+		},
+	},
+	{
+		ID:   "books",
+		Name: "Books",
+		Icon: "FileText",
+		Fields: []CollectionField{
+			{Key: "isbn", Label: "ISBN", Type: FieldText},
+			{Key: "author", Label: "Author", Type: FieldText},
+			{Key: "year", Label: "Year", Type: FieldText},
+			{Key: "publisher", Label: "Publisher", Type: FieldText},
+			{Key: "pages", Label: "Pages", Type: FieldText},
+			{Key: "genre", Label: "Genre", Type: FieldText},
+		},
+	},
+}
+
+// EnsureBuiltIns makes sure the built-in collections exist (creating them if
+// needed) and that their field schemas are up to date. Never touches the
+// hidden/pinned flags or the user's own collections.
+func (r *CollectionRegistry) EnsureBuiltIns() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cols, err := r.readLocked()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for _, def := range builtInCollections {
+		found := -1
+		for i, c := range cols {
+			if c.ID == def.ID {
+				found = i
+				break
+			}
+		}
+		if found == -1 {
+			cols = append(cols, CollectionMeta{
+				ID:      def.ID,
+				Name:    def.Name,
+				Icon:    def.Icon,
+				Pinned:  false,
+				Fields:  def.Fields,
+				BuiltIn: true,
+			})
+			changed = true
+			continue
+		}
+		// Exists — mark built-in and backfill any new schema fields.
+		c := cols[found]
+		if !c.BuiltIn {
+			c.BuiltIn = true
+			changed = true
+		}
+		have := map[string]bool{}
+		for _, f := range c.Fields {
+			have[f.Key] = true
+		}
+		for _, f := range def.Fields {
+			if !have[f.Key] {
+				c.Fields = append(c.Fields, f)
+				changed = true
+			}
+		}
+		cols[found] = c
+	}
+	if !changed {
+		return nil
+	}
+	return r.writeLocked(cols)
 }
 
 // slugify converts a name into a stable id (lowercase, dashes).

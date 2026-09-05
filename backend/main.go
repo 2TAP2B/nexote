@@ -49,6 +49,20 @@ func main() {
 		}
 	}
 
+	// Ensure the built-in collections (Vinyls, Books) exist with up-to-date
+	// schemas. Never touches user collections or hidden/pinned flags.
+	if h.Collections != nil {
+		if err := h.Collections.EnsureBuiltIns(); err != nil {
+			log.Printf("ensure built-in collections: %v", err)
+		}
+	}
+
+	// Load the metadata lookup config (Discogs token). The handlers read the
+	// file per request, so no in-memory wiring is needed here.
+	if mdCfg, err := api.LoadMetadataConfig(home); err == nil && mdCfg.DiscogsToken != "" {
+		log.Printf("metadata lookup: discogs token configured")
+	}
+
 	// Load git-sync config and attach to all stores if enabled.
 	gitCfg, err := notes.LoadGitConfig(home)
 	if err != nil {

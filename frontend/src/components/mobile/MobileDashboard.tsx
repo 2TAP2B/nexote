@@ -116,6 +116,8 @@ export default function MobileDashboard({
     const items: RecentEntry[] = [];
     for (const v of vaults) {
       for (const n of allVaultData[v.id]?.notes ?? []) {
+        // Collection items live in their gallery, not the note lists.
+        if (n.collection) continue;
         items.push({ id: n.id, title: n.title, path: n.path, updatedAt: n.updatedAt, vaultId: v.id, source: "vault" });
       }
     }
@@ -280,11 +282,11 @@ export default function MobileDashboard({
       )}
 
       {/* Pinned collections */}
-      {collections.filter((c) => c.pinned).length > 0 && (
+      {collections.filter((c) => c.pinned && !c.hidden).length > 0 && (
         <section className="flex flex-col gap-2">
           <SectionHeading icon={<Disc3 size={16} />} title="Collections" />
           <div className="grid grid-cols-2 gap-2">
-            {collections.filter((c) => c.pinned).map((c) => (
+            {collections.filter((c) => c.pinned && !c.hidden).map((c) => (
               <button
                 key={c.id}
                 type="button"
