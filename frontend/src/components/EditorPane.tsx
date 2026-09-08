@@ -12,6 +12,7 @@ import {
   Ellipsis,
   FileText,
   History,
+  ListTree,
   Loader2,
   Sparkles,
   SquareArrowOutUpRight,
@@ -28,8 +29,11 @@ import AICommandPanel from "@/components/AICommandPanel";
 import CollectionItemHeader from "@/components/CollectionItemHeader";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
+import TocList, { TOC_HEADING_SELECTOR } from "@/components/TocList";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
+import { useTocHeadings } from "@/components/useTocHeadings";
+import { useTocScrollSpy } from "@/components/useTocScrollSpy";
 
 const MilkdownEditorWrapper = dynamic<
   React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
@@ -38,8 +42,12 @@ const MilkdownEditorWrapper = dynamic<
 >(() => import("@/components/MilkdownEditor"), { ssr: false });
 
 export default function EditorPane({
+  tocOpen,
+  onToggleToc,
   onCloseCollectionItem,
 }: {
+  tocOpen: boolean;
+  onToggleToc: () => void;
   onCloseCollectionItem?: () => void;
 }) {
   const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote, copyNote, refreshNoteBody } =
@@ -134,6 +142,29 @@ export default function EditorPane({
   useEffect(() => {
     setDraft({ title, body });
   }, [title, body, setDraft]);
+
+  // Table of contents: mirror the editor's headings into the docked panel and
+  // highlight the section currently in view while scrolling.
+  const tocNoteId = activeNote?.id ?? "";
+  const tocEnabled = Boolean(tocOpen && !rawMode && activeNote);
+  const { headings: tocHeadings, request: requestToc } = useTocHeadings(tocNoteId, tocEnabled);
+  const activeTocIndex = useTocScrollSpy({
+    containerSelector: ".nexote-editor-scroll",
+    headingSelector: TOC_HEADING_SELECTOR,
+    headings: tocHeadings,
+    enabled: tocEnabled,
+    offset: 72,
+  });
+
+  // Re-ask whenever the panel opens, the active note changes, or the editor
+  // re-mounts (raw-mode round-trip); the editor always re-broadcasts.
+  useEffect(() => {
+    if (tocEnabled) requestToc();
+  }, [tocEnabled, requestToc, tocNoteId]);
+
+  const selectTocHeading = (index: number) => {
+    window.dispatchEvent(new CustomEvent("nexote:toc-jump", { detail: { index } }));
+  };
 
   useEffect(() => {
     if (!activeId || loadedKey !== activeId) return;
@@ -240,6 +271,9 @@ export default function EditorPane({
   // Switch to the raw markdown textarea, caret at the end.
   const toggleToRaw = () => {
     setRawMode(true);
+    // The TOC mirrors the editor's headings; with the editor unmounted it has
+    // no live source, so drop the stale outline.
+    window.dispatchEvent(new CustomEvent("nexote:toc-clear"));
     requestAnimationFrame(() => {
       const el = rawTextareaRef.current;
       if (!el) return;
@@ -420,6 +454,16 @@ export default function EditorPane({
           </button>
           <button
             type="button"
+            aria-label={tocOpen ? "Hide table of contents" : "Show table of contents"}
+            title={tocOpen ? "Hide table of contents" : "Show table of contents"}
+            onClick={onToggleToc}
+            className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
+            style={tocOpen ? { color: "var(--primary)" } : undefined}
+          >
+            <ListTree size={15} />
+          </button>
+          <button
+            type="button"
             aria-label="More actions"
             title="More actions"
             onClick={(e) => {
@@ -481,33 +525,60 @@ export default function EditorPane({
         />
       )}
 
-      {/* Editor — the wrapper scrolls (native page-style scrollbar) */}
-      <div
-        className={
-          "nexote-editor-scroll min-h-0 flex-1 overflow-y-auto" +
-          (activeNote?.type === "collection-item" ? " has-collection-header" : "")
-        }
-        style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
-      >
-        {!rawMode && <CollectionItemHeader note={activeNote} />}
-        {rawMode ? (
-          <RawMarkdownTextarea
-            ref={rawTextareaRef}
-            value={body}
-            onChange={handleEditorChange}
-            fontSize={settings.editorFontSize}
-          />
-        ) : (
-          <MilkdownEditorWrapper
-            ref={editorRef}
-            key={`${activeNote.id}-${bodyKey}`}
-            defaultValue={activeNote.body}
-            onChange={handleEditorChange}
-            aiConfig={aiConfig}
-            vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
-            noteId={activeNote.id}
-            onAskAI={() => setAiPanelOpen(true)}
-          />
+      {/* Editor — the wrapper scrolls (native page-style scrollbar); the
+          table-of-contents panel docks to its right when enabled. */}
+      <div className="flex min-h-0 flex-1">
+        <div
+          className={
+            "nexote-editor-scroll min-h-0 flex-1 overflow-y-auto" +
+            (activeNote?.type === "collection-item" ? " has-collection-header" : "")
+          }
+          style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
+        >
+          {!rawMode && <CollectionItemHeader note={activeNote} />}
+          {rawMode ? (
+            <RawMarkdownTextarea
+              ref={rawTextareaRef}
+              value={body}
+              onChange={handleEditorChange}
+              fontSize={settings.editorFontSize}
+            />
+          ) : (
+            <MilkdownEditorWrapper
+              ref={editorRef}
+              key={`${activeNote.id}-${bodyKey}`}
+              defaultValue={activeNote.body}
+              onChange={handleEditorChange}
+              aiConfig={aiConfig}
+              vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
+              noteId={activeNote.id}
+              onAskAI={() => setAiPanelOpen(true)}
+            />
+          )}
+        </div>
+
+        {tocOpen && !rawMode && activeNote && (
+          <aside
+            className="flex w-60 shrink-0 flex-col overflow-hidden"
+            style={{ borderLeft: "1px solid var(--border)", background: "var(--background)" }}
+          >
+            <div
+              className="flex shrink-0 items-center px-3 py-1.5"
+              style={{ borderBottom: "1px solid var(--border)" }}
+            >
+              <span className="truncate text-sm font-medium" style={{ color: "var(--foreground)" }}>
+                Contents
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+              <TocList
+                variant="desktop"
+                headings={tocHeadings}
+                activeIndex={activeTocIndex}
+                onSelect={selectTocHeading}
+              />
+            </div>
+          </aside>
         )}
       </div>
 

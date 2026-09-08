@@ -182,6 +182,9 @@ export default function MobileNoteView({
   // Switch to the raw markdown textarea, caret at the end.
   const toggleToRaw = () => {
     setRawMode(true);
+    // The TOC mirrors the editor's headings; with the editor unmounted it has
+    // no live source, so drop the stale outline.
+    window.dispatchEvent(new CustomEvent("nexote:toc-clear"));
     requestAnimationFrame(() => {
       const el = rawTextareaRef.current;
       if (!el) return;

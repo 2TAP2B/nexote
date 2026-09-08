@@ -800,21 +800,35 @@ body {
   min-height: 0;
 }
 
-/* Mobile pager — a "double width canvas": the sidebar pane (left) and the
- * note-view pane (right) sit side by side in one track that is 200vw wide.
- * Focusing a pane just pans the track, so each pane keeps its full viewport
- * and nothing is squeezed. Focus is driven by data-sidebar-open on the shell
- * (0 = note view, 1 = sidebar); the swipe hook overrides with an inline
- * transform mid-drag and clears it to let the transition snap. */
+/* Mobile pager — a "triple width canvas": the sidebar pane (left), the
+ * note-view pane (center) and the table-of-contents pane (right) sit side by
+ * side in one track that is 300vw wide. Focusing a pane just pans the track,
+ * so every pane keeps its full viewport and nothing is squeezed. Focus is
+ * driven by data-pager-focus on the shell (sidebar / editor / toc); the
+ * swipe hook overrides with an inline transform mid-drag and clears it to let
+ * the transition snap. */
 .mob-pager {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
-.mob-shell-root[data-sidebar-open="0"] .mob-pager {
-  transform: translateX(-50%);
-}
-.mob-shell-root[data-sidebar-open="1"] .mob-pager {
+.mob-shell-root[data-pager-focus="sidebar"] .mob-pager {
   transform: translateX(0);
+}
+.mob-shell-root[data-pager-focus="editor"] .mob-pager {
+  transform: translateX(calc(-100% / 3));
+}
+.mob-shell-root[data-pager-focus="toc"] .mob-pager {
+  transform: translateX(calc(-200% / 3));
+}
+/* TOC jump: keep the jumped-to heading from sliding under the mobile top bar
+ * (which overlays the editor and auto-hides). */
+.mob-editor-scroll .ProseMirror h1,
+.mob-editor-scroll .ProseMirror h2,
+.mob-editor-scroll .ProseMirror h3,
+.mob-editor-scroll .ProseMirror h4,
+.mob-editor-scroll .ProseMirror h5,
+.mob-editor-scroll .ProseMirror h6 {
+  scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 64px);
 }
 /* Counteract the margin so the row content still spans full width. */
 .mob-settings-group > * + * {

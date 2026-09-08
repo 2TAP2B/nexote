@@ -171,6 +171,107 @@ const selectionWatchPlugin = $prose((ctx) =>
   }),
 );
 
+// Table of contents: a watch plugin that mirrors the document's top-level
+// headings (title, sections, subsections) to the TOC pane. Nested headings
+// inside lists, quotes or other containers are skipped — only the document
+// outline (direct doc children) is listed. The list is broadcast via
+// nexote:headings only when it actually changes, so typing never causes churn.
+// nexote:toc-request asks the (possibly just-mounted) editor to re-broadcast
+// its current list, and nexote:toc-jump scrolls the chosen heading into view.
+export type TocHeading = { level: number; text: string; pos: number };
+
+function collectHeadings(doc: {
+  descendants: (
+    fn: (
+      node: { type: { name: string }; attrs: { level?: number }; textContent: string },
+      pos: number,
+      parent: { type: { name: string } } | null,
+    ) => void,
+  ) => unknown;
+}): TocHeading[] {
+  const out: TocHeading[] = [];
+  doc.descendants((node, pos, parent) => {
+    if (node.type.name === "heading" && parent?.type.name === "doc") {
+      out.push({ level: node.attrs.level ?? 1, text: node.textContent, pos });
+    }
+  });
+  return out;
+}
+
+function headingsEqual(a: TocHeading[], b: TocHeading[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (x.level !== y.level || x.text !== y.text || x.pos !== y.pos) return false;
+  }
+  return true;
+}
+
+function publishHeadings(noteId: string, list: TocHeading[]): void {
+  window.dispatchEvent(
+    new CustomEvent("nexote:headings", { detail: { noteId, headings: list } }),
+  );
+}
+
+const tocWatchKey = new PluginKey<TocHeading[]>("nexote-toc-headings");
+// Created per editor instance so it can close over the note id: consumers
+// (mobile TOC pane / desktop TOC panel) use it to ignore heading broadcasts
+// from a note they're not showing.
+function makeTocWatchPlugin(noteId: string) {
+  return $prose(
+    () =>
+      new Plugin<TocHeading[]>({
+        key: tocWatchKey,
+        state: {
+          init: (_c, state) => collectHeadings(state.doc),
+          apply(tr, _old, _oldState, newState) {
+            return tr.docChanged ? collectHeadings(newState.doc) : _old;
+          },
+        },
+        view: (view) => {
+          // Broadcast the current list on mount (or when a TOC pane asks —
+          // the pane may mount before this editor, or re-mount when switching
+          // notes/panes). Fresh editors already have the right doc, so the
+          // mount broadcast alone covers late-mounting panes.
+          const emit = () => {
+            publishHeadings(noteId, tocWatchKey.getState(view.state) ?? []);
+          };
+          const onRequest = emit;
+          // Jump the requested heading into view. Smooth-scrolls its DOM node
+          // so the scroll happens in whatever container actually scrolls
+          // (mobile editor pane vs desktop editor area); focus is left to the
+          // caller.
+          const onJump = (event: Event) => {
+            const index = (event as CustomEvent<{ index?: number }>).detail?.index;
+            if (typeof index !== "number") return;
+            const list = tocWatchKey.getState(view.state) ?? [];
+            const item = list[index];
+            if (!item) return;
+            const dom = view.nodeDOM(item.pos);
+            if (dom instanceof HTMLElement) {
+              dom.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          };
+          window.addEventListener("nexote:toc-request", onRequest);
+          window.addEventListener("nexote:toc-jump", onJump);
+          emit();
+          return {
+            update: (view, prevState) => {
+              const next = tocWatchKey.getState(view.state) ?? [];
+              const prev = tocWatchKey.getState(prevState) ?? [];
+              if (!headingsEqual(prev, next)) publishHeadings(noteId, next);
+            },
+            destroy: () => {
+              window.removeEventListener("nexote:toc-request", onRequest);
+              window.removeEventListener("nexote:toc-jump", onJump);
+            },
+          };
+        },
+      }),
+  );
+}
+
 // Structural tags that carry no formatting of their own. Mobile browsers wrap
 // copied plain text in a payload made up of these (plus <meta>), e.g. iOS
 // emits <meta charset='utf-8'><pre>text</pre> and Android wraps lines in
@@ -1001,6 +1102,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
 
       // Emit selection empty/non-empty transitions for the mobile format bar.
       crepe.editor.use(selectionWatchPlugin);
+
+      // Mirror the document's top-level headings to the TOC pane.
+      crepe.editor.use(makeTocWatchPlugin(noteId));
 
       // Mobile slash commands: track when the caret types "/query" and surface
       // it to React (falling back to null when the trigger is gone), so the

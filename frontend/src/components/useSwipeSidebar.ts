@@ -2,35 +2,43 @@
 
 import { useEffect, useRef } from "react";
 
+export type PagerFocus = "sidebar" | "editor" | "toc";
+
+// Pane order in the 300vw mobile pager track: sidebar (0), editor (1), toc (2).
+const PANES: readonly PagerFocus[] = ["sidebar", "editor", "toc"];
+const PANE_COUNT = PANES.length;
+const PANE_INDEX: Record<PagerFocus, number> = { sidebar: 0, editor: 1, toc: 2 };
+
 type SwipeHandlers = {
-  onOpen: () => void;
-  onClose: () => void;
-  open: boolean;
+  focus: PagerFocus;
+  onFocus: (pane: PagerFocus) => void;
 };
 
 const THRESHOLD = 60;
 const DRAG_X = 8;
 const VERTICAL_LIMIT = 1.5;
 
-// Drag-to-follow swipe for the mobile two-pane pager.
+// Drag-to-follow swipe for the mobile three-pane pager.
 //
-// The pager track ("double width canvas", .mob-pager) holds the sidebar pane
-// (left) and the note-view pane (right), each one viewport wide. Focus is a
-// translateX on the track:
-//   sidebar focused → 0
-//   editor focused  → -50% of the 200vw track (= -100vw)
+// The pager track ("triple width canvas", .mob-pager) holds the sidebar pane
+// (left), the note-view pane (center) and the table-of-contents pane (right),
+// each one viewport wide. Focus is a translateX on the track:
+//   sidebar → 0
+//   editor  → -100vw (one pane off the left)
+//   toc     → -200vw (two panes off the left)
 //
 // Open:  drag right on the bottom navigation pill → the track follows the
 //        finger, pulling the sidebar pane into focus.
-// Close: when the sidebar is focused, drag left anywhere on it → the track
-//        slides back, bringing the note editor into focus.
+// Open:  drag left on the pill (from the editor) → pulls the TOC pane in.
+// Close: when a side pane is focused, drag toward the editor anywhere on it
+//        (left on the sidebar, right on the TOC) → the track slides back.
 //
 // Drags write the transform straight to the DOM (transitions disabled); on
 // release the inline style is cleared so the CSS rule + transition snap to
-// whichever pane won. React owns the final position via data-sidebar-open.
-export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
-  const handlers = useRef({ onOpen, onClose, open });
-  handlers.current = { onOpen, onClose, open };
+// whichever pane won. React owns the final position via data-pager-focus.
+export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
+  const handlers = useRef({ focus, onFocus });
+  handlers.current = { focus, onFocus };
   const state = useRef({
     start: null as null | { x: number; y: number; id: number },
     horizontal: false,
@@ -75,16 +83,15 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       state.current.dragging = true;
       const track = getTrack();
       const h = handlers.current;
-      // One pager pane is a full viewport wide (the track is 200vw).
+      // One pager pane is a full viewport wide (the track is 300vw).
       const paneW = window.innerWidth;
+      const base = -PANE_INDEX[h.focus] * paneW;
 
       // Disable transitions for smooth finger-following.
       if (track) track.style.transition = "none";
 
-      // open: track rests at 0 (sidebar pane visible), drag left to reveal the
-      // editor; closed: track rests at -100vw (editor visible), drag right to
-      // pull the sidebar pane in.
-      const x = Math.max(-paneW, Math.min(0, (h.open ? 0 : -paneW) + dx));
+      // Track follows the finger, clamped to the track's own bounds.
+      const x = Math.max(-(PANE_COUNT - 1) * paneW, Math.min(0, base + dx));
       if (track) track.style.transform = `translateX(${x}px)`;
     };
 
@@ -106,14 +113,15 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
         state.current.dragging = false;
         state.current.lastSwipe = Date.now();
 
-        if (h.open) {
-          if (dx < -THRESHOLD) h.onClose();
-        } else {
-          if (dx > THRESHOLD) h.onOpen();
+        const fi = PANE_INDEX[h.focus];
+        if (dx < -THRESHOLD && fi < PANE_COUNT - 1) {
+          h.onFocus(PANES[fi + 1]);
+        } else if (dx > THRESHOLD && fi > 0) {
+          h.onFocus(PANES[fi - 1]);
         }
       }
 
-      // Clear the dragged transform → the CSS rule (data-sidebar-open) takes
+      // Clear the dragged transform → the CSS rule (data-pager-focus) takes
       // back over and the transition snaps to the winning pane.
       if (track) track.style.transform = "";
     };
@@ -127,12 +135,14 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
     };
 
-    // Open swipe starts on the pill; close swipe starts anywhere on the
-    // sidebar (document-level, only listened to while the sidebar is focused).
+    // The pill starts an open/close swipe from the editor in either direction.
+    // A document-level drag only initiates while a side pane is focused (so
+    // it can slide back to the editor), matching the old close-on-sidebar
+    // behavior and extending it to the TOC pane.
     const onPillDown = (e: PointerEvent) => onStart(e);
     const onDocDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
-      if (!handlers.current.open) return;
+      if (handlers.current.focus === "editor") return;
       onStart(e);
     };
 

@@ -7,6 +7,7 @@ import {
   Edit3,
   FolderInput,
   History,
+  ListTree,
   Sparkles,
   SquareArrowOutUpRight,
   Star,
@@ -27,6 +28,7 @@ type Props = {
   onMoveTo: (id: string) => void;
   onRename: (id: string) => void;
   onHistory: (id: string) => void;
+  onToc: () => void;
 };
 
 // The ⋮ overflow menu for the currently open note. Mirrors the desktop
@@ -40,6 +42,7 @@ export default function MobileOverflowMenu({
   onMoveTo,
   onRename,
   onHistory,
+  onToc,
 }: Props) {
   const {
     bookmarks,
@@ -94,6 +97,11 @@ export default function MobileOverflowMenu({
       label: "Note history",
       icon: <History className="h-4 w-4" />,
       onClick: () => onHistory(noteId),
+    },
+    {
+      label: "Table of contents",
+      icon: <ListTree className="h-4 w-4" />,
+      onClick: onToc,
     },
     ...(hasAI
       ? [{

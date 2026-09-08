@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
+  ListTree,
   Menu,
   Moon,
   Plus,
@@ -29,6 +30,7 @@ type Props = {
   onOpenTabs: () => void;
   tabCount: number;
   onOpenSidebar: () => void;
+  onOpenToc: () => void;
   onOpenDaily: () => void;
   onOpenSettings: () => void;
   onToggleTheme: () => void;
@@ -50,6 +52,7 @@ export default function MobileBottomPill({
   onOpenTabs,
   tabCount,
   onOpenSidebar,
+  onOpenToc,
   onOpenDaily,
   onOpenSettings,
   onToggleTheme,
@@ -97,6 +100,14 @@ export default function MobileBottomPill({
       onClick: () => {
         setMenuOpen(false);
         onCommandPalette();
+      },
+    },
+    {
+      label: "Table of contents",
+      icon: <ListTree className="h-4 w-4" />,
+      onClick: () => {
+        setMenuOpen(false);
+        onOpenToc();
       },
     },
     {

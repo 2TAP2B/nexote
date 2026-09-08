@@ -73,7 +73,7 @@ export default function MobileSidebar({
 
   return (
     <div
-      className="relative flex h-full w-1/2 shrink-0 flex-col overflow-hidden"
+      className="relative flex h-full w-1/3 shrink-0 flex-col overflow-hidden"
       style={{
         background: "var(--mob-bg)",
         borderRight: "1px solid var(--mob-surface)",

@@ -86,9 +86,8 @@ function AppShell() {
   });
 
   useSwipeSidebar({
-    open: mobileOpen,
-    onOpen: () => setMobileOpen(true),
-    onClose: () => setMobileOpen(false),
+    focus: mobileOpen ? "sidebar" : "editor",
+    onFocus: (pane) => setMobileOpen(pane === "sidebar"),
   });
 
   // Listen for the "toggle sidebar" event dispatched by keyboard shortcuts
@@ -159,6 +158,15 @@ function AppShell() {
     const saved = localStorage.getItem("nexote:color-scheme");
     if (saved) setColorScheme(saved);
   }, []);
+
+  // Persistent desktop TOC panel: survives gallery open/close and reloads.
+  const [tocOpen, setTocOpen] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem("nexote:toc-open") === "1") setTocOpen(true);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("nexote:toc-open", tocOpen ? "1" : "0");
+  }, [tocOpen]);
   useEffect(() => {
     const el = document.documentElement;
     // Remove any existing scheme-* class, then add the new one (if not default).
@@ -344,6 +352,8 @@ function AppShell() {
               />
             ) : (
               <EditorPane
+                tocOpen={tocOpen}
+                onToggleToc={() => setTocOpen((v) => !v)}
                 onCloseCollectionItem={() => {
                   const col = activeNote?.collection;
                   if (col) {

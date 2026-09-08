@@ -11,7 +11,7 @@ import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import type { SidebarView } from "@/components/Ribbon";
-import { useSwipeSidebar } from "@/components/useSwipeSidebar";
+import { useSwipeSidebar, type PagerFocus } from "@/components/useSwipeSidebar";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
@@ -23,6 +23,7 @@ import MobileOverflowMenu from "./MobileOverflowMenu";
 import MobileSettings from "./MobileSettings";
 import MobileSidebar from "./MobileSidebar";
 import MobileTabSwitcher from "./MobileTabSwitcher";
+import MobileTocPane from "./MobileTocPane";
 
 export default function MobileApp() {
   const {
@@ -50,7 +51,7 @@ export default function MobileApp() {
 
   // --- Screen / overlay state ---
   const { theme, setTheme } = useTheme();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pagerFocus, setPagerFocus] = useState<PagerFocus>("editor");
   const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -151,7 +152,7 @@ export default function MobileApp() {
   // Close the sidebar and tab switcher when the active note changes (e.g. the
   // user tapped a note in the tree).
   useEffect(() => {
-    setSidebarOpen(false);
+    setPagerFocus("editor");
   }, [activeId]);
 
   // The shared CommandPalette dispatches nexote:select-view and
@@ -162,15 +163,16 @@ export default function MobileApp() {
     const onSelectView = (e: Event) => {
       const detail = (e as CustomEvent).detail as SidebarView;
       if (detail) setSidebarView(detail);
-      setSidebarOpen(true);
+      setPagerFocus("sidebar");
     };
     const onSelectTag = (e: Event) => {
       const detail = (e as CustomEvent).detail as string;
       if (detail) setSelectedTag(detail);
       setSidebarView("tags");
-      setSidebarOpen(true);
+      setPagerFocus("sidebar");
     };
-    const onToggleSidebar = () => setSidebarOpen((v) => !v);
+    const onToggleSidebar = () =>
+      setPagerFocus((v) => (v === "editor" ? "sidebar" : "editor"));
     const onOpenSettings = () => setSettingsOpen(true);
     const onOpenCollection = (e: Event) => {
       const folder = (e as CustomEvent).detail as string;
@@ -179,7 +181,7 @@ export default function MobileApp() {
         const col = (res.collections ?? []).find((c) => c.name === folder);
         if (col) {
           setGalleryCollection(col);
-          setSidebarOpen(false);
+          setPagerFocus("editor");
         }
       });
     };
@@ -217,12 +219,8 @@ export default function MobileApp() {
     [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
   );
 
-  // Swipe to open/close the sidebar.
-  useSwipeSidebar({
-    onOpen: () => setSidebarOpen(true),
-    onClose: () => setSidebarOpen(false),
-    open: sidebarOpen,
-  });
+  // Swipe to pan between the sidebar / editor / contents panes.
+  useSwipeSidebar({ focus: pagerFocus, onFocus: setPagerFocus });
 
   // Keep the body background in sync with the mobile shell (so the safe-area
   // / overscroll areas match). Uses the CSS variable so it follows the active
@@ -238,7 +236,7 @@ export default function MobileApp() {
   return (
     <div
       className="mob-shell-root flex h-[100dvh] w-full flex-col overflow-hidden"
-      data-sidebar-open={sidebarOpen ? "1" : "0"}
+      data-pager-focus={pagerFocus}
       style={
         {
           background: "var(--mob-bg)",
@@ -249,13 +247,14 @@ export default function MobileApp() {
         } as React.CSSProperties
       }
     >
-      {/* Pager — a "double width canvas". The sidebar pane (left) and the
-          note view (right) each take a full viewport; the track is 200vw and
-          pans in/out so no pane ever shrinks. */}
+      {/* Pager — a "triple width canvas". The sidebar pane (left), the note
+          view (center) and the contents pane (right) each take a full
+          viewport; the track is 300vw and pans in/out so no pane ever
+          shrinks. */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div className="mob-pager flex h-full w-[200%]">
+        <div className="mob-pager flex h-full w-[300%]">
           <MobileSidebar
-            onClose={() => setSidebarOpen(false)}
+            onClose={() => setPagerFocus("editor")}
             onControlsReady={setTreeControls}
             treeControls={treeControls}
             view={sidebarView}
@@ -264,11 +263,11 @@ export default function MobileApp() {
             onSelectTagConsumed={() => setSelectedTag(null)}
           />
 
-          <main className="relative flex h-full w-1/2 shrink-0 flex-col overflow-hidden">
+          <main className="relative flex h-full w-1/3 shrink-0 flex-col overflow-hidden">
           <MobileNoteView
             activeNote={activeNote}
             isDashboard={activeId === DASHBOARD_ID}
-            onOpenSidebar={() => setSidebarOpen(true)}
+            onOpenSidebar={() => setPagerFocus("sidebar")}
             onOverflow={(x, y) => {
               setOverflowPos({ x, y });
               setOverflowOpen(true);
@@ -298,13 +297,20 @@ export default function MobileApp() {
             onNewNote={handleNewNote}
             onOpenTabs={() => setTabSwitcherOpen(true)}
             tabCount={openTabs.length}
-            onOpenSidebar={() => setSidebarOpen(true)}
+            onOpenSidebar={() => setPagerFocus("sidebar")}
+            onOpenToc={() => setPagerFocus("toc")}
             onOpenDaily={() => void openDaily()}
             onOpenSettings={() => setSettingsOpen(true)}
             onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
             onCommandPalette={() => setPaletteOpen(true)}
           />
           </main>
+
+          <MobileTocPane
+            noteId={activeId ?? ""}
+            focused={pagerFocus === "toc"}
+            onClose={() => setPagerFocus("editor")}
+          />
         </div>
       </div>
 
@@ -343,6 +349,10 @@ export default function MobileApp() {
           onHistory={(id) => {
             setOverflowOpen(false);
             setHistoryOpen(true);
+          }}
+          onToc={() => {
+            setOverflowOpen(false);
+            setPagerFocus("toc");
           }}
         />
       )}
