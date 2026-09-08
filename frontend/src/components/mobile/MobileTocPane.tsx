@@ -52,6 +52,9 @@ export default function MobileTocPane({ noteId, focused, onClose }: Props) {
       style={{
         background: "var(--mob-bg)",
         borderLeft: "1px solid var(--mob-surface)",
+        // Keep horizontal drags on this pane (the swipe-back to the editor)
+        // in JS hands — the scrollable list must never claim them.
+        touchAction: "pan-y",
       }}
     >
       {/* Header — the close X mirrors the sidebar pane's top-left button. */}

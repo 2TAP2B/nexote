@@ -15,6 +15,8 @@ type SwipeHandlers = {
 };
 
 const THRESHOLD = 60;
+const FLICK_THRESHOLD = 18;
+const FLICK_VELOCITY = 0.6; // px/ms — a fast, deliberate flick wins without distance
 const DRAG_X = 8;
 const VERTICAL_LIMIT = 1.5;
 
@@ -40,7 +42,8 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
   const handlers = useRef({ focus, onFocus });
   handlers.current = { focus, onFocus };
   const state = useRef({
-    start: null as null | { x: number; y: number; id: number },
+    start: null as null | { x: number; y: number; id: number; t: number },
+    last: null as null | { x: number; t: number },
     horizontal: false,
     dragging: false,
     lastSwipe: 0,
@@ -60,7 +63,8 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
 
     const onStart = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
-      state.current.start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      state.current.start = { x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now() };
+      state.current.last = null;
       state.current.horizontal = false;
       state.current.dragging = false;
     };
@@ -81,6 +85,7 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
       if (Math.abs(dy) > Math.abs(dx) * VERTICAL_LIMIT) return;
 
       state.current.dragging = true;
+      state.current.last = { x: e.clientX, t: performance.now() };
       const track = getTrack();
       const h = handlers.current;
       // One pager pane is a full viewport wide (the track is 300vw).
@@ -113,10 +118,20 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
         state.current.dragging = false;
         state.current.lastSwipe = Date.now();
 
+        // A quick flick snaps even a short drag home; deliberate slower drags
+        // need the distance threshold. Either way the pane pans to the
+        // neighbor in the dragged direction.
+        const now = performance.now();
+        const last = state.current.last;
+        const dt = last ? now - last.t : 0;
+        const vx = last && dt > 0 ? (e.clientX - last.x) / dt : 0;
+        const threshold =
+          Math.abs(vx) > FLICK_VELOCITY ? FLICK_THRESHOLD : THRESHOLD;
+
         const fi = PANE_INDEX[h.focus];
-        if (dx < -THRESHOLD && fi < PANE_COUNT - 1) {
+        if (dx < -threshold && fi < PANE_COUNT - 1) {
           h.onFocus(PANES[fi + 1]);
-        } else if (dx > THRESHOLD && fi > 0) {
+        } else if (dx > threshold && fi > 0) {
           h.onFocus(PANES[fi - 1]);
         }
       }
