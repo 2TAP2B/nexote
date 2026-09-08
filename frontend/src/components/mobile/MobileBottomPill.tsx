@@ -121,7 +121,7 @@ export default function MobileBottomPill({
   return (
     <>
       <div
-        className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center"
+        className="pointer-events-none absolute left-0 right-0 z-40 flex justify-center"
         style={{
           bottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
           transform: shown ? "translateY(0)" : "translateY(150%)",

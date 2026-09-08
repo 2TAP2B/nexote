@@ -111,7 +111,7 @@ export default function MobileEditorToolbar({
 
   return (
     <div
-      className="pointer-events-none fixed left-0 right-0 z-40 flex justify-center px-3"
+      className="pointer-events-none absolute left-0 right-0 z-40 flex justify-center px-3"
       style={{
         top: barTop,
         transform: show ? "translateY(0)" : "translateY(150%)",

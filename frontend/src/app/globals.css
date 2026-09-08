@@ -800,14 +800,21 @@ body {
   min-height: 0;
 }
 
-/* Mobile sidebar push layout — the panel is an in-flow flex child whose
- * width is animated (canvas gets pushed, not overlaid). Width is driven by
- * data-open / inline style so the swipe hook can drag it in real time. */
-.mob-sidebar-push {
-  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+/* Mobile pager — a "double width canvas": the sidebar pane (left) and the
+ * note-view pane (right) sit side by side in one track that is 200vw wide.
+ * Focusing a pane just pans the track, so each pane keeps its full viewport
+ * and nothing is squeezed. Focus is driven by data-sidebar-open on the shell
+ * (0 = note view, 1 = sidebar); the swipe hook overrides with an inline
+ * transform mid-drag and clears it to let the transition snap. */
+.mob-pager {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
-.mob-sidebar-push[data-open="0"] {
-  width: 0;
+.mob-shell-root[data-sidebar-open="0"] .mob-pager {
+  transform: translateX(-50%);
+}
+.mob-shell-root[data-sidebar-open="1"] .mob-pager {
+  transform: translateX(0);
 }
 /* Counteract the margin so the row content still spans full width. */
 .mob-settings-group > * + * {

@@ -238,70 +238,74 @@ export default function MobileApp() {
   return (
     <div
       className="mob-shell-root flex h-[100dvh] w-full flex-col overflow-hidden"
+      data-sidebar-open={sidebarOpen ? "1" : "0"}
       style={
         {
           background: "var(--mob-bg)",
-          // Let the swipe hook receive horizontal drags (open/close sidebar)
-          // while still allowing native vertical scrolling in lists/editor.
+          // Let the swipe hook receive horizontal drags (pan between sidebar
+          // and note view) while still allowing native vertical scrolling in
+          // lists/editor.
           touchAction: "pan-y",
         } as React.CSSProperties
       }
     >
-      {/* Push layout: sidebar + canvas live in one flex row; opening the
-          sidebar animates its width and shifts the canvas, not overlays it. */}
-      <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
-        <MobileSidebar
-          open={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          onControlsReady={setTreeControls}
-          treeControls={treeControls}
-          view={sidebarView}
-          selectedTag={selectedTag}
-          onSelectView={setSidebarView}
-          onSelectTagConsumed={() => setSelectedTag(null)}
-        />
+      {/* Pager — a "double width canvas". The sidebar pane (left) and the
+          note view (right) each take a full viewport; the track is 200vw and
+          pans in/out so no pane ever shrinks. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="mob-pager flex h-full w-[200%]">
+          <MobileSidebar
+            onClose={() => setSidebarOpen(false)}
+            onControlsReady={setTreeControls}
+            treeControls={treeControls}
+            view={sidebarView}
+            selectedTag={selectedTag}
+            onSelectView={setSidebarView}
+            onSelectTagConsumed={() => setSelectedTag(null)}
+          />
 
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        <MobileNoteView
-          activeNote={activeNote}
-          isDashboard={activeId === DASHBOARD_ID}
-          onOpenSidebar={() => setSidebarOpen(true)}
-          onOverflow={(x, y) => {
-            setOverflowPos({ x, y });
-            setOverflowOpen(true);
-          }}
-          onSearch={() => setPaletteOpen(true)}
-          onNewNote={handleNewNote}
-          onOpenSettings={() => setSettingsOpen(true)}
-          openDaily={openDaily}
-          onCloseCollectionItem={() => {
-            // Return to the gallery of the collection that owns this item.
-            const col = activeNote?.collection;
-            if (!col) return;
-            void api.listCollections().then((res) => {
-              const found = (res.collections ?? []).find((c) => c.id === col);
-              if (found) setGalleryCollection(found);
-            });
-          }}
-        />
+          <main className="relative flex h-full w-1/2 shrink-0 flex-col overflow-hidden">
+          <MobileNoteView
+            activeNote={activeNote}
+            isDashboard={activeId === DASHBOARD_ID}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            onOverflow={(x, y) => {
+              setOverflowPos({ x, y });
+              setOverflowOpen(true);
+            }}
+            onSearch={() => setPaletteOpen(true)}
+            onNewNote={handleNewNote}
+            onOpenSettings={() => setSettingsOpen(true)}
+            openDaily={openDaily}
+            onCloseCollectionItem={() => {
+              // Return to the gallery of the collection that owns this item.
+              const col = activeNote?.collection;
+              if (!col) return;
+              void api.listCollections().then((res) => {
+                const found = (res.collections ?? []).find((c) => c.id === col);
+                if (found) setGalleryCollection(found);
+              });
+            }}
+          />
 
-        <MobileBottomPill
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onBack={goToPrevTab}
-          onForward={goToNextTab}
-          onDashboard={() => void openTab(DASHBOARD_ID)}
-          onSearch={() => setPaletteOpen(true)}
-          onNewNote={handleNewNote}
-          onOpenTabs={() => setTabSwitcherOpen(true)}
-          tabCount={openTabs.length}
-          onOpenSidebar={() => setSidebarOpen(true)}
-          onOpenDaily={() => void openDaily()}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
-          onCommandPalette={() => setPaletteOpen(true)}
-        />
-        </main>
+          <MobileBottomPill
+            canGoBack={canGoBack}
+            canGoForward={canGoForward}
+            onBack={goToPrevTab}
+            onForward={goToNextTab}
+            onDashboard={() => void openTab(DASHBOARD_ID)}
+            onSearch={() => setPaletteOpen(true)}
+            onNewNote={handleNewNote}
+            onOpenTabs={() => setTabSwitcherOpen(true)}
+            tabCount={openTabs.length}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            onOpenDaily={() => void openDaily()}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+            onCommandPalette={() => setPaletteOpen(true)}
+          />
+          </main>
+        </div>
       </div>
 
       {tabSwitcherOpen && (

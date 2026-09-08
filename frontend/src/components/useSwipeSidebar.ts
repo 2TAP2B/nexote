@@ -12,17 +12,22 @@ const THRESHOLD = 60;
 const DRAG_X = 8;
 const VERTICAL_LIMIT = 1.5;
 
-// Drag-to-follow swipe for the mobile "push" sidebar.
+// Drag-to-follow swipe for the mobile two-pane pager.
 //
-// Open:  drag right on the bottom navigation pill → the sidebar push
-//        container's width follows the finger rightward (content gets pushed,
-//        not covered). Release past THRESHOLD → open.
-// Close: when the sidebar is open, drag left on the canvas/panel → the width
-//        shrinks. Release past THRESHOLD → close.
+// The pager track ("double width canvas", .mob-pager) holds the sidebar pane
+// (left) and the note-view pane (right), each one viewport wide. Focus is a
+// translateX on the track:
+//   sidebar focused → 0
+//   editor focused  → -50% of the 200vw track (= -100vw)
 //
-// The push container is tracked via its CSS class so we can set its width in
-// real time without React re-renders; transitions are disabled mid-drag and
-// re-enabled on release for the snap animation.
+// Open:  drag right on the bottom navigation pill → the track follows the
+//        finger, pulling the sidebar pane into focus.
+// Close: when the sidebar is focused, drag left anywhere on it → the track
+//        slides back, bringing the note editor into focus.
+//
+// Drags write the transform straight to the DOM (transitions disabled); on
+// release the inline style is cleared so the CSS rule + transition snap to
+// whichever pane won. React owns the final position via data-sidebar-open.
 export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
   const handlers = useRef({ onOpen, onClose, open });
   handlers.current = { onOpen, onClose, open };
@@ -31,7 +36,6 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
     horizontal: false,
     dragging: false,
     lastSwipe: 0,
-    panelWidth: 380,
   });
 
   useEffect(() => {
@@ -41,23 +45,16 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
         "ontouchstart" in window);
     if (!isTouch) return;
 
-    const getPush = (): HTMLElement | null =>
-      document.querySelector(".mob-sidebar-push");
+    const getTrack = (): HTMLElement | null =>
+      document.querySelector(".mob-pager");
     const getPill = (): HTMLElement | null =>
       document.querySelector(".mob-bottom-pill");
 
     const onStart = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
-      // The inner panel always keeps its intrinsic width (90vw / max 520), so
-      // it reliably reports the target width even while the push container is
-      // collapsed to 0.
-      const panelWidth =
-        document.querySelector(".mob-sidebar-panel")?.getBoundingClientRect()
-          .width ?? 380;
       state.current.start = { x: e.clientX, y: e.clientY, id: e.pointerId };
       state.current.horizontal = false;
       state.current.dragging = false;
-      state.current.panelWidth = panelWidth;
     };
 
     const onMove = (e: PointerEvent) => {
@@ -75,24 +72,20 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
       if (Math.abs(dy) > Math.abs(dx) * VERTICAL_LIMIT) return;
 
-      // Begin dragging.
       state.current.dragging = true;
-      const push = getPush();
+      const track = getTrack();
       const h = handlers.current;
-      const pw = state.current.panelWidth;
+      // One pager pane is a full viewport wide (the track is 200vw).
+      const paneW = window.innerWidth;
 
       // Disable transitions for smooth finger-following.
-      if (push) push.style.transition = "none";
+      if (track) track.style.transition = "none";
 
-      if (h.open) {
-        // Sidebar open — drag left to close.
-        const width = Math.max(0, Math.min(pw, pw + dx));
-        if (push) push.style.width = `${width}px`;
-      } else {
-        // Sidebar closed — drag right to open (from the bottom pill).
-        const width = Math.max(0, Math.min(pw, dx));
-        if (push) push.style.width = `${width}px`;
-      }
+      // open: track rests at 0 (sidebar pane visible), drag left to reveal the
+      // editor; closed: track rests at -100vw (editor visible), drag right to
+      // pull the sidebar pane in.
+      const x = Math.max(-paneW, Math.min(0, (h.open ? 0 : -paneW) + dx));
+      if (track) track.style.transform = `translateX(${x}px)`;
     };
 
     const finishDrag = (e: PointerEvent) => {
@@ -103,29 +96,30 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
 
       const dx = e.clientX - s.x;
       const h = handlers.current;
-      const push = getPush();
+      const track = getTrack();
 
-      // Re-enable transitions for the snap animation.
-      if (push) push.style.transition = "";
+      // Re-enable transitions so the snap animation runs from the dragged
+      // position to the focused pane's rest transform.
+      if (track) track.style.transition = "";
 
       if (state.current.dragging) {
         state.current.dragging = false;
         state.current.lastSwipe = Date.now();
 
         if (h.open) {
-          // Collapse-to-default: let React's width:0 style take over so the
-          // CSS transition animates from the dragged width to closed.
           if (dx < -THRESHOLD) h.onClose();
-          if (push) push.style.width = "";
         } else {
           if (dx > THRESHOLD) h.onOpen();
-          if (push) push.style.width = "";
         }
-      } else if (push) {
-        push.style.width = "";
       }
+
+      // Clear the dragged transform → the CSS rule (data-sidebar-open) takes
+      // back over and the transition snaps to the winning pane.
+      if (track) track.style.transform = "";
     };
 
+    // Swallows the click that would otherwise fire on the pill/tap right after
+    // a swipe gesture (which would immediately re-toggle the pane).
     const onCaptureClick = (e: Event) => {
       if (Date.now() - state.current.lastSwipe < 400) {
         e.preventDefault();
@@ -133,9 +127,9 @@ export function useSwipeSidebar({ onOpen, onClose, open }: SwipeHandlers) {
       }
     };
 
-    // Open swipe: pointerdown on the bottom pill.
+    // Open swipe starts on the pill; close swipe starts anywhere on the
+    // sidebar (document-level, only listened to while the sidebar is focused).
     const onPillDown = (e: PointerEvent) => onStart(e);
-    // Close swipe: pointerdown on document when sidebar is open.
     const onDocDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
       if (!handlers.current.open) return;

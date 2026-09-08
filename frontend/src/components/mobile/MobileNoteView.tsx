@@ -270,10 +270,10 @@ export default function MobileNoteView({
       className="relative min-h-0 flex-1"
       style={{ background: "var(--mob-bg)" }}
     >
-      {/* Top bar — fixed overlay that auto-hides on scroll-down, reappears
+      {/* Top bar — overlay that auto-hides on scroll-down, reappears
        * on scroll-up or at top. Transparent so the editor shows through.
        * In raw mode it stays pinned so the toggle-back button is always
-       * reachable. */}
+       * reachable. Absolute (not fixed) so it pans with the editor pane. */}
       <MobileTopBar
         onOpenSidebar={onOpenSidebar}
         onOverflow={onOverflow}
@@ -334,7 +334,7 @@ export default function MobileNoteView({
        * The top bar hides on scroll, so the toggle lives down here where it
        * is always reachable while editing. */}
       <div
-        className="pointer-events-auto fixed z-40"
+        className="pointer-events-auto absolute z-40"
         style={{
           right: 16,
           top: `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - 132px)`,
@@ -386,7 +386,7 @@ function MobileTopBar({
   if (isCollectionItem) {
     return (
       <div
-        className="pointer-events-none fixed left-0 right-0 z-40 flex items-center px-4"
+        className="pointer-events-none absolute left-0 right-0 z-40 flex items-center px-4"
         style={{
           paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
           paddingBottom: 8,
@@ -406,7 +406,7 @@ function MobileTopBar({
 
   return (
     <div
-      className="pointer-events-none fixed left-0 right-0 z-40 flex items-center justify-between px-4"
+      className="pointer-events-none absolute left-0 right-0 z-40 flex items-center justify-between px-4"
       style={{
         paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
         paddingBottom: 8,

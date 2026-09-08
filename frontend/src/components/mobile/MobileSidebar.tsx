@@ -22,7 +22,6 @@ import type { SidebarView } from "@/components/Ribbon";
 import { useNotes } from "@/lib/notes-context";
 
 type Props = {
-  open: boolean;
   onClose: () => void;
   onControlsReady?: (c: TreeControls) => void;
   treeControls?: TreeControls | null;
@@ -44,7 +43,6 @@ const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }
 ];
 
 export default function MobileSidebar({
-  open,
   onClose,
   onControlsReady,
   treeControls,
@@ -75,48 +73,41 @@ export default function MobileSidebar({
 
   return (
     <div
-      className="mob-sidebar-push relative h-full shrink-0 overflow-hidden"
-      data-open={open ? "1" : "0"}
+      className="relative flex h-full w-1/2 shrink-0 flex-col overflow-hidden"
       style={{
-        width: open ? "90vw" : 0,
-        maxWidth: 520,
-        zIndex: open ? 50 : 0,
+        background: "var(--mob-bg)",
+        borderRight: "1px solid var(--mob-surface)",
       }}
     >
-      {/* Sidebar panel — fixed inner width that gets revealed/covered by the
-          animating push container, so the canvas is shifted, not overlaid. */}
+      {/* Header — the close X sits at the same top-left spot the sidebar
+          (hamburger) button occupies on the note view, so tapping there
+          always returns to the note editor. */}
       <div
-        className="nexote-sidebar mob-sidebar-panel flex h-full w-[90vw] max-w-[520px] flex-col"
+        className="flex shrink-0 items-center gap-3 px-3"
         style={{
-          background: "var(--mob-bg)",
-          borderRight: "1px solid var(--mob-surface)",
+          paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
+          paddingBottom: 8,
+          borderBottom: "1px solid var(--mob-surface)",
         }}
       >
-        {/* Header — current view name + close */}
-        <div
-          className="flex shrink-0 items-center justify-between px-4"
+        <button
+          type="button"
+          aria-label="Close sidebar"
+          onClick={onClose}
+          className="flex items-center justify-center rounded-full transition-transform active:scale-95"
           style={{
-            paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
-            paddingBottom: 8,
-            borderBottom: "1px solid var(--mob-surface)",
+            width: 40,
+            height: 40,
+            background: "var(--mob-surface)",
+            color: "var(--mob-text)",
           }}
         >
-          <span
-            className="text-lg font-semibold"
-            style={{ color: "var(--mob-text)" }}
-          >
-            {activeLabel}
-          </span>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg"
-            style={{ color: "var(--mob-muted)" }}
-          >
-            <X size={22} />
-          </button>
-        </div>
+          <X size={20} />
+        </button>
+        <span className="text-lg font-semibold" style={{ color: "var(--mob-text)" }}>
+          {activeLabel}
+        </span>
+      </div>
 
         {/* Horizontal ribbon — view switcher icons */}
         <div
@@ -222,7 +213,6 @@ export default function MobileSidebar({
             </RibbonBtn>
           </div>
         )}
-      </div>
     </div>
   );
 }

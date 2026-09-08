@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentType } from "react";
+import { createPortal } from "react-dom";
 
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
 
@@ -124,7 +125,10 @@ export default function AICommandPanel({ editorRef, onClose, mobile }: Props) {
 
   const activeSubmenu = SUBMENUS.find((s) => s.id === submenu);
 
-  return (
+  // Portaled to document.body: the panel is position:fixed, and its mount
+  // point on mobile sits inside the pager's transformed track — a fixed
+  // element there would be anchored to the track, not the viewport.
+  return createPortal(
     <div
       className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center sm:items-center"
       style={{ background: "rgba(0,0,0,0.4)" }}
@@ -271,6 +275,7 @@ export default function AICommandPanel({ editorRef, onClose, mobile }: Props) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
