@@ -75,36 +75,21 @@ export default function MobileSidebar({
 
   return (
     <div
-      className="fixed inset-0 z-50"
-      style={{ pointerEvents: open ? "auto" : "none" }}
+      className="mob-sidebar-push relative h-full shrink-0 overflow-hidden"
+      data-open={open ? "1" : "0"}
+      style={{
+        width: open ? "90vw" : 0,
+        maxWidth: 520,
+        zIndex: open ? 50 : 0,
+      }}
     >
-      {/* Backdrop */}
+      {/* Sidebar panel — fixed inner width that gets revealed/covered by the
+          animating push container, so the canvas is shifted, not overlaid. */}
       <div
-        className="mob-sidebar-backdrop absolute inset-0"
-        data-open={open ? "1" : "0"}
-        onClick={onClose}
+        className="nexote-sidebar mob-sidebar-panel flex h-full w-[90vw] max-w-[520px] flex-col"
         style={{
-          background: "rgba(0,0,0,0.5)",
-          pointerEvents: open ? "auto" : "none",
-          touchAction: "none",
-        }}
-      />
-
-      {/* Sidebar panel — slides in/out via transform.
-          The transform is driven by a data attribute (not React inline
-          style) so the swipe hook can set style.transform directly on the
-          DOM without React clobbering it on re-render. */}
-      <div
-        className="mob-sidebar-panel nexote-sidebar absolute flex h-full flex-col"
-        data-open={open ? "1" : "0"}
-        style={{
-          width: "90vw",
-          maxWidth: 520,
           background: "var(--mob-bg)",
           borderRight: "1px solid var(--mob-surface)",
-          left: 0,
-          top: 0,
-          bottom: 0,
         }}
       >
         {/* Header — current view name + close */}

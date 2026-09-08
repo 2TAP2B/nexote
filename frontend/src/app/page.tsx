@@ -327,17 +327,34 @@ function AppShell() {
           )}
 
           <main className="flex min-w-0 flex-1 flex-col min-h-0 overflow-hidden">
-            <EditorPane
-              onCloseCollectionItem={() => {
-                const col = activeNote?.collection;
-                if (col) {
-                  void api.listCollections().then((res) => {
-                    const found = (res.collections ?? []).find((c) => c.id === col);
-                    if (found) setGalleryCollection(found);
-                  });
-                }
-              }}
-            />
+            {galleryCollection ? (
+              <CollectionGallery
+                embedded
+                open={Boolean(galleryCollection)}
+                collection={galleryCollection}
+                onClose={() => setGalleryCollection(null)}
+                onExit={() => {
+                  // Leaving the gallery returns to the dashboard, not back to an
+                  // item still open as the active note (which would loop).
+                  setGalleryCollection(null);
+                  void openTab(DASHBOARD_ID);
+                }}
+                onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
+                onCollectionChanged={setGalleryCollection}
+              />
+            ) : (
+              <EditorPane
+                onCloseCollectionItem={() => {
+                  const col = activeNote?.collection;
+                  if (col) {
+                    void api.listCollections().then((res) => {
+                      const found = (res.collections ?? []).find((c) => c.id === col);
+                      if (found) setGalleryCollection(found);
+                    });
+                  }
+                }}
+              />
+            )}
           </main>
         </div>
 
@@ -367,23 +384,7 @@ function AppShell() {
           onColorSchemeChange={setColorScheme}
         />
 
-        {galleryCollection && (
-          <CollectionGallery
-            open={Boolean(galleryCollection)}
-            collection={galleryCollection}
-            onClose={() => setGalleryCollection(null)}
-            onExit={() => {
-              // Leaving the gallery returns to the dashboard, not back to an
-              // item still open as the active note (which would loop).
-              setGalleryCollection(null);
-              void openTab(DASHBOARD_ID);
-            }}
-            onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-            onCollectionChanged={setGalleryCollection}
-          />
-        )}
-
-        <CollectionFormDialog
+<CollectionFormDialog
           open={collectionFormOpen}
           onClose={() => setCollectionFormOpen(false)}
           onSaved={() => {

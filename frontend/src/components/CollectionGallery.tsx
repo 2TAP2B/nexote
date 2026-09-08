@@ -1,6 +1,6 @@
 "use client";
 
-import { Disc3, Pencil, Pin, PinOff, Plus, X } from "lucide-react";
+import { Disc3, Maximize, Minimize, Pencil, Pin, PinOff, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
@@ -16,6 +16,10 @@ type Props = {
   onExit?: () => void;
   onOpenNote: (vaultId: string, id: string) => void;
   onCollectionChanged?: (c: CollectionMeta) => void;
+  // embedded renders the gallery inline (sidebar stays visible) with a
+  // fullscreen toggle in the header. Default (false) renders the fixed
+  // fullscreen overlay used by dashboards.
+  embedded?: boolean;
 };
 
 type Item = NoteMeta & {
@@ -32,15 +36,22 @@ export default function CollectionGallery({
   onExit,
   onOpenNote,
   onCollectionChanged,
+  embedded = false,
 }: Props) {
   const { vaults, allVaultData, refresh, activeVault } = useNotes();
   const [formOpen, setFormOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     if (open) void refresh();
   }, [open, refresh]);
+
+  // Reset fullscreen whenever the gallery is (re)opened or closed.
+  useEffect(() => {
+    if (!open) setFullscreen(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -84,12 +95,33 @@ export default function CollectionGallery({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+    <div
+      className={
+        embedded && !fullscreen
+          ? "flex h-full min-h-0 flex-1 flex-col bg-background"
+          : "fixed inset-0 z-50 flex flex-col bg-background"
+      }
+    >
       {/* Header */}
       <div
         className="flex items-center gap-3 px-4 py-3 md:px-6"
         style={{ borderBottom: "1px solid var(--border)" }}
       >
+        {embedded && (
+          <button
+            type="button"
+            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            onClick={() => setFullscreen((v) => !v)}
+            className="hidden md:flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {fullscreen ? (
+              <Minimize className="h-4 w-4" />
+            ) : (
+              <Maximize className="h-4 w-4" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           aria-label="Close gallery"

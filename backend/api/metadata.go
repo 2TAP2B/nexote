@@ -57,12 +57,12 @@ type MetadataResult struct {
 	Source      string   `json:"source"` // "discogs" | "googlebooks" | "openlibrary"
 	ExternalID  string   `json:"externalId"`
 	Title       string   `json:"title"`
-	Artists     []string `json:"artists,omitempty"`     // discogs: artists; books: authors
+	Artists     []string `json:"artists,omitempty"` // discogs: artists; books: authors
 	Year        string   `json:"year,omitempty"`
 	Genres      []string `json:"genres,omitempty"`
-	Label       string   `json:"label,omitempty"`       // discogs: label; books: publisher
-	CatNo       string   `json:"catno,omitempty"`       // discogs: catalog number
-	Pages       string   `json:"pages,omitempty"`       // books only
+	Label       string   `json:"label,omitempty"` // discogs: label; books: publisher
+	CatNo       string   `json:"catno,omitempty"` // discogs: catalog number
+	Pages       string   `json:"pages,omitempty"` // books only
 	CoverURL    string   `json:"coverUrl,omitempty"`
 	Description string   `json:"description,omitempty"`
 }
@@ -143,10 +143,10 @@ func (h *Handler) discogsRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw struct {
-		ID     int      `json:"id"`
-		Title  string   `json:"title"`
-		Year   string   `json:"year"`
-		Genres []string `json:"genres"`
+		ID     int             `json:"id"`
+		Title  string          `json:"title"`
+		Year   json.RawMessage `json:"year"`
+		Genres []string        `json:"genres"`
 		Labels []struct {
 			Name  string `json:"name"`
 			Catno string `json:"catno"`
@@ -155,8 +155,8 @@ func (h *Handler) discogsRelease(w http.ResponseWriter, r *http.Request) {
 			Name string `json:"name"`
 		} `json:"artists"`
 		Images []struct {
-			URL   string `json:"uri"`
-			Type  string `json:"type"`
+			URL  string `json:"uri"`
+			Type string `json:"type"`
 		} `json:"images"`
 		Tracklist []struct {
 			Title string `json:"title"`
@@ -170,7 +170,7 @@ func (h *Handler) discogsRelease(w http.ResponseWriter, r *http.Request) {
 		Source:     "discogs",
 		ExternalID: strconv.Itoa(raw.ID),
 		Title:      raw.Title,
-		Year:       raw.Year,
+		Year:       yearToString(raw.Year),
 		Label:      firstLabel(raw.Labels),
 		CatNo:      firstCatno(raw.Labels),
 	}
@@ -205,12 +205,12 @@ func (h *Handler) discogsSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	var raw struct {
 		Results []struct {
-			ID      int    `json:"id"`
-			Title   string `json:"title"`
-			Year    string `json:"year"`
-			Catno   string `json:"catno"`
-			Label   []string `json:"label"`
-			CoverURL string `json:"thumb"`
+			ID       int             `json:"id"`
+			Title    string          `json:"title"`
+			Year     json.RawMessage `json:"year"`
+			Catno    string          `json:"catno"`
+			Label    []string        `json:"label"`
+			CoverURL string          `json:"thumb"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -228,6 +228,20 @@ func (h *Handler) discogsSearch(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// yearToString normalizes a raw JSON year value to a string. Discogs emits
+// year as a JSON number (e.g. 1994); accepting both forms keeps unmarshaling
+// robust across API quirks.
+func yearToString(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return string(raw)
 }
 
 func firstLabel(labels []struct {
@@ -384,7 +398,7 @@ func googleBooksLookup(ctx context.Context, q, isbn string) (MetadataResult, boo
 	}
 	var raw struct {
 		TotalItems int `json:"totalItems"`
-		Items []struct {
+		Items      []struct {
 			VolumeInfo struct {
 				Title         string   `json:"title"`
 				Subtitle      string   `json:"subtitle"`
@@ -412,9 +426,14 @@ func googleBooksLookup(ctx context.Context, q, isbn string) (MetadataResult, boo
 		year = year[:i]
 	}
 	return MetadataResult{
-		Source:      "googlebooks",
-		ExternalID:  isbn,
-		Title:       strings.TrimSpace(vi.Title + (func() string { if vi.Subtitle != "" { return ": " + vi.Subtitle }; return "" }())),
+		Source:     "googlebooks",
+		ExternalID: isbn,
+		Title: strings.TrimSpace(vi.Title + (func() string {
+			if vi.Subtitle != "" {
+				return ": " + vi.Subtitle
+			}
+			return ""
+		}())),
 		Artists:     vi.Authors,
 		Year:        year,
 		Genres:      vi.Categories,
@@ -441,17 +460,17 @@ func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, 
 		return MetadataResult{}, false, err
 	}
 	var raw map[string]struct {
-		Title     string `json:"title"`
-		Subtitle  string `json:"subtitle"`
-		Authors   []struct {
+		Title    string `json:"title"`
+		Subtitle string `json:"subtitle"`
+		Authors  []struct {
 			Name string `json:"name"`
 		} `json:"authors"`
 		Publishers []struct {
 			Name string `json:"name"`
 		} `json:"publishers"`
-		PublishDate  string  `json:"publish_date"`
-		NumberPages  int     `json:"number_of_pages"`
-		Subjects   []struct {
+		PublishDate string `json:"publish_date"`
+		NumberPages int    `json:"number_of_pages"`
+		Subjects    []struct {
 			Name string `json:"name"`
 		} `json:"subjects"`
 		Cover struct {
@@ -488,13 +507,18 @@ func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, 
 	return MetadataResult{
 		Source:     "openlibrary",
 		ExternalID: isbn,
-		Title:      strings.TrimSpace(book.Title + (func() string { if book.Subtitle != "" { return ": " + book.Subtitle }; return "" }())),
-		Artists:    authors,
-		Year:       book.PublishDate,
-		Genres:     genres,
-		Label:      publisher,
-		Pages:      strconv.Itoa(book.NumberPages),
-		CoverURL:   cover,
+		Title: strings.TrimSpace(book.Title + (func() string {
+			if book.Subtitle != "" {
+				return ": " + book.Subtitle
+			}
+			return ""
+		}())),
+		Artists:  authors,
+		Year:     book.PublishDate,
+		Genres:   genres,
+		Label:    publisher,
+		Pages:    strconv.Itoa(book.NumberPages),
+		CoverURL: cover,
 	}, true, nil
 }
 

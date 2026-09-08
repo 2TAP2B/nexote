@@ -247,56 +247,62 @@ export default function MobileApp() {
         } as React.CSSProperties
       }
     >
-      <MobileNoteView
-        activeNote={activeNote}
-        isDashboard={activeId === DASHBOARD_ID}
-        onOpenSidebar={() => setSidebarOpen(true)}
-        onOverflow={(x, y) => {
-          setOverflowPos({ x, y });
-          setOverflowOpen(true);
-        }}
-        onSearch={() => setPaletteOpen(true)}
-        onNewNote={handleNewNote}
-        onOpenSettings={() => setSettingsOpen(true)}
-        openDaily={openDaily}
-        onCloseCollectionItem={() => {
-          // Return to the gallery of the collection that owns this item.
-          const col = activeNote?.collection;
-          if (!col) return;
-          void api.listCollections().then((res) => {
-            const found = (res.collections ?? []).find((c) => c.id === col);
-            if (found) setGalleryCollection(found);
-          });
-        }}
-      />
+      {/* Push layout: sidebar + canvas live in one flex row; opening the
+          sidebar animates its width and shifts the canvas, not overlays it. */}
+      <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+        <MobileSidebar
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onControlsReady={setTreeControls}
+          treeControls={treeControls}
+          view={sidebarView}
+          selectedTag={selectedTag}
+          onSelectView={setSidebarView}
+          onSelectTagConsumed={() => setSelectedTag(null)}
+        />
 
-      <MobileBottomPill
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
-        onBack={goToPrevTab}
-        onForward={goToNextTab}
-        onDashboard={() => void openTab(DASHBOARD_ID)}
-        onSearch={() => setPaletteOpen(true)}
-        onNewNote={handleNewNote}
-        onOpenTabs={() => setTabSwitcherOpen(true)}
-        tabCount={openTabs.length}
-        onOpenSidebar={() => setSidebarOpen(true)}
-        onOpenDaily={() => void openDaily()}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
-        onCommandPalette={() => setPaletteOpen(true)}
-      />
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <MobileNoteView
+          activeNote={activeNote}
+          isDashboard={activeId === DASHBOARD_ID}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOverflow={(x, y) => {
+            setOverflowPos({ x, y });
+            setOverflowOpen(true);
+          }}
+          onSearch={() => setPaletteOpen(true)}
+          onNewNote={handleNewNote}
+          onOpenSettings={() => setSettingsOpen(true)}
+          openDaily={openDaily}
+          onCloseCollectionItem={() => {
+            // Return to the gallery of the collection that owns this item.
+            const col = activeNote?.collection;
+            if (!col) return;
+            void api.listCollections().then((res) => {
+              const found = (res.collections ?? []).find((c) => c.id === col);
+              if (found) setGalleryCollection(found);
+            });
+          }}
+        />
 
-      <MobileSidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onControlsReady={setTreeControls}
-        treeControls={treeControls}
-        view={sidebarView}
-        selectedTag={selectedTag}
-        onSelectView={setSidebarView}
-        onSelectTagConsumed={() => setSelectedTag(null)}
-      />
+        <MobileBottomPill
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
+          onBack={goToPrevTab}
+          onForward={goToNextTab}
+          onDashboard={() => void openTab(DASHBOARD_ID)}
+          onSearch={() => setPaletteOpen(true)}
+          onNewNote={handleNewNote}
+          onOpenTabs={() => setTabSwitcherOpen(true)}
+          tabCount={openTabs.length}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenDaily={() => void openDaily()}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onCommandPalette={() => setPaletteOpen(true)}
+        />
+        </main>
+      </div>
 
       {tabSwitcherOpen && (
         <MobileTabSwitcher
