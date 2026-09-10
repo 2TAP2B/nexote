@@ -1466,8 +1466,8 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             </div>
           )}
           {aiReview && (
-            <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[10vh] backdrop-blur-sm">
-              <div className="flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl">
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-start sm:p-4 sm:pt-[10vh] backdrop-blur-sm">
+              <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl sm:max-h-[70vh]">
                 <div className="shrink-0 border-b border-border px-4 py-3">
                   <h2 className="text-sm font-semibold text-foreground">
                     AI suggestion
