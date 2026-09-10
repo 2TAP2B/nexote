@@ -22,10 +22,12 @@ import (
 )
 
 // MetadataConfig is the persisted lookup configuration. It lives at
-// <NEXOTE_HOME>/metadata.json. Only the Discogs token is needed (Google
-// Books works key-less, an optional key can be added later).
+// <NEXOTE_HOME>/metadata.json. Google Books works key-less, but anonymous
+// requests are rate-limited hard per IP (HTTP 429); a free API key raises
+// the quota. A key from the GOOGLE_BOOKS_API_KEY env var takes precedence.
 type MetadataConfig struct {
-	DiscogsToken string `json:"discogsToken"`
+	DiscogsToken   string `json:"discogsToken"`
+	GoogleBooksKey string `json:"googleBooksKey,omitempty"`
 }
 
 func LoadMetadataConfig(root string) (MetadataConfig, error) {
@@ -109,11 +111,21 @@ func (h *Handler) getMetadataConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setMetadataConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg MetadataConfig
-	if err := decodeBody(r, &cfg); err != nil {
+	// The clients only send the Discogs token field, so patch instead of
+	// replacing: other fields (e.g. the Google Books API key) survive.
+	var in struct {
+		DiscogsToken string `json:"discogsToken"`
+	}
+	if err := decodeBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	cfg, err := LoadMetadataConfig(h.Registry.Root())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	cfg.DiscogsToken = strings.TrimSpace(in.DiscogsToken)
 	if err := SaveMetadataConfig(h.Registry.Root(), cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -299,7 +311,7 @@ func (h *Handler) bookLookup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Google Books first (better cover + description data).
-	res, found, err := googleBooksLookup(r.Context(), "isbn:"+isbn, isbn)
+	res, found, err := googleBooksLookup(r.Context(), "isbn:"+isbn, isbn, googleBooksKey(h.Registry.Root()))
 	if err == nil && found {
 		writeJSON(w, http.StatusOK, res)
 		return
@@ -318,17 +330,30 @@ func (h *Handler) bookLookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-// bookSearch performs a free-text book search on Google Books.
+// bookSearch performs a free-text book search, Google Books first. When
+// Google rate-limits (429) or fails, Open Library's search API is used as
+// a fallback so adding books never dead-ends.
 func (h *Handler) bookSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeError(w, http.StatusBadRequest, errors.New("q is required"))
 		return
 	}
-	data, err := googleBooksGet(r.Context(), googleBooksBase+"?q="+url.QueryEscape(q)+"&maxResults=10")
+	results, err := googleBooksSearch(r.Context(), q, googleBooksKey(h.Registry.Root()))
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
+		results, err = openLibrarySearch(r.Context(), q)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+func googleBooksSearch(ctx context.Context, q, apiKey string) ([]MetadataSearchResult, error) {
+	data, err := googleBooksGet(ctx, googleBooksBase+"?q="+url.QueryEscape(q)+"&maxResults=10", apiKey)
+	if err != nil {
+		return nil, err
 	}
 	var raw struct {
 		Items []struct {
@@ -347,8 +372,7 @@ func (h *Handler) bookSearch(w http.ResponseWriter, r *http.Request) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
+		return nil, err
 	}
 	results := make([]MetadataSearchResult, 0, len(raw.Items))
 	for _, it := range raw.Items {
@@ -369,11 +393,33 @@ func (h *Handler) bookSearch(w http.ResponseWriter, r *http.Request) {
 			CoverURL:   cover,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+	return results, nil
 }
 
-func googleBooksGet(ctx context.Context, url string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// googleBooksKey returns the optional Google Books API key: the
+// GOOGLE_BOOKS_API_KEY env var first, then the persisted metadata config.
+func googleBooksKey(root string) string {
+	if k := os.Getenv("GOOGLE_BOOKS_API_KEY"); k != "" {
+		return strings.TrimSpace(k)
+	}
+	cfg, err := LoadMetadataConfig(root)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.GoogleBooksKey)
+}
+
+func googleBooksGet(ctx context.Context, rawURL, apiKey string) ([]byte, error) {
+	// Attach the configured API key (optional) — with a key the per-IP
+	// anonymous rate limit (which 429s quickly) becomes a per-key quota.
+	if apiKey != "" {
+		sep := "?"
+		if strings.Contains(rawURL, "?") {
+			sep = "&"
+		}
+		rawURL = rawURL + sep + "key=" + url.QueryEscape(apiKey)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -391,8 +437,8 @@ func googleBooksGet(ctx context.Context, url string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 
-func googleBooksLookup(ctx context.Context, q, isbn string) (MetadataResult, bool, error) {
-	data, err := googleBooksGet(ctx, googleBooksBase+"?q="+url.QueryEscape(q))
+func googleBooksLookup(ctx context.Context, q, isbn, apiKey string) (MetadataResult, bool, error) {
+	data, err := googleBooksGet(ctx, googleBooksBase+"?q="+url.QueryEscape(q), apiKey)
 	if err != nil {
 		return MetadataResult{}, false, err
 	}
@@ -520,6 +566,62 @@ func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, 
 		Pages:    strconv.Itoa(book.NumberPages),
 		CoverURL: cover,
 	}, true, nil
+}
+
+// openLibrarySearch performs a free-text search on Open Library's search
+// API (fallback when Google Books rate-limits). Results carry only summary
+// data — enough for the search-result list the frontend fills the form
+// from (title, authors, year, cover).
+func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://openlibrary.org/search.json?q="+url.QueryEscape(q)+"&limit=10&fields=key,title,author_name,first_publish_year,cover_i", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := metadataHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return nil, err
+	}
+	var raw struct {
+		Docs []struct {
+			Key              string   `json:"key"` // "/works/OL82563W"
+			Title            string   `json:"title"`
+			Authors          []string `json:"author_name"`
+			FirstPublishYear int      `json:"first_publish_year"`
+			CoverID          int      `json:"cover_i"`
+		} `json:"docs"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	results := make([]MetadataSearchResult, 0, len(raw.Docs))
+	for _, d := range raw.Docs {
+		id := strings.TrimPrefix(d.Key, "/works/")
+		sub := strings.Join(d.Authors, ", ")
+		if d.FirstPublishYear > 0 {
+			if sub != "" {
+				sub += " · "
+			}
+			sub += strconv.Itoa(d.FirstPublishYear)
+		}
+		cover := ""
+		if d.CoverID != 0 {
+			cover = fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", d.CoverID)
+		}
+		results = append(results, MetadataSearchResult{
+			Source:     "openlibrary",
+			ExternalID: id,
+			Title:      d.Title,
+			Subtitle:   sub,
+			CoverURL:   cover,
+		})
+	}
+	return results, nil
 }
 
 // metadataCover downloads a remote cover image and stores it as a local

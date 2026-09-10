@@ -457,6 +457,10 @@ export const api = {
 
 export type MetadataConfig = {
   discogsToken: string;
+  // Optional Google Books API key. Raises Google's anonymous per-IP 429
+  // limit; when set it is sent server-side only. Configured via
+  // metadata.json / GOOGLE_BOOKS_API_KEY (no settings UI yet).
+  googleBooksKey?: string;
 };
 
 export type MetadataResult = {
