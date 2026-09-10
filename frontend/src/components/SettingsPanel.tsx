@@ -615,11 +615,13 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                   )}
                 </div>
 
-                {/* Metadata lookups (Discogs) */}
+                {/* Metadata lookups (Discogs / Google Books) */}
                 <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-                  Discogs token for collection item lookups (Vinyls). Books
-                  lookups work without a key. Get a free personal token at
-                  dev.discogs.com — it is stored server-side only.
+                  Keys for collection item lookups, stored server-side only.
+                  Free Discogs token: dev.discogs.com. Google Books works
+                  key-less but rate-limits hard (HTTP 429) — a free API key
+                  raises the quota: console.cloud.google.com → enable "Books
+                  API" → create an API key.
                 </div>
                 <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
                   <span className="text-sm text-foreground">Discogs token</span>
@@ -630,7 +632,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                     type="password"
                     value={metadataDraft.discogsToken}
                     onChange={(e) =>
-                      setMetadataDraft({ discogsToken: e.target.value })
+                      setMetadataDraft((d) => ({ ...d, discogsToken: e.target.value }))
                     }
                     onBlur={() =>
                       metadataDraft !== mdConfig &&
@@ -643,6 +645,34 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                         .catch(() => {})
                     }
                     placeholder="Personal access token"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">
+                    Google Books <span className="font-mono">API key</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    optional — avoids "429 Too Many Requests" when searching
+                    books
+                  </span>
+                  <input
+                    type="password"
+                    value={metadataDraft.googleBooksKey ?? ""}
+                    onChange={(e) =>
+                      setMetadataDraft((d) => ({ ...d, googleBooksKey: e.target.value }))
+                    }
+                    onBlur={() =>
+                      metadataDraft !== mdConfig &&
+                      void api
+                        .setMetadataConfig(metadataDraft)
+                        .then((cfg) => {
+                          setMdConfig(cfg);
+                          setMetadataDraft(cfg);
+                        })
+                        .catch(() => {})
+                    }
+                    placeholder="AIza…"
                     className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                   />
                 </label>

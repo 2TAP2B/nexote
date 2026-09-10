@@ -763,18 +763,27 @@ function DiscogsSection() {
     <>
       <Group label="Metadata lookups">
         <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
-          Discogs token for Vinyls collection lookups. Books lookups work
-          without a key. Free token at dev.discogs.com — stored server-side
-          only.
+          Lookup keys, stored server-side only. Free Discogs token:
+          dev.discogs.com. Google Books works key-less but rate-limits hard
+          (HTTP 429) — a free API key raises the quota.
         </div>
         <FieldInput
           label="Discogs token"
           hint="Personal access token"
           value={draft.discogsToken}
-          onChange={(v) => setDraft({ discogsToken: v })}
+          onChange={(v) => setDraft({ ...draft, discogsToken: v })}
           onBlur={() => void persist()}
           password
           placeholder="Personal access token"
+        />
+        <FieldInput
+          label="Google Books API key"
+          hint="Optional — avoids 429 rate limits"
+          value={draft.googleBooksKey ?? ""}
+          onChange={(v) => setDraft({ ...draft, googleBooksKey: v })}
+          onBlur={() => void persist()}
+          password
+          placeholder="AIza…"
         />
       </Group>
       <Group label="Token test">

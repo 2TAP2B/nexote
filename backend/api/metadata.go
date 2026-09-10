@@ -111,12 +111,16 @@ func (h *Handler) getMetadataConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setMetadataConfig(w http.ResponseWriter, r *http.Request) {
-	// The clients only send the Discogs token field, so patch instead of
-	// replacing: other fields (e.g. the Google Books API key) survive.
+	// Clients send only the fields their settings forms know: the mobile
+	// view sends just the Discogs token, desktop may also send the Google
+	// Books key. Patch, don't replace — absent fields keep their value.
 	var in struct {
-		DiscogsToken string `json:"discogsToken"`
+		DiscogsToken   string  `json:"discogsToken"`
+		GoogleBooksKey *string `json:"googleBooksKey"`
 	}
-	if err := decodeBody(r, &in); err != nil {
+	// Plain decode (unknown fields tolerated): the desktop settings panel
+	// sends the full draft, older mobile builds only the token field.
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil && err != io.EOF {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -126,6 +130,9 @@ func (h *Handler) setMetadataConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.DiscogsToken = strings.TrimSpace(in.DiscogsToken)
+	if in.GoogleBooksKey != nil {
+		cfg.GoogleBooksKey = strings.TrimSpace(*in.GoogleBooksKey)
+	}
 	if err := SaveMetadataConfig(h.Registry.Root(), cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
