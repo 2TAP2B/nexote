@@ -1295,6 +1295,7 @@ function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
           key={n.id}
           {...childProps}
           note={n}
+          noteParentPath={node.path}
           depth={depth}
           active={
             n.id === rest.activeId &&
@@ -1521,12 +1522,16 @@ function NoteItem(
     note: { id: string; title: string };
     depth: number;
     active: boolean;
+    // Folder the note lives in ("" = vault root). Present only in the tree
+    // view, so the "New folder here…" context item is offered there.
+    noteParentPath?: string;
   },
 ) {
   const {
     note,
     depth,
     active,
+    noteParentPath,
     treeSelectedNav,
     setTreeSelectedNav,
     onOpen,
@@ -1541,6 +1546,7 @@ function NoteItem(
     renaming,
     setRenaming,
     onRename,
+    onNewFolderInFolder,
     onMoveNote,
     onMoveTo,
   } = props;
@@ -1577,6 +1583,13 @@ function NoteItem(
               icon: <Copy className="h-4 w-4" />,
               onClick: () => onCopy(note.id),
             },
+            ...(noteParentPath !== undefined
+              ? [{
+                  label: "New folder here…",
+                  icon: <FolderPlus className="h-4 w-4" />,
+                  onClick: () => onNewFolderInFolder(noteParentPath),
+                }]
+              : []),
             ...(onMoveTo
               ? [{
                   label: "Move to…",
