@@ -25,7 +25,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { formatTitle, useNotes } from "@/lib/notes-context";
-import { api } from "@/lib/api";
+import { api, isCollectionsVault } from "@/lib/api";
 import type { CollectionMeta, GitConfig, GitStatusInfo, MetadataConfig } from "@/lib/api";
 
 type Props = {
@@ -411,7 +411,7 @@ function VaultsPage({
   return (
     <>
       <Group label="Your vaults">
-        {vaults.map((vault, i) => (
+        {vaults.filter((v) => !isCollectionsVault(v)).map((vault, i) => (
           <div key={vault.id}>
             {i > 0 && <Divider />}
             <div

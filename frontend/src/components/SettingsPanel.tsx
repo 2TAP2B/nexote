@@ -32,6 +32,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useNotes, formatTitle } from "@/lib/notes-context";
 import { api } from "@/lib/api";
+import { isCollectionsVault } from "@/lib/api";
 import type { CollectionMeta, GitConfig, MetadataConfig } from "@/lib/api";
 
 type Props = {
@@ -345,9 +346,10 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                   ))}
                 </div>
 
-                {/* Vault list */}
+                {/* Vault list — the system Collections vault is hidden; it is
+                    managed automatically via the Collections view. */}
                 <div className="flex flex-col gap-1">
-                  {vaults.map((vault) => (
+                  {vaults.filter((v) => !isCollectionsVault(v)).map((vault) => (
                     <div
                       key={vault.id}
                       className={[

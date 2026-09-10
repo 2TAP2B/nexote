@@ -41,7 +41,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
-import { api, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
@@ -979,10 +979,11 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
             />
           ) : (
             <>
-              {/* Vault sections — skip the "Collections" vault; collections have
-                  their own sidebar view now. Collection item notes are excluded
-                  from the tree: they live in their collection gallery. */}
-              {vaults.filter((v) => v.name !== "Collections").map((vault) => {
+              {/* Vault sections — skip the system Collections vault; collections
+                  have their own sidebar view now. Collection item notes are
+                  excluded from the tree: they live in their collection
+                  gallery. */}
+              {vaults.filter((v) => !isCollectionsVault(v)).map((vault) => {
                 const vaultData = allVaultData[vault.id];
                 if (!vaultData) return null;
                 const isExpanded = vaultExpandedMap[vault.id] ?? true;
@@ -1041,7 +1042,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         activeId={activeId}
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
-                        collectionsVault={vault.name === "Collections"}
+                        collectionsVault={isCollectionsVault(vault)}
                         collectionItemCounts={collectionItemCounts}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
@@ -1082,7 +1083,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         activeId={activeId}
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
-                        collectionsVault={vault.name === "Collections"}
+                        collectionsVault={isCollectionsVault(vault)}
                         collectionItemCounts={collectionItemCounts}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
@@ -3406,7 +3407,7 @@ export function MoveToDialog({
               No vaults available.
             </div>
           )}
-          {vaults.map(renderVault)}
+          {vaults.filter((v) => !isCollectionsVault(v)).map(renderVault)}
         </div>
         <div className="flex shrink-0 justify-end border-t border-border px-4 py-3">
           <button

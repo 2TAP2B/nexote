@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
+import { isCollectionsVault } from "@/lib/api";
 
 type CommandPaletteProps = {
   open: boolean;
@@ -232,8 +233,8 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     // Then vaults (if query matches or empty)
     const matchedVaults = q
-      ? vaults.filter((v) => v.name.toLowerCase().includes(q))
-      : vaults;
+      ? vaults.filter((v) => !isCollectionsVault(v) && v.name.toLowerCase().includes(q))
+      : vaults.filter((v) => !isCollectionsVault(v));
     for (const v of matchedVaults) {
       if (v.id !== activeVault?.id) {
         result.push({ kind: "vault", id: v.id, name: v.name });

@@ -39,7 +39,7 @@ func main() {
 	// Ensure a dedicated "Collections" vault exists. All collections live
 	// inside it as folders; the collection definitions are stored in
 	// collections.json at the vault root.
-	collectionsVaultID := ensureVault(registry, "Collections", "Folder")
+	collectionsVaultID := ensureVault(registry, "Collections", "Folder", notes.VaultTypeCollections)
 
 	collectionsDir := filepath.Join(home, "collections")
 	h := api.New(registry, filepath.Join(home, "journal"), collectionsDir)
@@ -112,7 +112,9 @@ func main() {
 }
 
 // ensureVault creates a vault by name if it doesn't exist and returns its id.
-func ensureVault(registry *notes.VaultRegistry, name, icon string) string {
+// When vaultType is non-empty the vault is tagged with it (idempotent), so
+// preexisting vaults created before the type field are migrated too.
+func ensureVault(registry *notes.VaultRegistry, name, icon, vaultType string) string {
 	if _, err := registry.Create(name, icon); err == nil {
 		// Created fresh — look it up.
 	} else {
@@ -124,6 +126,11 @@ func ensureVault(registry *notes.VaultRegistry, name, icon string) string {
 	}
 	for _, v := range vaults {
 		if v.Name == name {
+			if vaultType != "" && v.Type != vaultType {
+				if err := registry.SetType(v.ID, vaultType); err != nil {
+					log.Printf("set vault type: %v", err)
+				}
+			}
 			return v.ID
 		}
 	}

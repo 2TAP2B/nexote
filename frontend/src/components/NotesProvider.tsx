@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { api, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, isCollectionsVault, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { offlinePrecache } from "@/lib/offline-db";
 
 type Draft = { title: string; body: string };
@@ -402,8 +402,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const list = result.vaults ?? [];
         setVaults(list);
         const stored = localStorage.getItem("nexote:active-vault");
+        // Never restore the system Collections vault as the active vault —
+        // it is hidden from the tree, so a stale stored id would leave the
+        // app focused on a vault with no visible section.
         const pick =
-          list.find((v) => v.id === stored)?.id ?? list[0]?.id ?? null;
+          list.find((v) => v.id === stored && !isCollectionsVault(v))?.id ??
+          list.find((v) => !isCollectionsVault(v))?.id ??
+          list[0]?.id ??
+          null;
         if (pick) {
           setActiveVaultId(pick);
           if (!stored) localStorage.setItem("nexote:active-vault", pick);

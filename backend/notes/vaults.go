@@ -15,7 +15,13 @@ type VaultMeta struct {
 	Name   string `json:"name"`
 	Icon   string `json:"icon,omitempty"`
 	Path   string `json:"path"`
+	Type   string `json:"type,omitempty"`
 }
+
+// VaultTypeCollections marks the auto-created system vault that holds the
+// collection folders. Vaults with this type are hidden from the user-facing
+// note tree and vault lists (the Collections sidebar view still reads them).
+const VaultTypeCollections = "collections"
 
 // VaultRegistry manages the list of vaults. Each vault is a subdirectory
 // under the registry root (typically ~/.nexote/vaults/). The registry itself
@@ -125,6 +131,28 @@ func (r *VaultRegistry) Create(name, icon string) (VaultMeta, error) {
 	return vault, nil
 }
 
+// SetType records the vault's system type (e.g. the collections vault). It
+// is idempotent and only ever sets the field; the type is never cleared.
+func (r *VaultRegistry) SetType(id, t string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	vaults, err := r.read()
+	if err != nil {
+		return err
+	}
+	for i, v := range vaults {
+		if v.ID == id {
+			if vaults[i].Type == t {
+				return nil
+			}
+			vaults[i].Type = t
+			return r.write(vaults)
+		}
+	}
+	return ErrNotFound
+}
+
 // SetIcon changes a vault's icon without touching its directory.
 func (r *VaultRegistry) SetIcon(id, icon string) (VaultMeta, error) {
 	r.mu.Lock()
@@ -219,6 +247,9 @@ func (r *VaultRegistry) Delete(id string) error {
 	}
 	if vaults[idx].Name == "Default" {
 		return fmt.Errorf("cannot delete the Default vault")
+	}
+	if vaults[idx].Type == VaultTypeCollections || vaults[idx].Name == "Collections" {
+		return fmt.Errorf("cannot delete the Collections vault")
 	}
 
 	if err := os.RemoveAll(vaults[idx].Path); err != nil {

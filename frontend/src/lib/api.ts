@@ -71,7 +71,16 @@ export type VaultMeta = {
   name: string;
   icon?: string;
   path: string;
+  type?: string;
 };
+
+// The auto-created system vault that holds collection folders. Hidden from
+// every user-facing vault list (tree, move dialog, palette, settings); the
+// Collections sidebar view/galleries still read its data. Name-comparison
+// fallback covers vaults registered before the backend type field existed.
+export function isCollectionsVault(v: Pick<VaultMeta, "name" | "type">): boolean {
+  return v.type === "collections" || v.name === "Collections";
+}
 
 export type TagCount = {
   name: string;
