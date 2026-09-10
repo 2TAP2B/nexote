@@ -27,6 +27,7 @@ import type { EditorView } from "prosemirror-view";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection } from "prosemirror-state";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ComponentType } from "react";
+import { createPortal } from "react-dom";
 
 import {
   Code2,
@@ -1465,41 +1466,43 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               </div>
             </div>
           )}
-          {aiReview && (
-            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-start sm:p-4 sm:pt-[10vh] backdrop-blur-sm">
-              <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl sm:max-h-[70vh]">
-                <div className="shrink-0 border-b border-border px-4 py-3">
-                  <h2 className="text-sm font-semibold text-foreground">
-                    AI suggestion
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Review the edited text below and accept or reject it.
-                  </p>
+          {aiReview &&
+            createPortal(
+              <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-start sm:p-4 sm:pt-[10vh] backdrop-blur-sm">
+                <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl sm:max-h-[70vh]">
+                  <div className="shrink-0 border-b border-border px-4 py-3">
+                    <h2 className="text-sm font-semibold text-foreground">
+                      AI suggestion
+                    </h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Review the edited text below and accept or reject it.
+                    </p>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-4 py-3">
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">
+                      {aiReview.after}
+                    </pre>
+                  </div>
+                  <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={rejectReview}
+                      className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={acceptReview}
+                      className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                    >
+                      Accept
+                    </button>
+                  </div>
                 </div>
-                <div className="flex-1 overflow-y-auto px-4 py-3">
-                  <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">
-                    {aiReview.after}
-                  </pre>
-                </div>
-                <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={rejectReview}
-                    className="rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
-                  >
-                    Reject
-                  </button>
-                  <button
-                    type="button"
-                    onClick={acceptReview}
-                    className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                  >
-                    Accept
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+              </div>,
+              document.body,
+            )}
         </>
       );
     },
