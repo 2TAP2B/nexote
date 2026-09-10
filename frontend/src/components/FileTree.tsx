@@ -200,7 +200,27 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     renameFolder,
   } = useNotes();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
-  const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
+  // Persist folder open/closed state, so a reload restores the same tree
+  // shape. Hydrated synchronously via the state initializer (several
+  // FileTree instances mount; an async hydrate would race against another
+  // instance's persist effect wiping the stored map with the default {}).
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const stored = localStorage.getItem("nexote:folder-open");
+      return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("nexote:folder-open", JSON.stringify(openMap));
+    } catch {
+      // ignore
+    }
+  }, [openMap]);
+
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const isFolderOpen = useCallback(
     (path: string) => openMap[path] ?? true,
