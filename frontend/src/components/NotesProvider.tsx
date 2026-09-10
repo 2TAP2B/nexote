@@ -824,6 +824,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (!activeVaultId) return;
       setCreating(true);
       try {
+        // Never create regular notes inside the system Collections vault —
+        // it can become the active vault when a collection item is open.
+        // Redirect those creates to the first regular vault instead.
+        const vaultId =
+          activeVaultId && vaults.find((v) => v.id === activeVaultId)?.type === "collections"
+            ? vaults.find((v) => v.type !== "collections" && v.name !== "Collections")?.id ??
+              activeVaultId
+            : activeVaultId;
         const title =
           input?.title ??
           formatTitle(settings.titleTemplate) ??
@@ -838,7 +846,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
               !journalIdsRef.current.has(activeId)
               ? (notesById[activeId]?.path || undefined)
               : undefined;
-        const note = await api.create(activeVaultId, {
+        const note = await api.create(vaultId, {
           title,
           path: targetPath,
         });
@@ -846,7 +854,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
         setOpenTabs((prev) => appendOpenTab(prev, note.id));
         setActiveId(note.id);
-        pushNoteUrl(note.id, activeVaultId, false);
+        pushNoteUrl(note.id, vaultId, false);
         window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create note");
@@ -854,7 +862,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, refresh, settings.defaultTitle, settings.titleTemplate, activeId, notesById],
+    [activeVaultId, vaults, refresh, settings.defaultTitle, settings.titleTemplate, activeId, notesById],
   );
 
   const copyNote = useCallback(

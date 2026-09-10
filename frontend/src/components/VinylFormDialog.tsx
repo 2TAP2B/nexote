@@ -3,14 +3,14 @@
 import { Disc3, ImagePlus, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, isCollectionsVault } from "@/lib/api";
 import { cacheImage } from "@/lib/image-cache";
 import { useNotes } from "@/lib/notes-context";
 import type { NoteMeta } from "@/lib/api";
 
 type Props = {
   open: boolean;
-  note?: NoteMeta | null; // present => edit existing vinyl; absent => create new
+  note?: (NoteMeta & { vaultId?: string }) | null; // present => edit existing vinyl; absent => create new
   onClose: () => void;
   onSaved: () => void;
 };
@@ -21,7 +21,10 @@ const VINYL_FOLDER = "Vinyls";
 // title; artist / year / genre / wantlist / cover are stored in frontmatter;
 // the review text lives in the markdown body.
 export default function VinylFormDialog({ open, note, onClose, onSaved }: Props) {
-  const { activeVault, refresh } = useNotes();
+  const { activeVault, vaults, noteVaultMap, refresh } = useNotes();
+  // New vinyls go into the system Collections vault so their folder never
+  // surfaces in a regular vault's note tree; edits target the owning vault.
+  const collectionsVaultId = vaults.find((v) => isCollectionsVault(v))?.id ?? null;
 
   const [album, setAlbum] = useState("");
   const [artist, setArtist] = useState("");
@@ -71,7 +74,7 @@ export default function VinylFormDialog({ open, note, onClose, onSaved }: Props)
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open || !activeVault) return null;
+  if (!open) return null;
 
   const pickFile = (file: File | undefined) => {
     if (!file) return;
@@ -91,7 +94,12 @@ export default function VinylFormDialog({ open, note, onClose, onSaved }: Props)
     setSaving(true);
     setError(null);
     try {
-      const vaultId = activeVault.id;
+      const vaultId =
+        note?.vaultId ??
+        (note ? noteVaultMap[note.id] ?? activeVault?.id : undefined) ??
+        collectionsVaultId ??
+        activeVault?.id ??
+        "";
       let noteId = note?.id ?? "";
 
       // Create the underlying note first (so the cover can be uploaded into

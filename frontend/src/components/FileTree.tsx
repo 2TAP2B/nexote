@@ -216,6 +216,20 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     window.addEventListener("nexote:refresh-data", reload);
     return () => window.removeEventListener("nexote:refresh-data", reload);
   }, []);
+
+  // Names of every collection (folder-per-collection). Used to strip stale
+  // collection folders (created by older item forms, e.g. myvault/Vinyls) out
+  // of regular vault trees — collections belong to the Collections vault and
+  // their galleries, not the note tree.
+  const collectionNames = useMemo(
+    () => new Set(collections.map((c) => c.name)),
+    [collections],
+  );
+  const stripCollectionFolders = useCallback(
+    (folders: FolderMeta[] | undefined) =>
+      (folders ?? []).filter((f) => !collectionNames.has(f.path.split("/")[0])),
+    [collectionNames],
+  );
   // Recent excludes notes already pinned as shortcuts, so a note doesn't
   // appear in both the Shortcuts and Recent sections. Recent / Shortcuts /
   // Bookmarks are aggregated across ALL vaults so they work as one set for
@@ -325,12 +339,15 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     if (activeVault) {
       const vaultData = allVaultData[activeVault.id];
       if (vaultData) {
-        const vaultTree = buildTree(vaultData.notes, vaultData.folders);
+        const vaultTree = buildTree(
+          vaultData.notes.filter((n) => !n.collection),
+          stripCollectionFolders(vaultData.folders),
+        );
         walk(vaultTree);
       }
     }
     return items;
-  }, [notes, activeVault, allVaultData, isFolderOpen]);
+  }, [notes, activeVault, allVaultData, isFolderOpen, stripCollectionFolders]);
 
   // Map note id → folder path, for ArrowLeft "go to parent folder" in the
   // vault tree. Built from the active vault's notes (or simple-mode notes).
@@ -989,7 +1006,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                 const isExpanded = vaultExpandedMap[vault.id] ?? true;
                 const isActiveVault = vault.id === activeVault?.id;
                 const vaultNotes = vaultData.notes.filter((n) => !n.collection);
-                const vaultTree = buildTree(vaultNotes, vaultData.folders);
+                const vaultTree = buildTree(vaultNotes, stripCollectionFolders(vaultData.folders));
                 return (
                   <CollapsibleSection
                     key={vault.id}

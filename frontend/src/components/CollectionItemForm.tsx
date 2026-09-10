@@ -3,7 +3,7 @@
 import { Disc3, ImagePlus, Loader2, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { api } from "@/lib/api";
+import { api, isCollectionsVault } from "@/lib/api";
 import { cacheImage } from "@/lib/image-cache";
 import { useNotes } from "@/lib/notes-context";
 import type { CollectionMeta, MetadataSearchResult, NoteMeta } from "@/lib/api";
@@ -11,7 +11,7 @@ import type { CollectionMeta, MetadataSearchResult, NoteMeta } from "@/lib/api";
 type Props = {
   open: boolean;
   collection: CollectionMeta;
-  note?: NoteMeta | null; // present => edit existing item; absent => create new
+  note?: (NoteMeta & { vaultId?: string }) | null; // present => edit existing item; absent => create new
   onClose: () => void;
   onSaved: () => void;
 };
@@ -26,7 +26,13 @@ export default function CollectionItemForm({
   onClose,
   onSaved,
 }: Props) {
-  const { activeVault, refresh } = useNotes();
+  const { activeVault, vaults, noteVaultMap, refresh } = useNotes();
+
+  // New items always live in the system Collections vault (one folder per
+  // collection) so they never surface in a regular vault's note tree.
+  // Edits target the note's owning vault — legacy items may still live
+  // elsewhere.
+  const collectionsVaultId = vaults.find((v) => isCollectionsVault(v))?.id ?? null;
 
   const [title, setTitle] = useState("");
   const [cover, setCover] = useState<string>("");
@@ -116,7 +122,7 @@ export default function CollectionItemForm({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open || !activeVault) return null;
+  if (!open) return null;
 
   const pickFile = (file: File | undefined) => {
     if (!file) return;
@@ -136,7 +142,14 @@ export default function CollectionItemForm({
     setSaving(true);
     setError(null);
     try {
-      const vaultId = activeVault.id;
+      // Edits: the item's owning vault (gallery passes it, or resolve via the
+      // cross-vault map). Creates: the system Collections vault.
+      const vaultId =
+        note?.vaultId ??
+        (note ? noteVaultMap[note.id] ?? activeVault?.id : undefined) ??
+        collectionsVaultId ??
+        activeVault?.id ??
+        "";
       let noteId = note?.id ?? "";
 
       // Create the underlying note first (so the cover can be uploaded into
