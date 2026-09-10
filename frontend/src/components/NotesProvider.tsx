@@ -61,7 +61,7 @@ type NotesContextValue = {
 
   openTab: (id: string) => Promise<void>;
   closeTab: (id: string) => void;
-  create: (input?: { title?: string; path?: string }) => Promise<void>;
+  create: (input?: { title?: string; path?: string; vaultId?: string }) => Promise<void>;
   copyNote: (id: string) => Promise<void>;
   moveNoteToVault: (noteId: string, dstVaultId: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
@@ -820,15 +820,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [noteVaultMap]);
 
   const create = useCallback(
-    async (input?: { title?: string; path?: string }) => {
+    async (input?: { title?: string; path?: string; vaultId?: string }) => {
       if (!activeVaultId) return;
       setCreating(true);
       try {
+        // Vault targeted from the tree (right-click context) wins if given;
+        // those vaults come from the visible tree, so no redirect applies.
         // Never create regular notes inside the system Collections vault —
         // it can become the active vault when a collection item is open.
-        // Redirect those creates to the first regular vault instead.
-        const vaultId =
-          activeVaultId && vaults.find((v) => v.id === activeVaultId)?.type === "collections"
+        // Redirect untargeted creates into the Collections vault to the
+        // first regular vault instead.
+        const vaultId = input?.vaultId
+          ? input.vaultId
+          : activeVaultId && vaults.find((v) => v.id === activeVaultId)?.type === "collections"
             ? vaults.find((v) => v.type !== "collections" && v.name !== "Collections")?.id ??
               activeVaultId
             : activeVaultId;
@@ -838,14 +842,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           settings.defaultTitle;
         // When no explicit path is given, create the note in the same folder
         // as the currently active note. Journal notes are skipped: they live
-        // in a separate store (one note per day) and create targets the vault.
+        // in a separate store (one note per day) and create targets the
+        // vault — that proximity rule only makes sense without an explicit
+        // path/vault target, otherwise the note must land in the vault root.
         const targetPath =
           input?.path !== undefined
             ? input.path
-            : activeId && activeId !== DASHBOARD_ID &&
-              !journalIdsRef.current.has(activeId)
-              ? (notesById[activeId]?.path || undefined)
-              : undefined;
+            : input?.vaultId
+              ? undefined
+              : activeId && activeId !== DASHBOARD_ID &&
+                !journalIdsRef.current.has(activeId)
+                ? (notesById[activeId]?.path || undefined)
+                : undefined;
         const note = await api.create(vaultId, {
           title,
           path: targetPath,
@@ -853,6 +861,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
         setOpenTabs((prev) => appendOpenTab(prev, note.id));
+        // Focus the owning vault (tree context) so the new note is visible
+        // in the vault it was created for.
+        if (vaultId !== activeVaultId) switchVault(vaultId);
         setActiveId(note.id);
         pushNoteUrl(note.id, vaultId, false);
         window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
@@ -862,7 +873,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, vaults, refresh, settings.defaultTitle, settings.titleTemplate, activeId, notesById],
+    [activeVaultId, vaults, switchVault, refresh, settings.defaultTitle, settings.titleTemplate, activeId, notesById],
   );
 
   const copyNote = useCallback(

@@ -711,6 +711,10 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     ];
   }, []);
 
+  const openFolderDialog = useCallback((parentPath?: string) => {
+    setFolderDialog({ open: true, parentPath });
+  }, []);
+
   // Vault context menu handler
   const handleVaultContextMenu = useCallback(
     (e: React.MouseEvent, vaultId: string, vaultName: string) => {
@@ -720,6 +724,20 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         x: e.clientX,
         y: e.clientY,
         items: [
+          {
+            label: "New note here",
+            icon: <FilePlus size={14} />,
+            onClick: () => {
+              // Create in this vault's root — the provider focuses the
+              // owning vault so the note appears in this section.
+              void create({ vaultId, path: "" });
+            },
+          },
+          {
+            label: "New folder here…",
+            icon: <FolderPlus size={14} />,
+            onClick: () => openFolderDialog(""),
+          },
           {
             label: "Rename vault",
             icon: <Edit3 size={14} />,
@@ -737,7 +755,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         ],
       });
     },
-    [],
+    [create, openFolderDialog],
   );
 
   // Close icon picker on outside mousedown (not click — the opening
@@ -763,10 +781,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       document.removeEventListener("keydown", onKey);
     };
   }, [vaultIconPicker]);
-
-  const openFolderDialog = useCallback((parentPath?: string) => {
-    setFolderDialog({ open: true, parentPath });
-  }, []);
 
   const handleCreateHere = useCallback(() => {
     void create();
