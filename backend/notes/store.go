@@ -148,8 +148,9 @@ type Entry struct {
 
 // FolderEntry represents an (possibly empty) folder in the tree.
 type FolderEntry struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
+	Path  string `json:"path"`
+	Name  string `json:"name"`
+	Label string `json:"label,omitempty"` // Finder-style color label
 }
 
 // ListResult is the full tree returned by List: notes plus empty folders.
@@ -225,6 +226,16 @@ func (s *Store) List() (ListResult, error) {
 	})
 	if err != nil {
 		return ListResult{}, fmt.Errorf("walk notes dir: %w", err)
+	}
+
+	// Merge the Finder-style folder labels into the folder entries.
+	labels := s.readFolderLabels()
+	if len(labels) > 0 {
+		for i, f := range folders {
+			if labels[f.Path] != "" {
+				folders[i].Label = labels[f.Path]
+			}
+		}
 	}
 
 	// Publish the freshly-built index so later reads are O(1).
@@ -338,6 +349,7 @@ func (s *Store) DeleteFolder(folderPath string) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("delete folder: %w", err)
 	}
+	s.deleteFolderLabels(p)
 	return nil
 }
 
@@ -376,6 +388,7 @@ func (s *Store) RenameFolder(oldPath, newPath string) error {
 	if err := os.Rename(oldDir, newDir); err != nil {
 		return fmt.Errorf("rename folder: %w", err)
 	}
+	s.renameFolderLabels(oldRel, newRel)
 
 	// Update the Path field in every note's frontmatter within the moved tree.
 	list, err := s.List()

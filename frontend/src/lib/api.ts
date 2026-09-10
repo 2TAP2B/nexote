@@ -59,6 +59,28 @@ export type CollectionMeta = {
 export type FolderMeta = {
   path: string;
   name: string;
+  /** Finder-style color label, e.g. "red" | "orange" | "yellow" | "green" | "blue" | "purple". */
+  label?: string;
+};
+
+// The six macOS label colors offered by the tree context menu.
+export const FOLDER_LABEL_COLORS = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+] as const;
+export type FolderLabelColor = (typeof FOLDER_LABEL_COLORS)[number];
+
+export const FOLDER_LABEL_HEX: Record<string, string> = {
+  red: "#ff5f57",
+  orange: "#ff9f43",
+  yellow: "#febc2e",
+  green: "#28c840",
+  blue: "#0a84ff",
+  purple: "#a259f7",
 };
 
 export type ListResult = {
@@ -309,6 +331,11 @@ export const api = {
     request<{ path: string }>(`${vaultBase(vaultId)}/folders/${oldPath}`, {
       method: "PUT",
       body: JSON.stringify({ newPath }),
+    }),
+  setFolderLabel: (vaultId: string, path: string, color: string) =>
+    request<void>(`${vaultBase(vaultId)}/folders/label`, {
+      method: "PUT",
+      body: JSON.stringify({ path, color }),
     }),
   removeFolder: (vaultId: string, path: string) =>
     request<void>(`${vaultBase(vaultId)}/folders/${path}`, {

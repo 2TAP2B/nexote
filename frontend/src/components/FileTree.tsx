@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   ArrowDownUp,
+  Ban,
   Bookmark,
   BookmarkCheck,
   CalendarDays,
@@ -41,7 +42,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
-import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
@@ -75,6 +76,7 @@ type TreeNode = {
   path: string;
   children: Map<string, TreeNode>;
   notes: { id: string; title: string }[];
+  label?: string;
 };
 
 function emptyTree(): TreeNode {
@@ -91,7 +93,7 @@ const isCoarsePointer =
 
 function buildTree(
   notes: { id: string; title: string; path: string }[],
-  folders: { path: string; name: string }[],
+  folders: { path: string; name: string; label?: string }[],
 ): TreeNode {
   const root = emptyTree();
   for (const f of folders) {
@@ -105,6 +107,7 @@ function buildTree(
         child = { name: seg, path: cur, children: new Map(), notes: [] };
         node.children.set(seg, child);
       }
+      if (f.label) child.label = f.label;
       node = child;
     }
   }
@@ -168,6 +171,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     copyNote,
     moveNoteToVault,
     createFolder,
+    setFolderLabel,
     removeFolder,
     moveNote,
     remove,
@@ -1118,6 +1122,9 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         onMoveNote={handleMoveNote}
                         onMoveTo={handleMoveTo}
                         onDeleteFolder={handleDeleteFolder}
+                        setFolderLabel={(path, color) =>
+                          setFolderLabel(vault.id, path, color)
+                        }
                         onNewNoteInFolder={(path) => void create({ path })}
                         onNewFolderInFolder={(path) => openFolderDialog(path)}
                         onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
@@ -1183,6 +1190,9 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                           switchVault(vault.id);
                           openFolderDialog(path);
                         }}
+                        setFolderLabel={(path, color) =>
+                          setFolderLabel(vault.id, path, color)
+                        }
                         onRemoveTag={(id, tag) => void removeTagFromNote(vault.id, id, tag)}
                         noteTags={(id) => {
                           const data = allVaultData[vault.id];
@@ -1281,6 +1291,8 @@ type TreeChildProps = {
   collectionsVault?: boolean;
   collectionItemCounts?: Record<string, number>;
   onDelete: (id: string) => void;
+  /** Bound per vault: label a folder path with one of the 6 Finder colors ("" clears). */
+  setFolderLabel?: (path: string, color: string) => Promise<void>;
   onCopy: (id: string) => void;
   onBookmark: (id: string) => void;
   bookmarks: Set<string>;
@@ -1355,6 +1367,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
     onNewNoteInFolder,
     onNewFolderInFolder,
     onDeleteFolder,
+    setFolderLabel,
     treeSelectedNav,
     setTreeSelectedNav,
     renaming,
@@ -1397,6 +1410,30 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               icon: <FolderPlus className="h-4 w-4" />,
               onClick: () => onNewFolderInFolder(node.path),
             },
+            ...(setFolderLabel
+              ? [
+                  ...(node.label
+                    ? [{
+                        label: "Clear label",
+                        icon: <Ban className="h-4 w-4 opacity-60" />,
+                        onClick: () =>
+                          void setFolderLabel?.(node.path, "").catch(() => {}),
+                      }]
+                    : []),
+                  ...FOLDER_LABEL_COLORS.map((color) => ({
+                    label: color.charAt(0).toUpperCase() + color.slice(1),
+                    icon: (
+                      <span
+                        aria-hidden
+                        className="inline-block h-3 w-3 rounded-full"
+                        style={{ background: FOLDER_LABEL_HEX[color] }}
+                      />
+                    ),
+                    onClick: () =>
+                      void setFolderLabel?.(node.path, color).catch(() => {}),
+                  })),
+                ]
+              : []),
             { label: "", onClick: () => {}, separator: true },
             {
               label: "Rename folder",
@@ -1474,7 +1511,16 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
                 style={{ color: "var(--foreground)", background: "var(--background)" }}
               />
             ) : (
-              <span className="truncate" style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>{node.name}</span>
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="truncate" style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>{node.name}</span>
+                {node.label && FOLDER_LABEL_HEX[node.label] && (
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: FOLDER_LABEL_HEX[node.label] }}
+                  />
+                )}
+              </span>
             )}
           </button>
           <button

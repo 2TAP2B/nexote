@@ -66,6 +66,7 @@ type NotesContextValue = {
   moveNoteToVault: (noteId: string, dstVaultId: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
+  setFolderLabel: (vaultId: string, path: string, color: string) => Promise<void>;
   renameFolder: (oldPath: string, newPath: string) => Promise<void>;
   moveNote: (id: string, path: string) => Promise<void>;
   openDaily: () => Promise<void>;
@@ -1027,6 +1028,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [activeVaultId, refresh],
   );
 
+  const setFolderLabel = useCallback(
+    async (vaultId: string, path: string, color: string) => {
+      try {
+        await api.setFolderLabel(vaultId, path, color);
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to label folder");
+      }
+    },
+    [refresh],
+  );
+
   const renameFolder = useCallback(
     async (oldPath: string, newPath: string) => {
       if (!activeVaultId) return;
@@ -1478,6 +1491,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       moveNoteToVault,
       createFolder,
       removeFolder,
+      setFolderLabel,
       renameFolder,
       moveNote,
       openDaily,
@@ -1544,6 +1558,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       moveNoteToVault,
       createFolder,
       removeFolder,
+      setFolderLabel,
       renameFolder,
       moveNote,
       openDaily,

@@ -82,6 +82,7 @@ func (h *Handler) Routes() http.Handler {
 
 	// Vault-scoped folder routes
 	mux.HandleFunc("POST /api/vaults/{vaultId}/folders", h.createFolder)
+	mux.HandleFunc("PUT /api/vaults/{vaultId}/folders/label", h.setFolderLabel)
 	mux.HandleFunc("PUT /api/vaults/{vaultId}/folders/{path...}", h.renameFolder)
 	mux.HandleFunc("DELETE /api/vaults/{vaultId}/folders/{path...}", h.deleteFolder)
 
@@ -602,6 +603,29 @@ func (h *Handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	folderPath := r.PathValue("path")
 	if err := store.DeleteFolder(folderPath); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// setFolderLabel stores (or clears) the Finder-style color label of a
+// folder. Body: {path, color} — empty color clears the label.
+func (h *Handler) setFolderLabel(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	var in struct {
+		Path  string `json:"path"`
+		Color string `json:"color"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := store.LabelFolder(in.Path, in.Color); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
