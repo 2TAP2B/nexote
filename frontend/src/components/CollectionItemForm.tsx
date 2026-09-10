@@ -255,15 +255,18 @@ export default function CollectionItemForm({
   const pickSearchResult = async (hit: MetadataSearchResult) => {
     setSearchOpen(false);
     setLookupValue(hit.externalId);
-    if (lookupSource === "book") {
-      // Book search results only carry a summary — the ISBN is needed for
-      // the full lookup. Fall back to applying what we have.
-      setTitle((prev) => prev.trim() || hit.title);
-      setCoverPreview(hit.coverUrl ?? "");
-      return;
-    }
     setLookupLoading(true);
+    setError(null);
     try {
+      if (lookupSource === "book") {
+        // Book hits carry an ISBN (summary only) — resolve the full record
+        // via the ISBN lookup so all fields fill, same as a Fetch.
+        const res = await api.bookLookup(hit.externalId);
+        applyMetadata(res);
+        setCover(res.coverUrl ?? "");
+        setCoverFile(null);
+        return;
+      }
       const res = await api.discogsRelease(hit.externalId);
       applyMetadata(res);
       setCover(res.coverUrl ?? "");

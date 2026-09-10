@@ -578,10 +578,12 @@ func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, 
 // openLibrarySearch performs a free-text search on Open Library's search
 // API (fallback when Google Books rate-limits). Results carry only summary
 // data — enough for the search-result list the frontend fills the form
-// from (title, authors, year, cover).
+// from (title, authors, year, cover). The external id is a real ISBN (13-
+// digit preferred) so picking a result feeds a lookup-able key into the
+// ISBN field, not Open Library's internal work id.
 func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://openlibrary.org/search.json?q="+url.QueryEscape(q)+"&limit=10&fields=key,title,author_name,first_publish_year,cover_i", nil)
+		"https://openlibrary.org/search.json?q="+url.QueryEscape(q)+"&limit=10&fields=key,title,author_name,first_publish_year,cover_i,isbn", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -601,14 +603,27 @@ func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, e
 			Authors          []string `json:"author_name"`
 			FirstPublishYear int      `json:"first_publish_year"`
 			CoverID          int      `json:"cover_i"`
+			Isbns            []string `json:"isbn"`
 		} `json:"docs"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, err
 	}
+	// Prefer a 13-digit ISBN (modern standard); otherwise take the first one.
+	externalISBN := func(isbns []string) string {
+		var first string
+		for _, s := range isbns {
+			if first == "" {
+				first = s
+			}
+			if len(s) == 13 {
+				return s
+			}
+		}
+		return first
+	}
 	results := make([]MetadataSearchResult, 0, len(raw.Docs))
 	for _, d := range raw.Docs {
-		id := strings.TrimPrefix(d.Key, "/works/")
 		sub := strings.Join(d.Authors, ", ")
 		if d.FirstPublishYear > 0 {
 			if sub != "" {
@@ -622,7 +637,7 @@ func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, e
 		}
 		results = append(results, MetadataSearchResult{
 			Source:     "openlibrary",
-			ExternalID: id,
+			ExternalID: externalISBN(d.Isbns),
 			Title:      d.Title,
 			Subtitle:   sub,
 			CoverURL:   cover,
