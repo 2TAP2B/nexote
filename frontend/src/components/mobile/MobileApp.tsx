@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
@@ -52,6 +52,17 @@ export default function MobileApp() {
   // --- Screen / overlay state ---
   const { theme, setTheme } = useTheme();
   const [pagerFocus, setPagerFocus] = useState<PagerFocus>("editor");
+  // Restore the focused pane after mount (sidebar/toc were open before the
+  // reload). Effect-based, not a localStorage useState initializer: the
+  // server prerender can't read localStorage, and a client-only initializer
+  // causes a hydration attribute mismatch React then refuses to patch.
+  useEffect(() => {
+    const saved = localStorage.getItem("nexote:pager-focus");
+    if (saved === "sidebar" || saved === "toc") setPagerFocus(saved);
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("nexote:pager-focus", pagerFocus);
+  }, [pagerFocus]);
   const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -150,8 +161,18 @@ export default function MobileApp() {
   }, [create]);
 
   // Close the sidebar and tab switcher when the active note changes (e.g. the
-  // user tapped a note in the tree).
+  // user tapped a note in the tree). Hidden on the load-time restore: the
+  // tab restore assigns an active id right after mount (null → restored id),
+  // which must not force the editor pane (it would beat the persisted
+  // pagerFocus). Only changes after the first assignment close the sidebar.
+  const prevActiveIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
+    if (prevActiveIdRef.current === undefined) {
+      prevActiveIdRef.current = activeId ?? null;
+      return;
+    }
+    if (prevActiveIdRef.current === activeId) return;
+    prevActiveIdRef.current = activeId ?? null;
     setPagerFocus("editor");
   }, [activeId]);
 
@@ -277,7 +298,9 @@ export default function MobileApp() {
             onOpenSettings={() => setSettingsOpen(true)}
             openDaily={openDaily}
             onCloseCollectionItem={() => {
-              // Return to the gallery of the collection that owns this item.
+              // Return to the gallery of the collection that owns this item,
+              // keeping the sidebar on its Collections section.
+              setSidebarView("collections");
               const col = activeNote?.collection;
               if (!col) return;
               void api.listCollections().then((res) => {
@@ -403,10 +426,14 @@ export default function MobileApp() {
         <CollectionGallery
           open={Boolean(galleryCollection)}
           collection={galleryCollection}
-          onClose={() => setGalleryCollection(null)}
+          onClose={() => {
+            setSidebarView("collections");
+            setGalleryCollection(null);
+          }}
           onExit={() => {
             // Leaving the gallery returns to the dashboard, not back to an
             // item still open as the active note (which would loop).
+            setSidebarView("collections");
             setGalleryCollection(null);
             void openTab(DASHBOARD_ID);
           }}

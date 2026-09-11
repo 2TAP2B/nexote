@@ -69,6 +69,15 @@ function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
+  // Restore the last sidebar section after mount so a reload reopens where
+  // the user left off (same storage key as the mobile shell). Effect-based
+  // restore — a localStorage useState initializer breaks hydration.
+  useEffect(() => {
+    const saved = localStorage.getItem("nexote:sidebar-view");
+    if (saved && saved !== "tree" && saved !== "images") {
+      setSidebarView(saved as SidebarView);
+    }
+  }, []);
   const [tagSelection, setTagSelection] = useState<string | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
@@ -106,8 +115,7 @@ function AppShell() {
     const onSelectView = (e: Event) => {
       const detail = (e as CustomEvent).detail as SidebarView;
       if (detail) setSidebarView(detail);
-    };
-    const onSelectTag = (e: Event) => {
+    };    const onSelectTag = (e: Event) => {
       const detail = (e as CustomEvent).detail as string;
       if (detail) {
         setTagSelection(detail);
@@ -152,6 +160,11 @@ function AppShell() {
   useEffect(() => {
     localStorage.setItem("nexote:sidebar-width", String(sidebarWidth));
   }, [sidebarWidth]);
+
+  // Persist the sidebar section so a reload reopens where the user left off.
+  useEffect(() => {
+    localStorage.setItem("nexote:sidebar-view", sidebarView);
+  }, [sidebarView]);
 
   // Hydrate + sync the color scheme class on <html>.
   useEffect(() => {
@@ -340,10 +353,14 @@ function AppShell() {
                 embedded
                 open={Boolean(galleryCollection)}
                 collection={galleryCollection}
-                onClose={() => setGalleryCollection(null)}
+                onClose={() => {
+                  setSidebarView("collections");
+                  setGalleryCollection(null);
+                }}
                 onExit={() => {
                   // Leaving the gallery returns to the dashboard, not back to an
                   // item still open as the active note (which would loop).
+                  setSidebarView("collections");
                   setGalleryCollection(null);
                   void openTab(DASHBOARD_ID);
                 }}
@@ -355,6 +372,9 @@ function AppShell() {
                 tocOpen={tocOpen}
                 onToggleToc={() => setTocOpen((v) => !v)}
                 onCloseCollectionItem={() => {
+                  // Returning to the gallery also brings the sidebar back to
+                  // the Collections section, so the user keeps browsing there.
+                  setSidebarView("collections");
                   const col = activeNote?.collection;
                   if (col) {
                     void api.listCollections().then((res) => {
