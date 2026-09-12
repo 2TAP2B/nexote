@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useTheme } from "next-themes";
 import {
   Bookmark,
   CalendarDays,
@@ -12,9 +13,11 @@ import {
   Hash,
   History,
   ListTodo,
+  Moon,
   Search,
   Settings,
   Star,
+  Sun,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -79,6 +82,11 @@ export default function MobileDashboard({
   onOpenDaily: () => void;
   onOpenSettings: () => void;
 }) {
+  const { theme, setTheme } = useTheme();
+  // Skip the pre-mount flash (next-themes returns undefined on the server).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted && theme === "dark";
   const {
     bookmarks,
     shortcuts,
@@ -98,13 +106,6 @@ export default function MobileDashboard({
 
   useEffect(() => {
     void api.listCollections().then((res) => setCollections(res.collections ?? []));
-  }, []);
-
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 18) return "Good afternoon";
-    return "Good evening";
   }, []);
 
   useEffect(() => {
@@ -193,14 +194,9 @@ export default function MobileDashboard({
       className="flex flex-col gap-5 px-4 pb-40 pt-2"
       style={{ color: "var(--mob-text)" }}
     >
-      {/* Header */}
-      <div className="flex items-start justify-between px-1 pt-1">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--mob-muted)" }}>
-            {greeting}
-          </p>
-          <h1 className="text-2xl font-bold">Nexote</h1>
-        </div>
+      {/* Header — just the round actions, right-aligned: settings left of the
+          theme toggle. The greeting/title block is gone on mobile. */}
+      <div className="flex items-center justify-end gap-2 px-1 pt-3">
         <button
           type="button"
           aria-label="Settings"
@@ -209,6 +205,15 @@ export default function MobileDashboard({
           style={{ width: 44, height: 44, background: "var(--mob-surface)", color: "var(--mob-text)" }}
         >
           <Settings size={20} />
+        </button>
+        <button
+          type="button"
+          aria-label="Toggle theme"
+          onClick={() => setTheme(isDark ? "light" : "dark")}
+          className="flex items-center justify-center rounded-full transition-transform active:scale-90"
+          style={{ width: 44, height: 44, background: "var(--mob-surface)", color: "var(--mob-text)" }}
+        >
+          {isDark ? <Sun size={20} /> : <Moon size={20} />}
         </button>
       </div>
 
