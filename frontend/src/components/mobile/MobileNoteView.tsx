@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Braces, Ellipsis, Moon, PanelLeft, Sun, X } from "lucide-react";
+import { BookOpen, Braces, Ellipsis, Moon, PanelLeft, Settings, Sun, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -244,7 +244,7 @@ export default function MobileNoteView({
     }
     return (
       <div className="relative min-h-0 flex-1" style={{ background: "var(--mob-bg)" }}>
-        <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} showThemeToggle />
+        <MobileTopBar onOpenSidebar={onOpenSidebar} onOverflow={onOverflow} onOpenSettings={onOpenSettings} showThemeToggle />
         <div
           className="h-full overflow-y-auto"
           style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 60px)" }}
@@ -253,7 +253,6 @@ export default function MobileNoteView({
             onOpenSearch={onSearch}
             onNewNote={onNewNote}
             onOpenDaily={() => void openDaily()}
-            onOpenSettings={onOpenSettings}
           />
       </div>
 
@@ -365,6 +364,7 @@ export default function MobileNoteView({
 function MobileTopBar({
   onOpenSidebar,
   onOverflow,
+  onOpenSettings,
   rawMode = false,
   showThemeToggle = false,
   isCollectionItem = false,
@@ -372,6 +372,7 @@ function MobileTopBar({
 }: {
   onOpenSidebar: () => void;
   onOverflow: (x: number, y: number) => void;
+  onOpenSettings?: () => void;
   rawMode?: boolean;
   showThemeToggle?: boolean;
   isCollectionItem?: boolean;
@@ -423,25 +424,37 @@ function MobileTopBar({
           <PanelLeft size={20} />
         </CircleButton>
       </div>
-      <div className="pointer-events-auto">
-        {showThemeToggle ? (
-          <CircleButton
-            ariaLabel="Toggle theme"
-            onClick={() => setTheme(isDark ? "light" : "dark")}
-          >
-            {isDark ? <Sun size={20} /> : <Moon size={20} />}
-          </CircleButton>
-        ) : (
-          <CircleButton
-            ariaLabel="More actions"
-            onClick={(e) => {
-              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              onOverflow(r.right, r.bottom + 8);
-            }}
-          >
-            <Ellipsis size={20} />
-          </CircleButton>
-        )}
+      <div className="flex items-center gap-2">
+        <div className="pointer-events-auto">
+          {showThemeToggle && (
+            <CircleButton
+              ariaLabel="Settings"
+              onClick={onOpenSettings}
+            >
+              <Settings size={20} />
+            </CircleButton>
+          )}
+        </div>
+        <div className="pointer-events-auto">
+          {showThemeToggle ? (
+            <CircleButton
+              ariaLabel="Toggle theme"
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+            >
+              {isDark ? <Sun size={20} /> : <Moon size={20} />}
+            </CircleButton>
+          ) : (
+            <CircleButton
+              ariaLabel="More actions"
+              onClick={(e) => {
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                onOverflow(r.right, r.bottom + 8);
+              }}
+            >
+              <Ellipsis size={20} />
+            </CircleButton>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useTheme } from "next-themes";
 import {
   Bookmark,
   CalendarDays,
@@ -13,11 +12,8 @@ import {
   Hash,
   History,
   ListTodo,
-  Moon,
   Search,
-  Settings,
   Star,
-  Sun,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -75,18 +71,11 @@ export default function MobileDashboard({
   onOpenSearch,
   onNewNote,
   onOpenDaily,
-  onOpenSettings,
 }: {
   onOpenSearch: () => void;
   onNewNote: () => void;
   onOpenDaily: () => void;
-  onOpenSettings: () => void;
 }) {
-  const { theme, setTheme } = useTheme();
-  // Skip the pre-mount flash (next-themes returns undefined on the server).
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === "dark";
   const {
     bookmarks,
     shortcuts,
@@ -194,28 +183,8 @@ export default function MobileDashboard({
       className="flex flex-col gap-5 px-4 pb-40 pt-2"
       style={{ color: "var(--mob-text)" }}
     >
-      {/* Header — just the round actions, right-aligned: settings left of the
-          theme toggle. The greeting/title block is gone on mobile. */}
-      <div className="flex items-center justify-end gap-2 px-1 pt-3">
-        <button
-          type="button"
-          aria-label="Settings"
-          onClick={onOpenSettings}
-          className="flex items-center justify-center rounded-full transition-transform active:scale-90"
-          style={{ width: 44, height: 44, background: "var(--mob-surface)", color: "var(--mob-text)" }}
-        >
-          <Settings size={20} />
-        </button>
-        <button
-          type="button"
-          aria-label="Toggle theme"
-          onClick={() => setTheme(isDark ? "light" : "dark")}
-          className="flex items-center justify-center rounded-full transition-transform active:scale-90"
-          style={{ width: 44, height: 44, background: "var(--mob-surface)", color: "var(--mob-text)" }}
-        >
-          {isDark ? <Sun size={20} /> : <Moon size={20} />}
-        </button>
-      </div>
+      {/* Header is the top bar row (gear + theme toggle synced by the
+          dashboard variant), so no local title/greeting/actions here. */}
 
       {/* Row 1: Quick actions */}
       <div className="grid grid-cols-3 gap-2">
