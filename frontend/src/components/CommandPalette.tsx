@@ -23,6 +23,7 @@ import { useTheme } from "next-themes";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { isCollectionsVault } from "@/lib/api";
+import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
 
 type CommandPaletteProps = {
   open: boolean;
@@ -47,6 +48,10 @@ type Item =
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { notes, openTab, create, openDaily, vaults, switchVault, activeVault, tagsByVault } = useNotes();
   const { theme, setTheme } = useTheme();
+  // Track the visual viewport: when the touch keyboard opens (iOS keeps the
+  // layout viewport full-height), the backdrop must shrink to end at the
+  // keyboard's top edge, or the sheet's lower half sits behind the keyboard.
+  const vv = useVisualViewport();
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -316,6 +321,16 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     <div
       data-command-palette-backdrop
       className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm md:items-start md:p-4 md:pt-[15vh]"
+      style={{
+        paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+        // Keyboard-open only, and only inside the mobile shell: anchor the
+        // sheet's bottom edge to the top of the touch keyboard (the layout
+        // viewport moves via visualViewport). The shell check keeps touch-
+        // capable desktops (Surface etc.) on the unchanged desktop layout.
+        ...(vv.isKeyboardOpen && vv.height > 0 && document.querySelector(".mob-shell-root")
+          ? { height: vv.height, top: vv.top, bottom: "auto" }
+          : {}),
+      }}
       onClick={onClose}
     >
       <div
