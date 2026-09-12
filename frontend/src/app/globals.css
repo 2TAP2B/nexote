@@ -734,13 +734,12 @@ body {
   min-height: 44px;
 }
 
-/* Mobile command palette: bigger touch targets, taller results, no
- * keyboard-hint footer (touch devices don't use ↑↓/↵). */
+/* Mobile command palette: bigger touch targets, no keyboard-hint footer
+ * (touch devices don't use ↑↓/↵). The result list must NOT carry a
+ * max-height here — the sheet fills the viewport and the list flexes into
+ * it (the 60vh cap used to leave the sheet's lower third empty). */
 .mob-shell-root [aria-label="Command palette"] {
   max-width: 100%;
-}
-.mob-shell-root [aria-label="Command palette"] ul {
-  max-height: 60vh;
 }
 .mob-shell-root [aria-label="Command palette"] li button {
   padding-top: 12px;
