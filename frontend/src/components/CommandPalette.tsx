@@ -314,14 +314,17 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-start sm:p-4 sm:pt-[15vh]"
+      data-command-palette-backdrop
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm md:items-start md:p-4 md:pt-[15vh]"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
-        className="flex h-full max-h-full w-full flex-col overflow-hidden bg-background shadow-xl sm:h-auto sm:max-w-lg sm:rounded-2xl sm:border sm:border-border"
+        data-command-palette
+        className="flex h-full max-h-full w-full flex-1 flex-col overflow-hidden rounded-2xl border-2 bg-background shadow-xl md:h-auto md:max-w-lg md:flex-none"
+        style={{ borderColor: "color-mix(in srgb, var(--primary) 55%, transparent)" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search input */}
@@ -344,7 +347,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </div>
 
         {/* Results — full height sheet on mobile, capped box on desktop. */}
-        <ul className="min-h-0 flex-1 overflow-y-auto py-1 sm:max-h-96 sm:flex-none">
+        <ul className="min-h-0 flex-1 overflow-y-auto py-1 md:max-h-96 md:flex-none">
           {items.length === 0 ? (
             <li className="px-3 py-3 text-sm text-muted-foreground">
               No results found.
