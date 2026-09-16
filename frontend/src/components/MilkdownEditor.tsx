@@ -558,7 +558,11 @@ function findScrollContainer(from: HTMLElement): HTMLElement | null {
   return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
 }
 
-function pinContainer(container: HTMLElement, top: number): () => void {
+function pinContainer(
+  container: HTMLElement,
+  top: number,
+  opts?: { noTimeout?: boolean },
+): () => void {
   let stopped = false;
   // When pinning the window scroller, scroll events fire on `window` and
   // scrollTop is read/written via the documentElement.
@@ -581,7 +585,11 @@ function pinContainer(container: HTMLElement, top: number): () => void {
     window.cancelAnimationFrame(raf);
     scrollTarget.removeEventListener("scroll", onScroll);
   };
-  let timer = window.setTimeout(stop, 200);
+  // noTimeout: outlives the gesture. Only used for pins with explicit
+  // release paths (mouseup settle pin until the selection settles; the
+  // whole-drag pin until an edge is reached) — an uncapped rAF pin that no
+  // one releases would freeze scrolling forever.
+  let timer: number | undefined = opts?.noTimeout ? undefined : window.setTimeout(stop, 200);
   const tick = () => {
     if (stopped) return;
     if (getTop() !== top) setTop(top);
@@ -822,12 +830,14 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
 
       const featureConfigs: NonNullable<CrepeConfig["featureConfigs"]> = {
         [Crepe.Feature.Cursor]: {
-          // Crepe enables a custom "virtual cursor" by default that hides the
-          // native caret (caret-color: transparent) and paints its own. On
-          // touch it relies on JS repositioning plus a scroll listener, so the
-          // caret can drift off or vanish entirely while typing. Keep the real
-          // (blinking) caret on mobile so the user always sees where they type.
-          virtual: !mobile,
+          // Configuration: never use the "virtual cursor" widget. It mounts
+          // a plain <div> widget at doc position 0 — as .ProseMirror's FIRST
+          // child until the first focus/selection-change gives it the
+          // positioning class, which makes the H1 margin + font styles flip
+          // (0px→8px margin, fsc) and the document visibly "jumps a line"
+          // on the first text selection. With virtual:false the plugin is
+          // not mounted at all and the native caret renders everywhere.
+          virtual: false,
         },
         [Crepe.Feature.ImageBlock]: {
           onUpload: (file: File) => uploadImageFile(file),
@@ -1247,28 +1257,39 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         if (el?.closest?.(".milkdown-block-handle")) return;
         const container = findScrollContainer(root);
         if (!container) return;
-        // Pin through the whole click/drag so the selection that finalizes on
-        // mouseup doesn't nudge. For long drags the pin expires mid-drag so
-        // edge auto-scroll can still extend the selection. On mouseup the pin
-        // is re-installed until the selection SETTLES: Chrome runs its final
-        // scroll-into-view on `selectionchange` (after the mousedown pin
-        // expired), which made the editor jump with tall first headlines.
-        // The mouseup pin is released by that selectionchange, a fresh
-        // mousedown, or a wheel — user scrolling is always honored.
+        // Pin for the WHOLE drag: Chrome re-scrolls the DOM selection on
+        // every pointer move, and when a block overlapping the top edge is
+        // partially clipped (tall first headline under the 64px padding)
+        // that scroll lands ~150px away — the editor visibly jumped on
+        // every text selection. The pin is released early only when the
+        // drag approaches the container's top/bottom edge, so Chrome's own
+        // edge auto-scroll can still extend the selection there. On mouseup
+        // the pin returns until the selection settles (selectionchange,
+        // wheel or the next mousedown release it), and user scrolling is
+        // always honored afterwards.
         const top = container.scrollTop;
-        const stop = pinContainer(container, top);
+        let pinned = true;
+        let stop = pinContainer(container, top, { noTimeout: true });
+        const onMove = (ev: MouseEvent) => {
+          if (!pinned) return;
+          const r = container.getBoundingClientRect();
+          const margin = 48;
+          if (ev.clientY - r.top < margin || r.bottom - ev.clientY < margin) {
+            // Edge drag: hand scrolling back to Chrome so the selection can
+            // auto-extend beyond the visible area.
+            stop();
+            pinned = false;
+            window.removeEventListener("mousemove", onMove);
+          }
+        };
+        window.addEventListener("mousemove", onMove);
         const onUp = () => {
+          // The whole-drag pin ends here. Give the final selection scroll
+          // (Chrome fires one more selectionchange pass after mouseup) a
+          // bounded 600ms settle pin; after that scrolling is fully free.
           stop();
-          const settlePin = pinContainer(container, top);
-          const release = () => {
-            settlePin();
-            window.removeEventListener("selectionchange", release);
-            window.removeEventListener("wheel", release);
-            window.removeEventListener("mousedown", release, true);
-          };
-          window.addEventListener("selectionchange", release);
-          window.addEventListener("wheel", release);
-          window.addEventListener("mousedown", release, true);
+          const settle = pinContainer(container, top);
+          window.removeEventListener("mousemove", onMove);
         };
         window.addEventListener("mouseup", onUp, { once: true });
       };
