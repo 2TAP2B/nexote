@@ -1248,15 +1248,27 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         const container = findScrollContainer(root);
         if (!container) return;
         // Pin through the whole click/drag so the selection that finalizes on
-        // mouseup doesn't nudge. Released automatically after 200ms; for long
-        // drags the pin expires mid-drag so edge auto-scroll can still extend
-        // the selection. Re-pin to the original scrollTop on mouseup so the
-        // drag's final selection doesn't nudge the page.
+        // mouseup doesn't nudge. For long drags the pin expires mid-drag so
+        // edge auto-scroll can still extend the selection. On mouseup the pin
+        // is re-installed until the selection SETTLES: Chrome runs its final
+        // scroll-into-view on `selectionchange` (after the mousedown pin
+        // expired), which made the editor jump with tall first headlines.
+        // The mouseup pin is released by that selectionchange, a fresh
+        // mousedown, or a wheel — user scrolling is always honored.
         const top = container.scrollTop;
         const stop = pinContainer(container, top);
         const onUp = () => {
           stop();
-          pinContainer(container, top);
+          const settlePin = pinContainer(container, top);
+          const release = () => {
+            settlePin();
+            window.removeEventListener("selectionchange", release);
+            window.removeEventListener("wheel", release);
+            window.removeEventListener("mousedown", release, true);
+          };
+          window.addEventListener("selectionchange", release);
+          window.addEventListener("wheel", release);
+          window.addEventListener("mousedown", release, true);
         };
         window.addEventListener("mouseup", onUp, { once: true });
       };

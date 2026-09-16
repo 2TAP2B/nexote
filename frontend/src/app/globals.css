@@ -465,6 +465,11 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  /* Positioning context for Crepe's floating toolbar (position:absolute
+   * child). Without this it laid out against an outer containing block,
+   * whose geometry shifted between floating-ui passes and nudged the
+   * scroll container while text was being selected. */
+  position: relative;
 }
 /* The React wrapper div rendered by <Milkdown/> — it sits between our
  * flex container and the .milkdown div created by Milkdown core, so it
@@ -483,6 +488,15 @@ body {
   font-size: var(--editor-font-size, 16px);
   line-height: 1.75;
   font-weight: 400;  outline: none;
+}
+/* Desktop: without scroll-margin protection Chrome scroll-into-views the
+ * selected headline on mouseup — with a tall H1/H2 right under the padding
+ * edge it nudged scrollTop and the whole editor visibly jumped. An empty
+ * first paragraph or H3 avoided it by geometry; this guard applies to any
+ * block regardless of type. */
+.nexote-editor-scroll .ProseMirror > *:first-child,
+.mob-editor-scroll .ProseMirror > *:first-child {
+  scroll-margin-top: 96px;
 }
 
 /* The raw markdown editor is a textarea; keep it clean without a visible
