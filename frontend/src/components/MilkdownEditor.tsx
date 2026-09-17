@@ -1415,15 +1415,21 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       return (
         <>
           <Milkdown />
-          {mobile && slash && (
-            <div
-              className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-3"
-              style={{
-                bottom: slashBottom,
-                opacity: 1,
-                transition: "opacity 0.15s ease",
-              }}
-            >
+          {mobile &&
+            slash &&
+            // Portaled to document.body: same reason as the AI command panel —
+            // the editor mounts inside the pager's transformed track, where a
+            // position:fixed sheet anchors to the track instead of the visual
+            // viewport and can end up outside the visible area entirely.
+            createPortal(
+              <div
+                className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-3 mob-shell-root"
+                style={{
+                  bottom: slashBottom,
+                  opacity: 1,
+                  transition: "opacity 0.15s ease",
+                }}
+              >
               <div
                 onPointerDown={(e) => e.preventDefault()}
                 className="pointer-events-auto no-scrollbar w-full max-w-2xl overflow-y-auto rounded-2xl border px-1 py-1"
@@ -1497,8 +1503,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   }}
                 />
               </div>
-            </div>
-          )}
+              </div>,
+              document.body,
+            )}
           {aiReview &&
             createPortal(
               <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-start sm:p-4 sm:pt-[10vh] backdrop-blur-sm">

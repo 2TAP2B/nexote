@@ -1207,19 +1207,15 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var result []TaskPayload
-	for _, v := range vaults {
-		store, err := h.Registry.Store(v.ID)
-		if err != nil {
-			continue
-		}
+	appendTasks := func(vaultID, vaultName string, store *notes.Store) {
 		tasks, err := store.Tasks()
 		if err != nil {
-			continue
+			return
 		}
 		for _, t := range tasks {
 			result = append(result, TaskPayload{
-				VaultID:   v.ID,
-				VaultName: v.Name,
+				VaultID:   vaultID,
+				VaultName: vaultName,
 				NoteID:    t.NoteID,
 				NoteTitle: t.NoteTitle,
 				Text:      t.Text,
@@ -1229,6 +1225,18 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 				UpdatedAt: t.UpdatedAt.Format(timeRFC3339Millis),
 			})
 		}
+	}
+	for _, v := range vaults {
+		store, err := h.Registry.Store(v.ID)
+		if err != nil {
+			continue
+		}
+		appendTasks(v.ID, v.Name, store)
+	}
+	// The journal is a separate store, not a vault — its checkboxes belong in
+	// the tasks overview too (the "journal" pseudo vault id fills the rest).
+	if h.JournalStore != nil {
+		appendTasks("journal", "Journal", h.JournalStore)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": result})
 }
@@ -1244,16 +1252,29 @@ func (h *Handler) toggleTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	store, err := h.Registry.Store(in.VaultID)
-	if err != nil {
-		h.writeRegistryError(w, err)
-		return
+	// "journal" is a pseudo vault id handled separately from the registry.
+	var store *notes.Store
+	if in.VaultID == "journal" {
+		if h.JournalStore == nil {
+			writeError(w, http.StatusNotImplemented, errors.New("journal store not configured"))
+			return
+		}
+		store = h.JournalStore
+	} else {
+		s, err := h.Registry.Store(in.VaultID)
+		if err != nil {
+			h.writeRegistryError(w, err)
+			return
+		}
+		store = s
 	}
 	doc, err := store.SetTaskChecked(in.NoteID, in.Line, in.Checked)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// Broadcast so open clients refresh (mirrors journalUpdateNote).
+	h.publishNote(in.VaultID, in.NoteID, doc.Meta.UpdatedAt)
 	writeJSON(w, http.StatusOK, toPayload(doc))
 }
 

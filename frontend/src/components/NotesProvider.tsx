@@ -764,18 +764,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [openTabs, notesById, activeVaultId, noteVaultMap, setNotes],
   );
 
-  // Open a note from any vault. Switches vault if needed, then opens the note.
-  const openNoteInVault = useCallback(
-    async (vaultId: string, noteId: string) => {
-      // Focus the owning vault so the tree/context is consistent, then open the
-      // shared tab. Tabs are cross-vault, so this adds/focuses one global tab.
-      if (vaultId !== activeVaultId) switchVault(vaultId);
-      await openTab(noteId);
-    },
-    [activeVaultId, switchVault, openTab],
-  );
-
   // Open a journal note (vault-independent). Loads from /api/journal.
+  // Declared before openNoteInVault: the vault-open router below dispatches
+  // journal ids here (deps array-wise it must exist at definition time).
   const openJournalNote = useCallback(
     async (id: string) => {
       journalIdsRef.current.add(id);
@@ -791,7 +782,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [openTabs, notesById, setJournalNotes],
+    [notesById],
+  );
+
+  // Open a note from any vault. Switches vault if needed, then opens the note.
+  // The journal pseudo vault routes through the journal APIs instead.
+  const openNoteInVault = useCallback(
+    async (vaultId: string, noteId: string) => {
+      if (vaultId === "journal") {
+        openJournalNote(noteId);
+        return;
+      }
+      // Focus the owning vault so the tree/context is consistent, then open the
+      // shared tab. Tabs are cross-vault, so this adds/focuses one global tab.
+      if (vaultId !== activeVaultId) switchVault(vaultId);
+      await openTab(noteId);
+    },
+    [activeVaultId, switchVault, openTab, openJournalNote],
   );
 
   const closeTab = useCallback((id: string) => {
@@ -1242,8 +1249,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const toggleTaskItem = useCallback(async (vaultId: string, noteId: string, line: number, checked: boolean) => {
     const doc = await api.toggleTask(vaultId, noteId, line, checked);
     setNotesById((prev) => ({ ...prev, [noteId]: doc }));
+    if (vaultId === "journal") {
+      journalIdsRef.current.add(noteId);
+      void refreshJournal();
+    }
     await refreshTasks();
-  }, [refreshTasks]);
+  }, [refreshTasks, refreshJournal]);
 
   useEffect(() => {
     void refreshTasks();
