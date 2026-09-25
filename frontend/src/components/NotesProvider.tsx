@@ -1087,8 +1087,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const refreshJournal = useCallback(async () => {
     try {
       const list = await api.journalList();
-      setJournalNotes(list.notes);
-      for (const n of list.notes) journalIdsRef.current.add(n.id);
+      // Older backends marshal an empty journal list as `null` — never store
+      // a null into context, or sort() calls in the sidebar crash the tree.
+      const notes = list.notes ?? [];
+      setJournalNotes(notes);
+      for (const n of notes) journalIdsRef.current.add(n.id);
     } catch {
       // Journal store may not be available yet — ignore.
     }

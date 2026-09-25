@@ -165,7 +165,7 @@ type ListResult struct {
 // A single tree walk populates the id->path index, so a subsequent read of any
 // listed note is O(1) rather than another walk.
 func (s *Store) List() (ListResult, error) {
-	var notes []Entry
+	var notes []Entry = []Entry{}
 	var folders []FolderEntry = []FolderEntry{}
 
 	idx := make(map[string]string)
