@@ -128,6 +128,40 @@ func (gs *GitSync) SetConfig(cfg GitConfig) {
 	} else {
 		gs.repo = nil
 	}
+	// Mirror the configured URL into the repo's origin remote, so a URL
+	// corrected in the settings (after the repo was initialized) is honored
+	// instead of writes silently going to the stale original remote.
+	if gs.repo != nil {
+		_ = gs.ensureRemote()
+	}
+}
+
+// ensureRemote makes the repo's origin match gs.cfg.Remote: creates it when
+// missing and rewrites it when the URL changed. Caller must hold gs.mu.
+func (gs *GitSync) ensureRemote() error {
+	if gs.repo == nil || gs.cfg.Remote == "" {
+		return nil
+	}
+	cfg, err := gs.repo.Config()
+	if err != nil {
+		return fmt.Errorf("read git config: %w", err)
+	}
+	remote := gs.cfg.Remote
+	if cr, ok := cfg.Remotes["origin"]; ok && len(cr.URLs) > 0 && cr.URLs[0] == remote {
+		return nil // already correct
+	}
+	if _, ok := cfg.Remotes["origin"]; ok {
+		if err := gs.repo.DeleteRemote("origin"); err != nil {
+			return fmt.Errorf("delete stale remote: %w", err)
+		}
+	}
+	if _, err := gs.repo.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{remote},
+	}); err != nil {
+		return fmt.Errorf("create remote: %w", err)
+	}
+	return nil
 }
 
 // Config returns the current config.
@@ -168,15 +202,9 @@ func (gs *GitSync) InitRepo() error {
 		return fmt.Errorf("write .gitignore: %w", err)
 	}
 
-	// Set remote if configured.
-	if gs.cfg.Remote != "" {
-		_, err = repo.CreateRemote(&config.RemoteConfig{
-			Name: "origin",
-			URLs: []string{gs.cfg.Remote},
-		})
-		if err != nil && err != config.ErrRemoteConfigNotFound {
-			return fmt.Errorf("create remote: %w", err)
-		}
+	// Set remote if configured (also rewrites a stale/different origin).
+	if err := gs.ensureRemote(); err != nil {
+		return err
 	}
 
 	// Initial commit.
@@ -281,6 +309,9 @@ func (gs *GitSync) Push(ctx context.Context, creds GitCredentials) error {
 	if err := gs.ensureRepo(); err != nil {
 		return err
 	}
+	if err := gs.ensureRemote(); err != nil {
+		return err
+	}
 	if gs.cfg.Remote == "" {
 		return fmt.Errorf("no remote configured")
 	}
@@ -288,7 +319,15 @@ func (gs *GitSync) Push(ctx context.Context, creds GitCredentials) error {
 	if branch == "" {
 		branch = "main"
 	}
-	refSpec := fmt.Sprintf("refs/heads/%s:refs/heads/%s", branch, branch)
+	// Push the configured branch when it exists locally (i.e. the repo was
+	// initialized with the same branch). If the user's repo predates a branch
+	// rename in the settings (common: master → main), fall back to pushing
+	// HEAD so the current history still reaches the remote branch.
+	localRef := plumbing.NewBranchReferenceName(branch)
+	if _, err := gs.repo.Reference(localRef, true); err != nil {
+		localRef = plumbing.HEAD
+	}
+	refSpec := fmt.Sprintf("%s:refs/heads/%s", localRef.String(), branch)
 	opts := &git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{config.RefSpec(refSpec)},
@@ -307,6 +346,9 @@ func (gs *GitSync) Pull(ctx context.Context, creds GitCredentials) error {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
 	if err := gs.ensureRepo(); err != nil {
+		return err
+	}
+	if err := gs.ensureRemote(); err != nil {
 		return err
 	}
 	if gs.cfg.Remote == "" {
