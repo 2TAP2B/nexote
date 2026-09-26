@@ -75,6 +75,7 @@ type NotesContextValue = {
   save: (id: string, input: Draft) => Promise<void>;
   toggleBookmark: (id: string) => Promise<void>;
   toggleShortcut: (id: string) => Promise<void>;
+  setNoteIcon: (id: string, icon: string | null) => Promise<void>;
   forceSave: () => Promise<void>;
   setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
@@ -1405,6 +1406,37 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     await save(activeId, draftRef.current);
   }, [save, activeId]);
 
+  // Set (or clear, with null) a note's frontmatter icon. Routes to the
+  // journal store for journal notes, otherwise to the owning vault. The
+  // backend preserves title/body on icon-only updates, so no draft is needed.
+  const setNoteIcon = useCallback(
+    async (id: string, icon: string | null) => {
+      try {
+        if (journalIdsRef.current.has(id)) {
+          const doc = await api.journalUpdate(id, { icon });
+          setJournalNotes((prev) =>
+            prev.map((n) =>
+              n.id === id ? { ...n, icon: icon ?? undefined, updatedAt: doc.updatedAt } : n,
+            ),
+          );
+        } else {
+          const vaultId = noteVaultMap[id] ?? activeVaultIdRef.current;
+          if (!vaultId) return;
+          await api.update(vaultId, id, { icon });
+          await refresh();
+        }
+        setNotesById((prev) => {
+          const n = prev[id];
+          if (!n) return prev;
+          return { ...prev, [id]: { ...n, icon: icon ?? undefined } };
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to set note icon");
+      }
+    },
+    [noteVaultMap, refresh],
+  );
+
   const activeNote =
     activeId && activeId !== DASHBOARD_ID
       ? (notesById[activeId] ?? null)
@@ -1514,6 +1546,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       save,
       toggleBookmark,
       toggleShortcut,
+      setNoteIcon,
       forceSave,
       setDraft,
       refresh,
@@ -1581,6 +1614,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       save,
       toggleBookmark,
       toggleShortcut,
+      setNoteIcon,
       forceSave,
       setDraft,
       refresh,
@@ -1597,6 +1631,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       toggleTaskItem,
       openNoteInVault,
       openJournalNote,
+      setNoteIcon,
       noteVaultMap,
       refreshAllMarks,
       settings,

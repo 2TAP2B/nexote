@@ -141,8 +141,9 @@ type Entry struct {
 	Year       int               `json:"year,omitempty"`
 	Genre      string            `json:"genre,omitempty"`
 	Wantlist   *bool             `json:"wantlist,omitempty"`
-	Cover      string            `json:"cover,omitempty"`
-	Collection string            `json:"collection,omitempty"`
+	Cover       string            `json:"cover,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Collection  string            `json:"collection,omitempty"`
 	Fields     map[string]string `json:"fields,omitempty"`
 }
 
@@ -219,6 +220,7 @@ func (s *Store) List() (ListResult, error) {
 			Genre:      doc.Meta.Genre,
 			Wantlist:   doc.Meta.Wantlist,
 			Cover:      doc.Meta.Cover,
+			Icon:       doc.Meta.Icon,
 			Collection: doc.Meta.Collection,
 			Fields:     doc.Meta.Fields,
 		})
@@ -433,6 +435,7 @@ type UpdateInput struct {
 	Genre             *string           `json:"genre,omitempty"`
 	Wantlist          *bool             `json:"wantlist,omitempty"`
 	Cover             *string           `json:"cover,omitempty"`
+	Icon              *string           `json:"icon,omitempty"`
 	Collection        *string           `json:"collection,omitempty"`
 	Fields            map[string]string `json:"fields,omitempty"`
 	ExpectedUpdatedAt *string           `json:"expectedUpdatedAt,omitempty"`
@@ -496,6 +499,9 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	}
 	if in.Cover != nil {
 		doc.Meta.Cover = *in.Cover
+	}
+	if in.Icon != nil {
+		doc.Meta.Icon = *in.Icon
 	}
 	if in.Collection != nil {
 		doc.Meta.Collection = *in.Collection

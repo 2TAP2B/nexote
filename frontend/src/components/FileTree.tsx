@@ -29,6 +29,7 @@ import {
   List,
   ListTodo,
   Music,
+  Palette,
   Settings2,
   Shield,
   Square,
@@ -42,29 +43,18 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNotes } from "@/lib/notes-context";
+import { getIcon, ICON_OPTIONS } from "@/lib/icons";
 import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
 
-const iconMap: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
-  Database,
-  Folder,
-  Star,
-  Bookmark,
-  FileText,
-  Settings: Settings2,
-  GraduationCap,
-  Heart,
-  Home,
-  Music,
-  Shield,
-  Zap,
-};
-
 function getVaultIcon(iconName?: string) {
-  if (!iconName) return Database;
-  return iconMap[iconName] ?? Database;
+  return getIcon(iconName, Database);
+}
+
+function getNoteIcon(iconName?: string) {
+  return getIcon(iconName, FileText);
 }
 
 import ContextMenu, { type MenuItem } from "./ContextMenu";
@@ -181,6 +171,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     save,
     toggleBookmark,
     toggleShortcut,
+    setNoteIcon,
     vaults,
     activeVault,
     allVaultData,
@@ -492,6 +483,15 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   } | null>(null);
   const vaultIconPickerRef = useRef<HTMLDivElement>(null);
 
+  // Note icon picker state, opened from note context menus via a window
+  // event so every note row variant can reach it without new props.
+  const [noteIconPicker, setNoteIconPicker] = useState<{
+    noteId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const noteIconPickerRef = useRef<HTMLDivElement>(null);
+
   // Inline rename state.
   const [renaming, setRenaming] = useState<{
     id: string;
@@ -698,22 +698,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }, [allSectionsExpanded, setAllSections]);
 
   // Vault icon options for the picker
-  const vaultIconOptions = useMemo(() => {
-    return [
-      { name: "Database", icon: Database },
-      { name: "Folder", icon: Folder },
-      { name: "Star", icon: Star },
-      { name: "Bookmark", icon: Bookmark },
-      { name: "FileText", icon: FileText },
-      { name: "Settings", icon: Settings2 },
-      { name: "GraduationCap", icon: GraduationCap },
-      { name: "Heart", icon: Heart },
-      { name: "Home", icon: Home },
-      { name: "Music", icon: Music },
-      { name: "Shield", icon: Shield },
-      { name: "Zap", icon: Zap },
-    ];
-  }, []);
+  const vaultIconOptions = ICON_OPTIONS;
 
   const openFolderDialog = useCallback((parentPath?: string) => {
     setFolderDialog({ open: true, parentPath });
@@ -753,6 +738,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
             label: "Pick icon",
             icon: <Settings2 size={14} />,
             onClick: () => {
+              setNoteIconPicker(null);
               setVaultIconPicker({ vaultId, x: e.clientX, y: e.clientY });
             },
           },
@@ -785,6 +771,53 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       document.removeEventListener("keydown", onKey);
     };
   }, [vaultIconPicker]);
+
+  // Same dismiss behavior for the note icon picker, plus the event that
+  // opens it from note context menus.
+  useEffect(() => {
+    if (!noteIconPicker) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        noteIconPickerRef.current &&
+        !noteIconPickerRef.current.contains(e.target as Node)
+      ) {
+        setNoteIconPicker(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNoteIconPicker(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [noteIconPicker]);
+
+  const onNoteIconPickerEvent = useCallback((e: Event) => {
+    const detail = (e as CustomEvent).detail as
+      | { noteId?: string; x?: number; y?: number }
+      | undefined;
+    if (!detail?.noteId) return;
+    setVaultIconPicker(null);
+    setNoteIconPicker({ noteId: detail.noteId, x: detail.x ?? 0, y: detail.y ?? 0 });
+  }, []);
+  useEffect(() => {
+    window.addEventListener("nexote:note-icon-picker", onNoteIconPickerEvent);
+    return () => window.removeEventListener("nexote:note-icon-picker", onNoteIconPickerEvent);
+  }, [onNoteIconPickerEvent]);
+
+  // Icon per note id for rows: vault notes (all vaults) plus journal notes.
+  const noteIconMap = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    for (const v of vaults) {
+      for (const n of allVaultData[v.id]?.notes ?? []) map[n.id] = n.icon;
+    }
+    for (const n of journalNotes) map[n.id] = n.icon;
+    return map;
+  }, [vaults, allVaultData, journalNotes]);
+  const noteIcon = useCallback((id: string) => noteIconMap[id], [noteIconMap]);
 
   const handleCreateHere = useCallback(() => {
     void create();
@@ -1133,6 +1166,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                           const n = data?.notes.find((nn) => nn.id === id);
                           return n?.tags ?? [];
                         }}
+                        noteIcon={noteIcon}
                       />
                     ) : (
                       <TreeChildren
@@ -1199,6 +1233,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                           const n = data?.notes.find((nn) => nn.id === id);
                           return n?.tags ?? [];
                         }}
+                        noteIcon={noteIcon}
                       />
                     )}
                   </CollapsibleSection>
@@ -1252,13 +1287,13 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       {vaultIconPicker && (
         <div
           ref={vaultIconPickerRef}
-          className="fixed z-50 rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
+          className="fixed z-50 w-[336px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
           style={{ left: vaultIconPicker.x, top: vaultIconPicker.y }}
         >
           <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
             Pick vault icon
           </div>
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-8 gap-1">
             {vaultIconOptions.map(({ name, icon: Icon }) => (
               <button
                 key={name}
@@ -1274,6 +1309,47 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Note icon picker popover — opened from note context menus via a
+          "nexote:note-icon-picker" event so rows can stay prop-light. */}
+      {noteIconPicker && (
+        <div
+          ref={noteIconPickerRef}
+          className="fixed z-50 w-[336px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
+          style={{ left: noteIconPicker.x, top: noteIconPicker.y }}
+        >
+          <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
+            Pick note icon
+          </div>
+          <div className="grid grid-cols-8 gap-1">
+            {ICON_OPTIONS.map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded hover:bg-white/10"
+                title={name}
+                onClick={() => {
+                  void setNoteIcon(noteIconPicker.noteId, name);
+                  setNoteIconPicker(null);
+                }}
+              >
+                <Icon className="h-4 w-4" style={{ color: "var(--foreground)" }} />
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="mt-1 w-full rounded px-2 py-1 text-xs hover:bg-white/10"
+            style={{ color: "var(--muted-foreground)" }}
+            onClick={() => {
+              void setNoteIcon(noteIconPicker.noteId, null);
+              setNoteIconPicker(null);
+            }}
+          >
+            No icon
+          </button>
         </div>
       )}
     </div>
@@ -1316,6 +1392,9 @@ type TreeChildProps = {
   onNewFolderInFolder: (path: string) => void;
   onRemoveTag?: (id: string, tag: string) => void;
   noteTags?: (id: string) => string[];
+  /** Per-note icon resolver (id → icon name or undefined). Enables the
+   * "Pick icon" context item and icons in note rows where present. */
+  noteIcon?: (id: string) => string | undefined;
 };
 
 function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
@@ -1612,6 +1691,7 @@ function NoteItem(
     depth,
     active,
     noteParentPath,
+    noteIcon,
     treeSelectedNav,
     setTreeSelectedNav,
     onOpen,
@@ -1689,6 +1769,18 @@ function NoteItem(
               icon: <Bookmark className="h-4 w-4" />,
               onClick: () => onBookmark(note.id),
             },
+            ...(noteIcon
+              ? [{
+                  label: "Pick icon",
+                  icon: <Palette className="h-4 w-4" />,
+                  onClick: () =>
+                    window.dispatchEvent(
+                      new CustomEvent("nexote:note-icon-picker", {
+                        detail: { noteId: note.id, x: e.clientX, y: e.clientY },
+                      }),
+                    ),
+                }]
+              : []),
           ];
           items.push(
             { label: "", onClick: () => {}, separator: true },
@@ -1723,10 +1815,15 @@ function NoteItem(
           outline: undefined,
         }}
       >
-        <FileText
-          className="h-3.5 w-3.5 shrink-0"
-          style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
-        />
+        {(() => {
+          const NoteIcon = noteIcon ? getNoteIcon(noteIcon(note.id)) : FileText;
+          return (
+            <NoteIcon
+              className="h-3.5 w-3.5 shrink-0"
+              style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+            />
+          );
+        })()}
         {isRenaming ? (
           <input
             value={renaming.value}
@@ -1967,7 +2064,7 @@ function DetailedNoteList({
   bookmarks,
   shortcuts,
 }: {
-  notes: { id: string; title: string; updatedAt: string; snippet?: string }[];
+  notes: { id: string; title: string; updatedAt: string; snippet?: string; icon?: string }[];
   notesById: Record<string, { body?: string }>;
   activeId: string | null;
   activeSource: string | null;
@@ -2053,6 +2150,16 @@ function DetailedNoteList({
                             icon: <Bookmark className="h-4 w-4" />,
                             onClick: () => onBookmark(n.id),
                           },
+                          {
+                            label: "Pick icon",
+                            icon: <Palette className="h-4 w-4" />,
+                            onClick: () =>
+                              window.dispatchEvent(
+                                new CustomEvent("nexote:note-icon-picker", {
+                                  detail: { noteId: n.id, x: e.clientX, y: e.clientY },
+                                }),
+                              ),
+                          },
                           { label: "", onClick: () => {}, separator: true },
                           {
                             label: "Delete",
@@ -2077,10 +2184,15 @@ function DetailedNoteList({
                       }}
                     >
                       <div className="flex items-center gap-2">
-                        <FileText
-                          className="h-3.5 w-3.5 shrink-0"
-                          style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
-                        />
+                        {(() => {
+                          const NoteRowIcon = getNoteIcon(n.icon);
+                          return (
+                            <NoteRowIcon
+                              className="h-3.5 w-3.5 shrink-0"
+                              style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+                            />
+                          );
+                        })()}
                         <span
                           className="min-w-0 flex-1 truncate text-left"
                           style={{
@@ -2404,13 +2516,13 @@ function TagsView({
 
   const matchingNotes = useMemo(() => {
     if (!selectedTag) return [];
-    const result: { vaultId: string; vaultName: string; id: string; title: string; updatedAt: string; snippet?: string }[] = [];
+    const result: { vaultId: string; vaultName: string; id: string; title: string; updatedAt: string; snippet?: string; icon?: string }[] = [];
     for (const v of vaults) {
       const data = allVaultData[v.id];
       if (!data) continue;
       for (const n of data.notes) {
         if (n.tags?.includes(selectedTag)) {
-          result.push({ vaultId: v.id, vaultName: v.name, id: n.id, title: n.title, updatedAt: n.updatedAt, snippet: n.snippet });
+          result.push({ vaultId: v.id, vaultName: v.name, id: n.id, title: n.title, updatedAt: n.updatedAt, snippet: n.snippet, icon: n.icon });
         }
       }
     }
@@ -2463,10 +2575,15 @@ function TagsView({
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    <FileText
-                      className="h-3.5 w-3.5 shrink-0"
-                      style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
-                    />
+                    {(() => {
+                      const TagRowIcon = getNoteIcon(n.icon);
+                      return (
+                        <TagRowIcon
+                          className="h-3.5 w-3.5 shrink-0"
+                          style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+                        />
+                      );
+                    })()}
                     <span
                       className="min-w-0 flex-1 truncate text-left"
                       style={{ fontSize: 13, fontWeight: 500, color: active ? "var(--primary-foreground)" : "var(--foreground)" }}

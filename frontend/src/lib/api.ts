@@ -16,6 +16,7 @@ export type NoteMeta = {
   genre?: string;
   wantlist?: boolean;
   cover?: string;
+  icon?: string;
   collection?: string;
   fields?: Record<string, string>;
 };
@@ -34,6 +35,7 @@ export type NoteInput = {
   genre?: string | null;
   wantlist?: boolean | null;
   cover?: string | null;
+  icon?: string | null;
   collection?: string | null;
   fields?: Record<string, string> | null;
 };
@@ -265,7 +267,10 @@ export const api = {
     request<ListResult>("/api/journal/notes"),
   journalGet: (id: string) =>
     request<Note>(`/api/journal/notes/${id}`),
-  journalUpdate: (id: string, input: { title?: string; body?: string }) =>
+  journalUpdate: (
+    id: string,
+    input: { title?: string; body?: string; icon?: string | null },
+  ) =>
     request<Note>(`/api/journal/notes/${id}`, {
       method: "PUT",
       body: JSON.stringify(input),

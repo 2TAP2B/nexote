@@ -31,6 +31,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useNotes, formatTitle } from "@/lib/notes-context";
+import { getIcon, ICON_OPTIONS as SHARED_ICON_OPTIONS } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { isCollectionsVault } from "@/lib/api";
 import type { CollectionMeta, GitConfig, MetadataConfig } from "@/lib/api";
@@ -1116,22 +1117,7 @@ function AppearanceSection({
   );
 }
 
-const ICON_OPTIONS = [
-  { name: "Database", icon: Database },
-  { name: "Folder", icon: Folder },
-  { name: "Star", icon: Star },
-  { name: "Bookmark", icon: Bookmark },
-  { name: "FileText", icon: FileText },
-  { name: "Settings", icon: Settings2 },
-  { name: "GraduationCap", icon: GraduationCap },
-  { name: "Heart", icon: Heart },
-  { name: "Home", icon: Home },
-  { name: "Music", icon: Music },
-  { name: "Shield", icon: Shield },
-  { name: "Zap", icon: Zap },
-];
-
-function IconPicker({
+const ICON_OPTIONS = SHARED_ICON_OPTIONS;function IconPicker({
   value,
   onChange,
 }: {
@@ -1142,8 +1128,7 @@ function IconPicker({
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  const CurrentIcon =
-    ICON_OPTIONS.find((o) => o.name === value)?.icon ?? Database;
+  const CurrentIcon = getIcon(value, Database);
 
   useLayoutEffect(() => {
     if (!open || !btnRef.current) return;
@@ -1185,10 +1170,10 @@ function IconPicker({
       {open && pos && (
         <div
           ref={popRef}
-          className="fixed z-[60] rounded-lg border border-border bg-background p-2 shadow-xl"
+          className="fixed z-[60] w-[336px] max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-background p-2 shadow-xl"
           style={{ left: pos.left, top: pos.top }}
         >
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-8 gap-1">
             {ICON_OPTIONS.map(({ name, icon: Icon }) => (
               <button
                 key={name}

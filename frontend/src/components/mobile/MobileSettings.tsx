@@ -25,6 +25,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { formatTitle, useNotes } from "@/lib/notes-context";
+import { getIcon, ICON_OPTIONS as SHARED_ICON_OPTIONS } from "@/lib/icons";
 import { api, isCollectionsVault } from "@/lib/api";
 import type { CollectionMeta, GitConfig, GitStatusInfo, MetadataConfig } from "@/lib/api";
 
@@ -49,16 +50,7 @@ const SCHEMES = [
   { value: "amethyst-haze", label: "Amethyst Haze", swatch: "#a995c9" },
 ] as const;
 
-const ICON_OPTIONS = [
-  { name: "Database", icon: Database },
-  { name: "Folder", icon: Folder },
-  { name: "FileText", icon: FileText },
-  { name: "Heart", icon: Heart },
-  { name: "Home", icon: Home },
-  { name: "Music", icon: Music },
-  { name: "Shield", icon: Shield },
-  { name: "Zap", icon: Zap },
-];
+const ICON_OPTIONS = SHARED_ICON_OPTIONS;
 
 export default function MobileSettings({
   open,
@@ -1285,7 +1277,7 @@ function CircleBtn({ children, onClick }: { children: React.ReactNode; onClick: 
 
 function IconPicker({ value, onChange }: { value: string; onChange: (icon: string) => void }) {
   const [open, setOpen] = useState(false);
-  const CurrentIcon = ICON_OPTIONS.find((o) => o.name === value)?.icon ?? Database;
+  const CurrentIcon = getIcon(value, Database);
 
   return (
     <>
@@ -1308,11 +1300,11 @@ function IconPicker({ value, onChange }: { value: string; onChange: (icon: strin
           onClick={() => setOpen(false)}
         >
           <div
-            className="rounded-xl p-3"
+            className="max-h-[70vh] overflow-y-auto rounded-xl p-3"
             style={{ background: "var(--mob-card)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-2">
               {ICON_OPTIONS.map(({ name, icon: Icon }) => (
                 <button
                   key={name}

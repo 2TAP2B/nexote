@@ -901,8 +901,9 @@ type Payload struct {
 	Year       int               `json:"year,omitempty"`
 	Genre      string            `json:"genre,omitempty"`
 	Wantlist   *bool             `json:"wantlist,omitempty"`
-	Cover      string            `json:"cover,omitempty"`
-	Collection string            `json:"collection,omitempty"`
+	Cover       string            `json:"cover,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Collection  string            `json:"collection,omitempty"`
 	Fields     map[string]string `json:"fields,omitempty"`
 }
 
@@ -921,6 +922,7 @@ func toPayload(d notes.Document) Payload {
 		Genre:      d.Meta.Genre,
 		Wantlist:   d.Meta.Wantlist,
 		Cover:      d.Meta.Cover,
+		Icon:       d.Meta.Icon,
 		Collection: d.Meta.Collection,
 		Fields:     d.Meta.Fields,
 	}

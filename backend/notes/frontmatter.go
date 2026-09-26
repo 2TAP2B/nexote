@@ -39,8 +39,9 @@ type Meta struct {
 	Year      int               `yaml:"year,omitempty"`
 	Genre     string            `yaml:"genre,omitempty"`
 	Wantlist  *bool             `yaml:"wantlist,omitempty"`
-	Cover     string            `yaml:"cover,omitempty"`
-	Collection string           `yaml:"collection,omitempty"`
+	Cover      string            `yaml:"cover,omitempty"`
+	Icon       string            `yaml:"icon,omitempty"`
+	Collection string            `yaml:"collection,omitempty"`
 	Fields    map[string]string `yaml:"fields,omitempty"`
 }
 
