@@ -469,6 +469,20 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     setActiveSource(activeId && isJournalNote(activeId) ? "journal" : null);
   }, [activeId, isJournalNote]);
 
+  // Remap the highlight source when the vault switches without an explicit
+  // tree open (e.g. opening a note from the dashboard or a mobile view, or
+  // switching the focus vault). If the currently open note belongs to the
+  // now-active vault, point activeSource at that vault's section so the
+  // open note is highlighted immediately instead of only after another
+  // click. Dashboard/other-vault notes don't match and keep the old
+  // (no-highlight) behavior.
+  const activeVaultKey = activeVault?.id ?? "";
+  useEffect(() => {
+    if (!activeVaultKey || !activeId) return;
+    if (noteVaultMap[activeId] !== activeVaultKey) return;
+    setActiveSource((prev) => (prev === `vault:${activeVaultKey}` ? prev : `vault:${activeVaultKey}`));
+  }, [activeVaultKey, activeId, noteVaultMap]);
+
   // Open a note and record which section it was opened from. The note may
   // belong to any vault (aggregated Recent/Shortcuts/Bookmarks sections), so
   // route through the vault-aware opener when it isn't in the active vault.
