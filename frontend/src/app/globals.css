@@ -885,3 +885,29 @@ body {
   height: 100%;
   max-width: none;
 }
+
+/* ── Sidebar tree row states ─────────────────────────────────────────
+ * One consistent, theme-aware scale for every note/folder row in the
+ * sidebar: hover is a faint foreground tint, keyboard/hover selection is a
+ * primary tint, and the open (active) note is the strongest primary tint
+ * with an accent-colored title. This replaces the old mix of hardcoded
+ * white-alpha overlays (invisible/washed-out on light schemes) and the
+ * full-accent background that flashed on the active row.
+ * `color-mix` works over any --foreground/--primary, so every theme and
+ * the forced-mobile scheme inherit it. */
+.tree-row {
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.tree-row:hover {
+  background-color: color-mix(in oklab, var(--foreground) 5%, transparent);
+}
+.tree-row.tree-selected {
+  background-color: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+.tree-row.tree-active {
+  background-color: color-mix(in oklab, var(--primary) 18%, transparent);
+}
+.tree-row.tree-active .tree-row-title {
+  color: var(--primary);
+  font-weight: 600;
+}

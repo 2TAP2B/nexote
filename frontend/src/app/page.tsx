@@ -504,7 +504,7 @@ function SidebarHeader({
           onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
         />
         <ActionButton
-          label={treeControls.sorted ? "Sort: A-Z (on)" : "Sort A-Z"}
+          label={treeControls.sorted ? "Sort: A–Z" : "Sort: recent first"}
           icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
           onClick={treeControls.toggleSort}
           active={treeControls.sorted}

@@ -41,6 +41,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useNotes } from "@/lib/notes-context";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
@@ -57,6 +58,18 @@ function getNoteIcon(iconName?: string) {
   return getIcon(iconName, FileText);
 }
 
+// Keep a fixed popover inside the viewport: the icon grid is ~336px wide,
+// so anchor it to the right edge when the click was near it. `h` reserves
+// scroll room for the max-height clamping.
+function clampPopLeft(x: number, w = 344): number {
+  if (typeof window === "undefined") return x;
+  return Math.max(8, Math.min(x, window.innerWidth - w));
+}
+function clampPopTop(y: number, h: number): number {
+  if (typeof window === "undefined") return y;
+  return Math.max(8, Math.min(y, Math.max(8, window.innerHeight - h)));
+}
+
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import DeleteConfirm from "./DeleteConfirm";
 import FolderCreateDialog from "./FolderCreateDialog";
@@ -65,7 +78,7 @@ type TreeNode = {
   name: string;
   path: string;
   children: Map<string, TreeNode>;
-  notes: { id: string; title: string }[];
+  notes: { id: string; title: string; updatedAt?: string }[];
   label?: string;
 };
 
@@ -82,7 +95,7 @@ const isCoarsePointer =
   window.matchMedia("(pointer: coarse)").matches;
 
 function buildTree(
-  notes: { id: string; title: string; path: string }[],
+  notes: { id: string; title: string; path: string; updatedAt?: string }[],
   folders: { path: string; name: string; label?: string }[],
 ): TreeNode {
   const root = emptyTree();
@@ -116,7 +129,7 @@ function buildTree(
         node = child;
       }
     }
-    node.notes.push({ id: n.id, title: n.title });
+    node.notes.push({ id: n.id, title: n.title, updatedAt: n.updatedAt });
   }
   return root;
 }
@@ -297,6 +310,10 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   // Flat ordered list of visible items per section for keyboard nav.
   type NavItem = { type: "note"; id: string } | { type: "folder"; path: string };
 
+  // Sort helpers shared with TreeChildren so keyboard nav order always
+  // matches the rendered tree order.
+  const cmpName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+
   // Each sidebar view maps to the nav section that drives keyboard nav.
   const navSectionForView: Record<SidebarView, string> = {
     tree: "vault",
@@ -339,15 +356,27 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       .map((n) => ({ type: "note", id: n.id }) as NavItem);
   }, [journalNotes]);
 
-  // Vault tree nav list (notes + folders)
+  // Default: notes sorted A–Z (stable). The sidebar toggle switches to
+  // "recently updated first". Both are deterministic, independent of the
+  // server's filesystem walk order — otherwise refreshes visibly reorder rows.
+  const [sorted, setSorted] = useState(true);
+
+  // Vault tree nav list (notes + folders) — mirrors TreeChildren ordering
+  // (folders A–Z, notes A–Z or recent-first per the `sorted` toggle).
   const vaultNavItems = useMemo(() => {
     const items: NavItem[] = [];
     const walk = (node: TreeNode) => {
-      for (const [, child] of node.children) {
+      const folders = [...node.children.values()].sort((a, b) => cmpName(a.name, b.name));
+      const notes = [...node.notes].sort(
+        sorted
+          ? (a, b) => cmpName(a.title, b.title)
+          : (a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),
+      );
+      for (const child of folders) {
         items.push({ type: "folder", path: child.path });
         if (isFolderOpen(child.path)) walk(child);
       }
-      for (const n of node.notes) {
+      for (const n of notes) {
         items.push({ type: "note", id: n.id });
       }
     };
@@ -362,7 +391,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       }
     }
     return items;
-  }, [notes, activeVault, allVaultData, isFolderOpen, stripCollectionFolders]);
+  }, [notes, activeVault, allVaultData, isFolderOpen, stripCollectionFolders, sorted]);
 
   // Map note id → folder path, for ArrowLeft "go to parent folder" in the
   // vault tree. Built from the active vault's notes (or simple-mode notes).
@@ -382,7 +411,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   const [navSection, setNavSection] = useState<string>("vault");
   const [treeSelectedNav, setTreeSelectedNav] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [sorted, setSorted] = useState(false);
 
   // Keep the keyboard-nav section in sync with the active sidebar view.
   useEffect(() => {
@@ -1283,74 +1311,83 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         />
       )}
 
-      {/* Vault icon picker popover */}
+      {/* Vault icon picker popover — portaled to <body> so it is not
+          clipped by the transformed mobile sidebar drawer, and clamped to
+          the viewport so it never runs off screen. */}
       {vaultIconPicker && (
-        <div
-          ref={vaultIconPickerRef}
-          className="fixed z-50 w-[336px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
-          style={{ left: vaultIconPicker.x, top: vaultIconPicker.y }}
-        >
-          <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
-            Pick vault icon
-          </div>
-          <div className="grid grid-cols-8 gap-1">
-            {vaultIconOptions.map(({ name, icon: Icon }) => (
-              <button
-                key={name}
-                type="button"
-                className="flex h-9 w-9 items-center justify-center rounded hover:bg-white/10"
-                title={name}
-                onClick={() => {
-                  setVaultIcon(vaultIconPicker.vaultId, name);
-                  setVaultIconPicker(null);
-                }}
-              >
-                <Icon className="h-4 w-4" style={{ color: "var(--foreground)" }} />
-              </button>
-            ))}
-          </div>
-        </div>
+        createPortal(
+          <div
+            ref={vaultIconPickerRef}
+            className="fixed z-[100] w-[336px] max-w-[calc(100vw-16px)] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
+            style={{ left: clampPopLeft(vaultIconPicker.x), top: clampPopTop(vaultIconPicker.y, 420) }}
+          >
+            <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
+              Pick vault icon
+            </div>
+            <div className="grid grid-cols-8 gap-1">
+              {vaultIconOptions.map(({ name, icon: Icon }) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded hover:bg-white/10"
+                  title={name}
+                  onClick={() => {
+                    setVaultIcon(vaultIconPicker.vaultId, name);
+                    setVaultIconPicker(null);
+                  }}
+                >
+                  <Icon className="h-4 w-4" style={{ color: "var(--foreground)" }} />
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
       )}
 
       {/* Note icon picker popover — opened from note context menus via a
-          "nexote:note-icon-picker" event so rows can stay prop-light. */}
+          "nexote:note-icon-picker" event so rows can stay prop-light.
+          Portaled + clamped like the vault picker (mobile drawer safety). */}
       {noteIconPicker && (
-        <div
-          ref={noteIconPickerRef}
-          className="fixed z-50 w-[336px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
-          style={{ left: noteIconPicker.x, top: noteIconPicker.y }}
-        >
-          <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
-            Pick note icon
-          </div>
-          <div className="grid grid-cols-8 gap-1">
-            {ICON_OPTIONS.map(({ name, icon: Icon }) => (
-              <button
-                key={name}
-                type="button"
-                className="flex h-9 w-9 items-center justify-center rounded hover:bg-white/10"
-                title={name}
-                onClick={() => {
-                  void setNoteIcon(noteIconPicker.noteId, name);
-                  setNoteIconPicker(null);
-                }}
-              >
-                <Icon className="h-4 w-4" style={{ color: "var(--foreground)" }} />
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="mt-1 w-full rounded px-2 py-1 text-xs hover:bg-white/10"
-            style={{ color: "var(--muted-foreground)" }}
-            onClick={() => {
-              void setNoteIcon(noteIconPicker.noteId, null);
-              setNoteIconPicker(null);
-            }}
+        createPortal(
+          <div
+            ref={noteIconPickerRef}
+            className="fixed z-[100] w-[336px] max-w-[calc(100vw-16px)] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 shadow-lg"
+            style={{ left: clampPopLeft(noteIconPicker.x), top: clampPopTop(noteIconPicker.y, 480) }}
           >
-            No icon
-          </button>
-        </div>
+            <div className="mb-1 px-2 text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>
+              Pick note icon
+            </div>
+            <div className="grid grid-cols-8 gap-1">
+              {ICON_OPTIONS.map(({ name, icon: Icon }) => (
+                <button
+                  key={name}
+                  type="button"
+                  className="flex h-9 w-9 items-center justify-center rounded hover:bg-white/10"
+                  title={name}
+                  onClick={() => {
+                    void setNoteIcon(noteIconPicker.noteId, name);
+                    setNoteIconPicker(null);
+                  }}
+                >
+                  <Icon className="h-4 w-4" style={{ color: "var(--foreground)" }} />
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="mt-1 w-full rounded px-2 py-1 text-xs hover:bg-white/10"
+              style={{ color: "var(--muted-foreground)" }}
+              onClick={() => {
+                void setNoteIcon(noteIconPicker.noteId, null);
+                setNoteIconPicker(null);
+              }}
+            >
+              No icon
+            </button>
+          </div>,
+          document.body,
+        )
       )}
     </div>
   );
@@ -1401,9 +1438,16 @@ function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
   const { node, depth, sorted, ...rest } = props;
   const folders = [...node.children.values()];
   const notes = [...node.notes];
+  // Deterministic ordering, independent of the server's filesystem walk
+  // order: folders always alphabetically; notes alphabetically (default) or
+  // by most-recent-update (toggle). Without this, a refresh() swaps the
+  // array from walk order to updatedAt-sorted and rows visibly jump.
+  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  folders.sort((a, b) => byName(a.name, b.name));
   if (sorted) {
-    folders.sort((a, b) => a.name.localeCompare(b.name));
-    notes.sort((a, b) => a.title.localeCompare(b.title));
+    notes.sort((a, b) => byName(a.title, b.title));
+  } else {
+    notes.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   }
   const childProps = { ...rest, sorted };
   return (
@@ -1530,18 +1574,15 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
           ]);
         }}
           className={[
-            "group flex w-full items-center gap-2 transition-colors",
-            isDragOver
-              ? "bg-primary/20"
-              : "hover:bg-white/5",
+            "tree-row group flex w-full items-center gap-2 transition-colors",
+            isSelected && !isDragOver ? "tree-selected" : "",
+            isDragOver ? "bg-primary/20" : "",
           ].join(" ")}
           style={{
             height: 33,
             paddingLeft: 14 + depth * 14,
             paddingRight: 14,
             borderRadius: 5,
-            background: isSelected ? "rgba(255,255,255,0.10)" : undefined,
-            outline: undefined,
           }}
         >
           <button
@@ -1799,28 +1840,22 @@ function NoteItem(
           onContextMenu(e.clientX, e.clientY, items);
         }}
         className={[
-          "group flex w-full items-center gap-2 transition-colors",
-          active ? "" : "hover:bg-white/5",
+          "tree-row group flex w-full items-center gap-2 transition-colors",
+          active ? "tree-active" : isSelected ? "tree-selected" : "",
         ].join(" ")}
         style={{
           height: 33,
           paddingLeft: 30 + depth * 14,
           paddingRight: 14,
           borderRadius: 5,
-          background: active
-            ? "var(--primary)"
-            : isSelected
-              ? "rgba(255,255,255,0.10)"
-              : undefined,
-          outline: undefined,
         }}
       >
         {(() => {
           const NoteIcon = noteIcon ? getNoteIcon(noteIcon(note.id)) : FileText;
           return (
             <NoteIcon
-              className="h-3.5 w-3.5 shrink-0"
-              style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+              className={active ? "h-3.5 w-3.5 shrink-0 text-primary" : "h-3.5 w-3.5 shrink-0"}
+              style={active ? undefined : { color: "var(--muted-foreground)" }}
             />
           );
         })()}
@@ -1857,10 +1892,11 @@ function NoteItem(
           <button
             type="button"
             onDoubleClick={() => setRenaming({ id: note.id, value: note.title })}
-            className="min-w-0 flex-1 truncate text-left"
+            className="tree-row-title min-w-0 flex-1 truncate text-left"
             style={{
               fontSize: 13,
-              color: active ? "var(--primary-foreground)" : "var(--foreground)",
+              fontWeight: active ? undefined : 400,
+              color: active ? undefined : "var(--foreground)",
             }}
           >
             {note.title || "Untitled"}
@@ -1875,7 +1911,7 @@ function NoteItem(
             onDelete(note.id);
           }}
           className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-          style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+          style={{ color: active ? undefined : "var(--muted-foreground)" }}
         >
           <Trash2 className="h-3 w-3" />
         </button>
@@ -2169,18 +2205,16 @@ function DetailedNoteList({
                           },
                         ]);
                       }}
-                      className="group flex w-full flex-col gap-0.5 transition-colors hover:bg-white/5"
+                      className={[
+                        "tree-row group flex w-full flex-col gap-0.5 transition-colors",
+                        active ? "tree-active" : navSelected ? "tree-selected" : "",
+                      ].join(" ")}
                       style={{
                         paddingLeft: 14,
                         paddingRight: 14,
                         paddingTop: 7,
                         paddingBottom: 7,
                         borderRadius: 5,
-                        background: active
-                          ? "var(--primary)"
-                          : navSelected
-                            ? "rgba(255,255,255,0.06)"
-                            : undefined,
                       }}
                     >
                       <div className="flex items-center gap-2">
@@ -2188,17 +2222,17 @@ function DetailedNoteList({
                           const NoteRowIcon = getNoteIcon(n.icon);
                           return (
                             <NoteRowIcon
-                              className="h-3.5 w-3.5 shrink-0"
-                              style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+                              className={active ? "h-3.5 w-3.5 shrink-0 text-primary" : "h-3.5 w-3.5 shrink-0"}
+                              style={active ? undefined : { color: "var(--muted-foreground)" }}
                             />
                           );
                         })()}
                         <span
-                          className="min-w-0 flex-1 truncate text-left"
+                          className="tree-row-title min-w-0 flex-1 truncate text-left"
                           style={{
                             fontSize: 13,
-                            fontWeight: 500,
-                            color: active ? "var(--primary-foreground)" : "var(--foreground)",
+                            fontWeight: active ? undefined : 500,
+                            color: active ? undefined : "var(--foreground)",
                           }}
                         >
                           {n.title || "Untitled"}
@@ -2207,7 +2241,7 @@ function DetailedNoteList({
                           className="shrink-0"
                           style={{
                             fontSize: 11,
-                            color: active ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                            color: active ? undefined : "var(--muted-foreground)",
                             opacity: 0.8,
                           }}
                         >
@@ -2219,7 +2253,7 @@ function DetailedNoteList({
                           className="truncate text-left"
                           style={{
                             fontSize: 12,
-                            color: active ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                            color: active ? undefined : "var(--muted-foreground)",
                             opacity: 0.7,
                             paddingLeft: 22,
                           }}
@@ -2564,14 +2598,16 @@ function TagsView({
                   data-note-id={n.id}
                   onClick={() => onOpenNote(n.vaultId, n.id)}
                   onMouseEnter={() => setTreeSelectedNav?.(`note:${n.id}`)}
-                  className="group flex w-full flex-col gap-0.5 transition-colors hover:bg-white/5"
+                  className={[
+                    "tree-row group flex w-full flex-col gap-0.5 transition-colors",
+                    active ? "tree-active" : navSelected ? "tree-selected" : "",
+                  ].join(" ")}
                   style={{
                     paddingLeft: 14,
                     paddingRight: 14,
                     paddingTop: 7,
                     paddingBottom: 7,
                     borderRadius: 5,
-                    background: active ? "var(--primary)" : navSelected ? "rgba(255,255,255,0.06)" : undefined,
                   }}
                 >
                   <div className="flex items-center gap-2">
@@ -2579,20 +2615,20 @@ function TagsView({
                       const TagRowIcon = getNoteIcon(n.icon);
                       return (
                         <TagRowIcon
-                          className="h-3.5 w-3.5 shrink-0"
-                          style={{ color: active ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+                          className={active ? "h-3.5 w-3.5 shrink-0 text-primary" : "h-3.5 w-3.5 shrink-0"}
+                          style={active ? undefined : { color: "var(--muted-foreground)" }}
                         />
                       );
                     })()}
                     <span
-                      className="min-w-0 flex-1 truncate text-left"
-                      style={{ fontSize: 13, fontWeight: 500, color: active ? "var(--primary-foreground)" : "var(--foreground)" }}
+                      className="tree-row-title min-w-0 flex-1 truncate text-left"
+                      style={{ fontSize: 13, fontWeight: active ? undefined : 500, color: active ? undefined : "var(--foreground)" }}
                     >
                       {n.title || "Untitled"}
                     </span>
                     <span
                       className="shrink-0"
-                      style={{ fontSize: 11, color: active ? "var(--primary-foreground)" : "var(--muted-foreground)", opacity: 0.7 }}
+                      style={{ fontSize: 11, color: active ? undefined : "var(--muted-foreground)", opacity: 0.7 }}
                     >
                       {n.vaultName}
                     </span>
@@ -2600,7 +2636,7 @@ function TagsView({
                   {snippet && (
                     <span
                       className="truncate text-left"
-                      style={{ fontSize: 12, color: active ? "var(--primary-foreground)" : "var(--muted-foreground)", opacity: 0.7, paddingLeft: 22 }}
+                      style={{ fontSize: 12, color: active ? undefined : "var(--muted-foreground)", opacity: 0.7, paddingLeft: 22 }}
                     >
                       {snippet}
                     </span>
