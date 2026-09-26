@@ -296,10 +296,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ id }),
     }),
-  move: (srcVaultId: string, id: string, dstVaultId: string) =>
+  move: (srcVaultId: string, id: string, dstVaultId: string, dstPath?: string) =>
     request<Note>(`${vaultBase(srcVaultId)}/notes/move`, {
       method: "POST",
-      body: JSON.stringify({ id, dstVaultId }),
+      body: JSON.stringify({ id, dstVaultId, ...(dstPath !== undefined ? { dstPath } : {}) }),
     }),
   update: (vaultId: string, id: string, input: NoteInput) =>
     request<Note>(`${vaultBase(vaultId)}/notes/${id}`, {

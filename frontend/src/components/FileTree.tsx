@@ -941,7 +941,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }, []);
 
   // Execute the move chosen in the dialog. Moving within the active vault uses
-  // moveNote (path change); moving to another vault uses moveNoteToVault.
+  // moveNote (path change); moving to another vault routes through
+  // moveNoteToVault, which resolves the note's real source vault itself.
   const performMoveTo = useCallback(
     async (dstVaultId: string, dstPath: string) => {
       const id = moveTo?.noteId;
@@ -950,11 +951,10 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       if (dstVaultId === (activeVault?.id ?? "")) {
         await moveNote(id, dstPath);
       } else {
-        if (activeVault?.id) switchVault(activeVault.id);
         await moveNoteToVault(id, dstVaultId);
       }
     },
-    [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
+    [moveTo, activeVault, moveNote, moveNoteToVault],
   );
 
   // Delete a folder via context, then refresh.
@@ -1239,7 +1239,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         onFolderDragOver={setDragOverPath}
                         onFolderDrop={(folderPath) => {
                           if (dragNoteId && dragNoteId !== "") {
-                            void moveNoteToVault(dragNoteId, vault.id);
+                            void moveNoteToVault(dragNoteId, vault.id, folderPath);
                           }
                           setDragNoteId(null);
                           setDragOverPath(null);

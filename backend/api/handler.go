@@ -440,14 +440,15 @@ func (h *Handler) copyNote(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) moveNote(w http.ResponseWriter, r *http.Request) {
 	srcVaultId := r.PathValue("vaultId")
 	var in struct {
-		ID         string `json:"id"`
-		DstVaultId string `json:"dstVaultId"`
+		ID         string  `json:"id"`
+		DstVaultId string  `json:"dstVaultId"`
+		DstPath    *string `json:"dstPath,omitempty"`
 	}
 	if err := decodeBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	doc, err := h.Registry.MoveNote(srcVaultId, in.ID, in.DstVaultId)
+	doc, err := h.Registry.MoveNote(srcVaultId, in.ID, in.DstVaultId, in.DstPath)
 	if err != nil {
 		h.writeRegistryError(w, err)
 		return

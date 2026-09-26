@@ -304,8 +304,11 @@ func (r *VaultRegistry) Store(id string) (*Store, error) {
 
 // MoveNote moves a note from one vault to another. It reads the note from
 // the source vault, writes it to the target vault with a new ID (preserving
-// title, body, and path), then deletes the original.
-func (r *VaultRegistry) MoveNote(srcVaultId, noteId, dstVaultId string) (Document, error) {
+// title, body, and path), then deletes the original. When dstPath is
+// non-nil the note is placed in that destination folder instead of keeping
+// its source path (e.g. drag & drop into a specific folder of another
+// vault).
+func (r *VaultRegistry) MoveNote(srcVaultId, noteId, dstVaultId string, dstPath *string) (Document, error) {
 	srcStore, err := r.Store(srcVaultId)
 	if err != nil {
 		return Document{}, err
@@ -328,6 +331,9 @@ func (r *VaultRegistry) MoveNote(srcVaultId, noteId, dstVaultId string) (Documen
 	now := time.Now().UTC()
 	newDoc.Meta.CreatedAt = now
 	newDoc.Meta.UpdatedAt = now
+	if dstPath != nil {
+		newDoc.Meta.Path = sanitizePath(*dstPath)
+	}
 
 	// Move any referenced image files into the destination vault and rewrite
 	// the image URLs to use the destination vault id.

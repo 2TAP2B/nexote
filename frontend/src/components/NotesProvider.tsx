@@ -63,7 +63,7 @@ type NotesContextValue = {
   closeTab: (id: string) => void;
   create: (input?: { title?: string; path?: string; vaultId?: string }) => Promise<void>;
   copyNote: (id: string) => Promise<void>;
-  moveNoteToVault: (noteId: string, dstVaultId: string) => Promise<void>;
+  moveNoteToVault: (noteId: string, dstVaultId: string, dstPath?: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   setFolderLabel: (vaultId: string, path: string, color: string) => Promise<void>;
@@ -920,32 +920,44 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const moveNoteToVault = useCallback(
-    async (noteId: string, dstVaultId: string) => {
-      if (!activeVaultId || activeVaultId === dstVaultId) return;
+    async (noteId: string, dstVaultId: string, dstPath?: string) => {
+      // Resolve the SOURCE vault from the note actually being moved — the
+      // note may live in any vault (drag from another vault's section or
+      // the Move-to dialog), while `activeVaultId` may point somewhere
+      // else entirely. Using the active vault here made every cross-vault
+      // move fail with "note not found" for notes not in the active vault.
+      const srcVaultId = noteVaultMap[noteId] ?? activeVaultId;
+      if (!srcVaultId || srcVaultId === dstVaultId) return;
       try {
-        await api.move(activeVaultId, noteId, dstVaultId);
+        await api.move(srcVaultId, noteId, dstVaultId, dstPath);
         // Remove from open tabs if present
         closeTab(noteId);
-        // Refresh both vaults' data
-        await refresh();
-        // Reload the destination vault's data in allVaultData
+        // Refresh both vaults' data (source may differ from the active one).
         try {
-          const dstResult = await api.list(dstVaultId);
+          const [dstResult, srcResult] = await Promise.all([
+            api.list(dstVaultId),
+            api.list(srcVaultId),
+          ]);
           setAllVaultData((prev) => ({
             ...prev,
             [dstVaultId]: {
               notes: dstResult.notes ?? [],
               folders: dstResult.folders ?? [],
             },
+            [srcVaultId]: {
+              notes: srcResult.notes ?? [],
+              folders: srcResult.folders ?? [],
+            },
           }));
         } catch {
           // ignore
         }
+        await refresh();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to move note");
       }
     },
-    [activeVaultId, closeTab, refresh],
+    [activeVaultId, noteVaultMap, closeTab, refresh],
   );
 
   const toggleBookmark = useCallback(
