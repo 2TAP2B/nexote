@@ -623,11 +623,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const switchVault = useCallback((id: string) => {
     setActiveVaultId(id);
     localStorage.setItem("nexote:active-vault", id);
-    // Switching vaults only changes the tree's focus vault. Open tabs and the
-    // note-body cache are shared across ALL vaults (one tab list for every
-    // vault), so they stay intact. Bookmarks/shortcuts are already aggregated.
-    setNotes([]);
-    setFolders([]);
+    // Switching vaults only changes the tree's focus vault. Keep the stale
+    // notes/folders visible until refresh() completes — blanking here made
+    // the tree flicker/disappear on slow backends, so a note clicked in
+    // another vault appeared unselected until the second click.
+    // Open tabs and the note-body cache are shared across ALL vaults (one
+    // tab list for every vault), so they stay intact. Bookmarks/shortcuts
+    // are already aggregated.
   }, []);
 
   const createVault = useCallback(async (name: string, icon?: string) => {
