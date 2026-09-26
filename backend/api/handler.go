@@ -213,12 +213,6 @@ func (h *Handler) createVault(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	// Attach git sync to the new vault's store if git is enabled.
-	if h.GitSync != nil {
-		if store, err := h.Registry.Store(vault.ID); err == nil {
-			store.SetGitSync(h.GitSync)
-		}
-	}
 	writeJSON(w, http.StatusCreated, vault)
 }
 
@@ -1310,13 +1304,9 @@ func (h *Handler) setGitConfig(w http.ResponseWriter, r *http.Request) {
 	} else {
 		h.GitSync = notes.NewGitSync(root, cfg)
 	}
-	if vaults, err := h.Registry.List(); err == nil {
-		for _, v := range vaults {
-			if store, err := h.Registry.Store(v.ID); err == nil {
-				store.SetGitSync(h.GitSync)
-			}
-		}
-	}
+	// Per-request store instances are constructed by the registry, so the
+	// hook lives on the registry itself (not on throwaway store objects).
+	h.Registry.SetGitSync(h.GitSync)
 	if h.JournalStore != nil {
 		h.JournalStore.SetGitSync(h.GitSync)
 	}

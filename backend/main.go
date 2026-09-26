@@ -71,15 +71,9 @@ func main() {
 	if gitCfg.Enabled {
 		gs := notes.NewGitSync(home, gitCfg)
 		h.GitSync = gs
-		// Attach to every existing vault store.
-		if vaults, err := registry.List(); err == nil {
-			for _, v := range vaults {
-				if store, err := registry.Store(v.ID); err == nil {
-					store.SetGitSync(gs)
-				}
-			}
-		}
-		// Attach to journal + collections stores.
+		// All future stores handed out by the registry get the hook;
+		// handlers construct a fresh store per request.
+		registry.SetGitSync(gs)
 		if h.JournalStore != nil {
 			h.JournalStore.SetGitSync(gs)
 		}

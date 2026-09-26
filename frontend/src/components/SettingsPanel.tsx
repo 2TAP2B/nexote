@@ -103,7 +103,6 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
   const [aiTestMessage, setAiTestMessage] = useState("");
   const [gitBusy, setGitBusy] = useState(false);
   const [gitMsg, setGitMsg] = useState("");
-  const [gitCreds, setGitCreds] = useState({ username: "", password: "" });
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   // Local draft for the git config — inputs write here instantly (typing
   // works), the change is persisted to the backend on blur. Re-synced from
@@ -841,28 +840,87 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                           />
                         </label>
 
-                        {/* Credentials (for HTTPS remotes — SSH uses keys) */}
+                        {/* Credentials — stored in git.json so manual pushes,
+                            the debounced auto-push and the timed auto-sync
+                            can all authenticate without re-entering them.
+                            Persisted on blur like the other draft fields. */}
                         <div className="rounded-lg border border-border px-3 py-2.5">
                           <div className="mb-1.5 text-xs font-medium text-muted-foreground">
-                            Credentials (optional — for HTTPS remotes)
+                            Credentials (stored server-side — for HTTPS remotes)
                           </div>
                           <div className="flex gap-2">
                             <input
                               type="text"
-                              value={gitCreds.username}
-                              onChange={(e) => setGitCreds((c) => ({ ...c, username: e.target.value }))}
+                              value={gitDraft.username ?? ""}
+                              onChange={(e) => setDraftField({ username: e.target.value })}
+                              onBlur={() => {
+                                const d = gitDraft;
+                                if (d && d !== gitConfig) void saveGitConfig(d).catch(() => {});
+                              }}
                               placeholder="Username / token name"
                               className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                             />
                             <input
                               type="password"
-                              value={gitCreds.password}
-                              onChange={(e) => setGitCreds((c) => ({ ...c, password: e.target.value }))}
+                              value={gitDraft.password ?? ""}
+                              onChange={(e) => setDraftField({ password: e.target.value })}
+                              onBlur={() => {
+                                const d = gitDraft;
+                                if (d && d !== gitConfig) void saveGitConfig(d).catch(() => {});
+                              }}
                               placeholder="Password / token"
                               className="flex-1 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
                             />
                           </div>
                         </div>
+
+                        {/* Timed auto-sync interval */}
+                        <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                          <span className="text-sm text-foreground">Auto-sync every</span>
+                          <select
+                            value={gitDraft.autoSyncMinutes ?? 0}
+                            onChange={async (e) => {
+                              const next = { ...gitDraft, autoSyncMinutes: Number(e.target.value) };
+                              setGitDraft(next);
+                              try {
+                                await saveGitConfig(next);
+                              } catch (err) {
+                                setGitMsg(err instanceof Error ? err.message : "Save failed");
+                              }
+                            }}
+                            className="rounded border border-border bg-background px-2 py-1 text-sm text-foreground"
+                          >
+                            <option value={0}>Off</option>
+                            <option value={1}>1 minute</option>
+                            <option value={3}>3 minutes</option>
+                            <option value={5}>5 minutes</option>
+                            <option value={10}>10 minutes</option>
+                          </select>
+                        </label>
+
+                        {/* Readable file names in git */}
+                        <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                          <span className="flex flex-col">
+                            <span className="text-sm text-foreground">Readable file names in git</span>
+                            <span className="text-xs text-muted-foreground">
+                              Commit a mirror with real vault/folder/note names instead of internal ids
+                            </span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={gitDraft.readableNames ?? false}
+                            onChange={async (e) => {
+                              const next = { ...gitDraft, readableNames: e.target.checked };
+                              setGitDraft(next);
+                              try {
+                                await saveGitConfig(next);
+                              } catch (err) {
+                                setGitMsg(err instanceof Error ? err.message : "Save failed");
+                              }
+                            }}
+                            className="h-4 w-4"
+                          />
+                        </label>
 
                         {/* Actions */}
                         <div className="flex flex-wrap gap-2">
@@ -892,7 +950,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                               setGitBusy(true);
                               setGitMsg("");
                               try {
-                                await gitPush(gitCreds.username ? gitCreds : undefined);
+                                await gitPush(gitDraft?.username ? { username: gitDraft.username, password: gitDraft.password ?? "" } : undefined);
                                 setGitMsg("Pushed.");
                               } catch (e) {
                                 setGitMsg(e instanceof Error ? e.message : "Push failed");
@@ -911,7 +969,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                               setGitBusy(true);
                               setGitMsg("");
                               try {
-                                await gitPull(gitCreds.username ? gitCreds : undefined);
+                                await gitPull(gitDraft?.username ? { username: gitDraft.username, password: gitDraft.password ?? "" } : undefined);
                                 setGitMsg("Pulled.");
                               } catch (e) {
                                 setGitMsg(e instanceof Error ? e.message : "Pull failed");

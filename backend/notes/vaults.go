@@ -29,6 +29,16 @@ const VaultTypeCollections = "collections"
 type VaultRegistry struct {
 	root string
 	mu   sync.Mutex
+	// gitSync is shared with every store this registry hands out, so
+	// per-request Store() instances all trigger debounced auto-commits.
+	gitSync *GitSync
+}
+
+// SetGitSync attaches the git auto-commit hook for all future stores.
+func (r *VaultRegistry) SetGitSync(gs *GitSync) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gitSync = gs
 }
 
 // NewVaultRegistry creates a registry rooted at the given directory. The
@@ -282,7 +292,14 @@ func (r *VaultRegistry) Store(id string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewStore(vault.Path)
+	store, err := NewStore(vault.Path)
+	if err != nil {
+		return nil, err
+	}
+	if r.gitSync != nil {
+		store.SetGitSync(r.gitSync)
+	}
+	return store, nil
 }
 
 // MoveNote moves a note from one vault to another. It reads the note from

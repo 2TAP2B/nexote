@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,16 +19,26 @@ import (
 )
 
 // GitConfig is the persisted git-sync configuration. It lives at
-// <NEXOTE_HOME>/git.json. Credentials are never stored here — they are
-// passed per push/pull request.
+// <NEXOTE_HOME>/git.json (written 0600, since it may carry the remote
+// credentials — required for timed auto-sync, which runs without a UI
+// roundtrip).
 type GitConfig struct {
-	Enabled        bool   `json:"enabled"`
-	Remote         string `json:"remote"`
-	Branch         string `json:"branch"`
-	AuthorName     string `json:"authorName"`
-	AuthorEmail    string `json:"authorEmail"`
-	IncludeImages  bool   `json:"includeImages"`
-	AutoPush       bool   `json:"autoPush"`
+	Enabled          bool   `json:"enabled"`
+	Remote           string `json:"remote"`
+	Branch           string `json:"branch"`
+	AuthorName       string `json:"authorName"`
+	AuthorEmail      string `json:"authorEmail"`
+	IncludeImages    bool   `json:"includeImages"`
+	AutoPush         bool   `json:"autoPush"`
+	// AutoSyncMinutes: commit+push every N minutes (0 = off, clamped 1..60).
+	AutoSyncMinutes  int    `json:"autoSyncMinutes,omitempty"`
+	// Credentials — persisted so background sync can authenticate without
+	// a settings roundtrip; git.json holds them at 0600.
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
+	// ReadableNames: commit a mirror with vault/folder/titled file names
+	// (.gitsync/ tree) instead of the cryptic internal <id>.md layout.
+	ReadableNames    bool   `json:"readableNames,omitempty"`
 }
 
 var DefaultGitConfig = GitConfig{
@@ -58,6 +70,9 @@ func LoadGitConfig(root string) (GitConfig, error) {
 	if cfg.AuthorEmail == "" {
 		cfg.AuthorEmail = "nexote@localhost"
 	}
+	if cfg.AutoSyncMinutes < 0 || cfg.AutoSyncMinutes > 60 {
+		cfg.AutoSyncMinutes = 0
+	}
 	return cfg, nil
 }
 
@@ -66,7 +81,8 @@ func SaveGitConfig(root string, cfg GitConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(root, "git.json"), data, 0o644)
+	// 0600: the file may hold the remote password/token.
+	return os.WriteFile(filepath.Join(root, "git.json"), data, 0o600)
 }
 
 // GitCommitLog is a single commit entry for UI display.
@@ -102,10 +118,11 @@ type GitSync struct {
 	root string
 	cfg  GitConfig
 
-	mu       sync.Mutex
-	commitMu sync.Mutex
-	repo     *git.Repository
-	timer    *time.Timer
+	mu            sync.Mutex
+	commitMu      sync.Mutex
+	repo          *git.Repository
+	timer         *time.Timer
+	autosyncTimer *time.Timer
 }
 
 // NewGitSync creates a GitSync for the given root. If a git repo already
@@ -115,6 +132,7 @@ func NewGitSync(root string, cfg GitConfig) *GitSync {
 	if repo, err := git.PlainOpen(root); err == nil {
 		gs.repo = repo
 	}
+	gs.scheduleAutoSync()
 	return gs
 }
 
@@ -134,6 +152,36 @@ func (gs *GitSync) SetConfig(cfg GitConfig) {
 	if gs.repo != nil {
 		_ = gs.ensureRemote()
 	}
+	// Keep the root .gitignore in step with the current mode (e.g. toggling
+	// ReadableNames or the image include) without requiring a re-init.
+	_ = gs.writeGitignoreLocked()
+	gs.scheduleAutoSync()
+}
+
+// scheduleAutoSync restarts the periodic commit+push timer, matching the
+// configured interval. Caller must hold gs.mu.
+func (gs *GitSync) scheduleAutoSync() {
+	if gs.autosyncTimer != nil {
+		gs.autosyncTimer.Stop()
+		gs.autosyncTimer = nil
+	}
+	if !gs.cfg.Enabled || gs.cfg.AutoSyncMinutes <= 0 {
+		return
+	}
+	interval := time.Duration(gs.cfg.AutoSyncMinutes) * time.Minute
+	gs.autosyncTimer = time.AfterFunc(interval, func() {
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+		if !gs.cfg.Enabled || gs.cfg.AutoSyncMinutes <= 0 {
+			return // config changed while the timer was pending
+		}
+		_ = gs.Commit("Auto-sync from Nexote")
+		_ = gs.Push(context.Background(), GitCredentials{
+			Username: gs.cfg.Username,
+			Password: gs.cfg.Password,
+		})
+		gs.scheduleAutoSync()
+	})
 }
 
 // ensureRemote makes the repo's origin match gs.cfg.Remote: creates it when
@@ -194,12 +242,8 @@ func (gs *GitSync) InitRepo() error {
 	gs.repo = repo
 
 	// Write .gitignore (exclude .history/ snapshots; optionally images).
-	gitignore := "*/.history/\n.history/\n"
-	if !gs.cfg.IncludeImages {
-		gitignore += "*.png\n*.jpg\n*.jpeg\n*.gif\n*.webp\n*.avif\n*.svg\n*.bmp\n"
-	}
-	if err := os.WriteFile(filepath.Join(gs.root, ".gitignore"), []byte(gitignore), 0o644); err != nil {
-		return fmt.Errorf("write .gitignore: %w", err)
+	if err := gs.writeGitignoreLocked(); err != nil {
+		return err
 	}
 
 	// Set remote if configured (also rewrites a stale/different origin).
@@ -207,13 +251,210 @@ func (gs *GitSync) InitRepo() error {
 		return err
 	}
 
+	// Store the readable mirror tree (visible to git) when enabled.
+	_ = gs.writeMirrorLocked()
+
 	// Initial commit.
 	return gs.commitLocked("Initial commit (Nexote)")
 }
 
+// mirrorDirName is the directory inside NEXOTE_HOME where the readable
+// snapshot lives. When ReadableNames is enabled, .gitignore hides everything
+// except this tree — the remote sees real vault/folder/note names instead of
+// the internal <id>.md file layout.
+const mirrorDirName = ".gitsync"
+
+// writeMirrorLocked rebuilds .gitsync/ from the live vaults when
+// ReadableNames is on; when it is off it removes a leftover mirror (and any
+// stale .gitignore entries for it are gone after the next writeGitignore).
+// Caller must hold gs.mu.
+func (gs *GitSync) writeMirrorLocked() error {
+	mirror := filepath.Join(gs.root, mirrorDirName)
+	if !gs.cfg.ReadableNames {
+		_ = os.RemoveAll(mirror)
+		return nil
+	}
+	if err := os.RemoveAll(mirror); err != nil {
+		return fmt.Errorf("clear mirror: %w", err)
+	}
+	if err := os.MkdirAll(mirror, 0o755); err != nil {
+		return err
+	}
+
+	// Entries: vault dirs (from vaults.json) + the journal store dir.
+	type src struct{ name, dir string }
+	var sources []src
+	// vaults.json may be a bare array (legacy) or {"vaults":[...]}.
+	var arr []struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+		Path string `json:"path"`
+	}
+	if data, err := os.ReadFile(filepath.Join(gs.root, "vaults.json")); err == nil {
+		var ok bool
+		if ok = json.Unmarshal(data, &arr) == nil; !ok {
+			var wrapped struct {
+				Vaults []struct {
+					Name string `json:"name"`
+					Type string `json:"type"`
+					Path string `json:"path"`
+				} `json:"vaults"`
+			}
+			if json.Unmarshal(data, &wrapped) == nil {
+				arr = wrapped.Vaults
+			}
+		}
+		for _, v := range arr {
+			if v.Path == "" {
+				continue
+			}
+			name := v.Name
+			if name == "" {
+				name = filepath.Base(v.Path)
+			}
+			sources = append(sources, src{name: name, dir: v.Path})
+		}
+	}
+	if journalDir := filepath.Join(gs.root, "journal"); true {
+		sources = append(sources, src{name: "Journal", dir: journalDir})
+	}
+
+	for _, s := range sources {
+		err := filepath.WalkDir(s.dir, func(p string, d os.DirEntry, err error) error {
+			if err != nil || p == s.dir {
+				return err //nolint:errcheck
+			}
+			rel, _ := filepath.Rel(s.dir, p)
+			rel = filepath.ToSlash(rel)
+			if d.IsDir() {
+				if d.Name() == historyDirName || strings.HasPrefix(d.Name(), ".") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".") {
+				return nil
+			}
+			ext := strings.ToLower(filepath.Ext(d.Name()))
+			if ext == ".md" {
+				data, err := os.ReadFile(p)
+				if err != nil {
+					return nil // unreadable: skip, failed listing shouldn't block
+				}
+				doc, err := Decode(data)
+				title := sanitizeMirrorName(doc.Meta.Title)
+				id := doc.Meta.ID
+				if id == "" {
+					id = strings.TrimSuffix(d.Name(), ".md")
+				}
+				if doc.Meta.Path != "" {
+					rel = doc.Meta.Path + "/" + filepath.Base(p)
+				}
+				name := title
+				if name == "" {
+					name = strings.TrimSuffix(d.Name(), ".md")
+				}
+				name = fmt.Sprintf("%s [%s].md", name, id)
+				dst := filepath.Join(mirror, sanitizeMirrorSegment(s.name))
+				for _, seg := range strings.Split(path.Dir(rel), "/") {
+					if seg != "" && seg != "." {
+						dst = filepath.Join(dst, sanitizeMirrorSegment(seg))
+					}
+				}
+				dst = filepath.Join(dst, name)
+				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+					return nil
+				}
+				if err := os.WriteFile(dst, data, 0o644); err != nil {
+					return nil
+				}
+				return nil
+			}
+			// Non-note files: images & attachments, kept unchanged when enabled.
+			if !gs.cfg.IncludeImages && imageExtensions[ext] {
+				return nil
+			}
+			dir := filepath.Dir(rel)
+			dst := filepath.Join(mirror, sanitizeMirrorSegment(s.name))
+			for _, seg := range strings.Split(dir, "/") {
+				if seg != "" && seg != "." {
+					dst = filepath.Join(dst, sanitizeMirrorSegment(seg))
+				}
+			}
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				return nil
+			}
+			out, err := os.ReadFile(p)
+			if err == nil {
+				_ = os.WriteFile(filepath.Join(dst, d.Name()), out, 0o644)
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("mirror %s: %w", s.name, err)
+		}
+	}
+	return nil
+}
+
+// sanitizeMirrorName makes a note title safe as a file name: strips path
+// separators, controls and trims dot/space edges. Usage of the trailing
+// " [<id>]" suffix keeps names unique regardless of duplicates.
+func sanitizeMirrorName(name string) string {
+	repl := strings.NewReplacer(
+		"/", "-", "\\", "-", ":", "-", "\n", " ", "\r", " ", "\t", " ",
+	)
+	name = strings.TrimSpace(repl.Replace(name))
+	name = strings.Trim(name, ". ")
+	if len(name) > 120 {
+		name = name[:120]
+	}
+	return strings.TrimSpace(name)
+}
+
+func sanitizeMirrorSegment(seg string) string {
+	return sanitizeMirrorName(seg)
+}
+
+// writeGitignoreLocked writes the root .gitignore matching the current mode:
+// with ReadableNames, git only sees the .gitsync/ mirror; without it, the
+// whole home is committed except history snapshots (and images when excluded).
+// Caller must hold gs.mu.
+func (gs *GitSync) writeGitignoreLocked() error {
+	var lines []string
+	if gs.cfg.ReadableNames {
+		// Only the readable mirror is visible to git. vaults/, journal/ and
+		// the root-level vault note files (internal <id>.md layout) are
+		// hidden; .gitsync/ carries the human-readable names.
+		lines = []string{
+			"/vaults/", "/vaults/**",
+			"/journal/", "/journal/**",
+			"/.history/", "/.history/**",
+			"/vaults.json", "/collections.json", "/metadata.json", "/git.json",
+			"/*.md",
+		}
+		if !gs.cfg.IncludeImages {
+			lines = append(lines,
+				"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
+		}
+	} else {
+		lines = append(lines, "*/.history/", ".history/")
+		if !gs.cfg.IncludeImages {
+			lines = append(lines,
+				"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
+		}
+	}
+	content := strings.Join(lines, "\n") + "\n"
+	if cur, err := os.ReadFile(filepath.Join(gs.root, ".gitignore")); err != nil || string(cur) != content {
+		if err := os.WriteFile(filepath.Join(gs.root, ".gitignore"), []byte(content), 0o644); err != nil {
+			return fmt.Errorf("write .gitignore: %w", err)
+		}
+	}
+	return nil
+}
+
 // ensureRepo opens the repo if not yet loaded.
-func (gs *GitSync) ensureRepo() error {
-	if gs.repo != nil {
+func (gs *GitSync) ensureRepo() error {	if gs.repo != nil {
 		return nil
 	}
 	repo, err := git.PlainOpen(gs.root)
@@ -238,7 +479,10 @@ func (gs *GitSync) commitDebounced() {
 	gs.timer = time.AfterFunc(500*time.Millisecond, func() {
 		_ = gs.Commit("Auto-commit from Nexote")
 		if gs.cfg.AutoPush {
-			_ = gs.Push(context.Background(), GitCredentials{})
+			_ = gs.Push(context.Background(), GitCredentials{
+				Username: gs.cfg.Username,
+				Password: gs.cfg.Password,
+			})
 		}
 	})
 }
@@ -252,6 +496,11 @@ func (gs *GitSync) Commit(msg string) error {
 
 func (gs *GitSync) commitLocked(msg string) error {
 	if err := gs.ensureRepo(); err != nil {
+		return err
+	}
+	// Rebuild the readable mirror before staging so the committed tree
+	// always reflects the current vault contents.
+	if err := gs.writeMirrorLocked(); err != nil {
 		return err
 	}
 	wt, err := gs.repo.Worktree()
@@ -337,6 +586,13 @@ func (gs *GitSync) Push(ctx context.Context, creds GitCredentials) error {
 			Username: creds.Username,
 			Password: creds.Password,
 		}
+	} else if gs.cfg.Username != "" || gs.cfg.Password != "" {
+		// Fall back to the credentials stored in the config (git.json) so
+		// background auto-sync can authenticate without a UI roundtrip.
+		opts.Auth = &http.BasicAuth{
+			Username: gs.cfg.Username,
+			Password: gs.cfg.Password,
+		}
 	}
 	return gs.repo.PushContext(ctx, opts)
 }
@@ -370,6 +626,11 @@ func (gs *GitSync) Pull(ctx context.Context, creds GitCredentials) error {
 		opts.Auth = &http.BasicAuth{
 			Username: creds.Username,
 			Password: creds.Password,
+		}
+	} else if gs.cfg.Username != "" || gs.cfg.Password != "" {
+		opts.Auth = &http.BasicAuth{
+			Username: gs.cfg.Username,
+			Password: gs.cfg.Password,
 		}
 	}
 	return wt.PullContext(ctx, opts)

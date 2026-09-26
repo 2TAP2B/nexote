@@ -80,14 +80,12 @@ export default function MobileSettings({
   const [page, setPage] = useState<Page>("root");
   const [mounted, setMounted] = useState(false);
   const [newVaultName, setNewVaultName] = useState("");
-  const [newVaultIcon, setNewVaultIcon] = useState("Database");
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [newVaultIcon, setNewVaultIcon] = useState("Database");  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [aiTestState, setAiTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [aiTestMessage, setAiTestMessage] = useState("");
   const [gitBusy, setGitBusy] = useState(false);
   const [gitMsg, setGitMsg] = useState("");
-  const [gitCreds, setGitCreds] = useState({ username: "", password: "" });
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -253,8 +251,6 @@ export default function MobileSettings({
             gitStatus={gitStatus}
             busy={gitBusy}
             msg={gitMsg}
-            creds={gitCreds}
-            setCreds={setGitCreds}
             onSave={(cfg) => saveGitConfig(cfg)}
             onInit={() =>
               void runGit(async () => {
@@ -263,13 +259,13 @@ export default function MobileSettings({
             }
             onPush={() =>
               void runGit(
-                () => gitPush(gitCreds.username ? gitCreds : undefined),
+                () => gitPush(gitConfig?.username ? { username: gitConfig.username, password: gitConfig.password ?? "" } : undefined),
                 "Pushed.",
               )
             }
             onPull={() =>
               void runGit(
-                () => gitPull(gitCreds.username ? gitCreds : undefined),
+                () => gitPull(gitConfig?.username ? { username: gitConfig.username, password: gitConfig.password ?? "" } : undefined),
                 "Pulled.",
               )
             }
@@ -810,8 +806,6 @@ function SyncPage({
   gitStatus,
   busy,
   msg,
-  creds,
-  setCreds,
   onSave,
   onInit,
   onPush,
@@ -822,8 +816,6 @@ function SyncPage({
   gitStatus: GitStatusInfo | null;
   busy: boolean;
   msg: string;
-  creds: { username: string; password: string };
-  setCreds: (c: { username: string; password: string }) => void;
   onSave: (cfg: GitConfig) => Promise<void>;
   onInit: () => void;
   onPush: () => void;
@@ -932,22 +924,60 @@ function SyncPage({
             />
           </Group>
 
-          <Group label="Credentials (optional)">
+          <Group label="Credentials (stored on server)">
             <div className="px-3 py-2 text-xs" style={{ color: "var(--mob-muted)" }}>
-              Only needed for HTTPS remotes. SSH keys work without credentials.
+              Saved to git.json (0600) so timed auto-sync can authenticate.
             </div>
             <FieldInput
               label="Username"
-              value={creds.username}
-              onChange={(v) => setCreds({ ...creds, username: v })}
+              value={draft.username ?? ""}
+              onChange={(v) => void persist({ ...draft, username: v })}
               placeholder="Username / token name"
             />
             <Divider />
             <FieldInput
               label="Password / token"
-              value={creds.password}
-              onChange={(v) => setCreds({ ...creds, password: v })}
+              value={draft.password ?? ""}
+              onChange={(v) => void persist({ ...draft, password: v })}
               password
+            />
+          </Group>
+
+          <Group label="Auto-sync">
+            <div
+              className="flex items-center justify-between px-3 py-2.5"
+              style={{ minHeight: 52 }}
+            >
+              <span className="text-[15px]" style={{ color: "var(--mob-text)" }}>
+                Auto-sync every
+              </span>
+              <select
+                value={draft.autoSyncMinutes ?? 0}
+                onChange={async (e) => {
+                  const next = { ...draft, autoSyncMinutes: Number(e.target.value) };
+                  setDraft(next);
+                  await persist(next);
+                }}
+                className="rounded px-2 py-1.5 text-sm"
+                style={{ background: "var(--mob-card)", color: "var(--mob-text)" }}
+              >
+                <option value={0}>Off</option>
+                <option value={1}>1 min</option>
+                <option value={3}>3 min</option>
+                <option value={5}>5 min</option>
+                <option value={10}>10 min</option>
+              </select>
+            </div>
+            <Divider />
+            <ToggleRow
+              label="Readable file names"
+              desc="Commit real vault/folder/note names instead of internal ids"
+              checked={draft.readableNames ?? false}
+              onChange={async (v) => {
+                const next = { ...draft, readableNames: v };
+                setDraft(next);
+                await persist(next);
+              }}
             />
           </Group>
 

@@ -150,6 +150,13 @@ export type GitConfig = {
   authorEmail: string;
   includeImages: boolean;
   autoPush: boolean;
+  /** Commit+push every N minutes (0 = off). */
+  autoSyncMinutes?: number;
+  /** Credentials stored in git.json (0600) so background sync can auth. */
+  username?: string;
+  password?: string;
+  /** Commit a readable .gitsync/ mirror (real vault/folder/note names). */
+  readableNames?: boolean;
 };
 
 export type GitStatusInfo = {
