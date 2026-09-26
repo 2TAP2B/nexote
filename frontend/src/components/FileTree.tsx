@@ -966,7 +966,12 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   );
 
   // Drag and drop handlers.
-  const handleNoteDragStart = useCallback((id: string) => {
+  // Set the drag payload on dragstart — without `setData`, the browser can
+  // refuse to actually start a native drag (observed when the note editor
+  // has focus), leaving `dragNoteId` set but never delivering a drop.
+  const handleNoteDragStart = useCallback((e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
     setDragNoteId(id);
   }, []);
 
@@ -981,17 +986,23 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     [dragNoteId, moveNote],
   );
 
-  // Drop a dragged note into a different vault (moves it).
+  // Drop a dragged note into a different vault (moves it). Dropping onto the
+  // note's OWN vault section means "move back to the vault root" — a plain
+  // no-op before, which made dragging between folders and back unreachable.
   const handleVaultDrop = useCallback(
     (dstVaultId: string) => {
       if (dragNoteId && dragNoteId !== "") {
-        void moveNoteToVault(dragNoteId, dstVaultId);
+        if (noteVaultMap[dragNoteId] === dstVaultId) {
+          void moveNote(dragNoteId, "");
+        } else {
+          void moveNoteToVault(dragNoteId, dstVaultId);
+        }
       }
       setDragNoteId(null);
       setDragOverPath(null);
       setDragOverVaultId(null);
     },
-    [dragNoteId, moveNoteToVault],
+    [dragNoteId, noteVaultMap, moveNote, moveNoteToVault],
   );
 
   if (collapsed) {
@@ -1428,7 +1439,7 @@ type TreeChildProps = {
   isFolderOpen: (path: string) => boolean;
   setOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   sorted: boolean;
-  onNoteDragStart: (id: string) => void;
+  onNoteDragStart: (e: React.DragEvent, id: string) => void;
   onFolderDragOver: (path: string | null) => void;
   onFolderDrop: (path: string) => void;
   dragOverPath: string | null;
@@ -1530,6 +1541,10 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
           if (dragOverPath === node.path) onFolderDragOver(null);
         }}
         onDrop={(e) => {
+          // Consumes the drop so it cannot bubble to the vault section
+          // header, whose handler would revert a folder move back to the
+          // vault root (path "") right after this one applied the folder.
+          e.stopPropagation();
           e.preventDefault();
           onFolderDrop(node.path);
         }}
@@ -1780,7 +1795,7 @@ function NoteItem(
         // start and suppresses the click, so a note can't be opened — disable
         // it there.
         draggable={!isCoarsePointer}
-        onDragStart={() => onNoteDragStart(note.id)}
+        onDragStart={(e) => onNoteDragStart(e, note.id)}
         onMouseEnter={() => setTreeSelectedNav?.(`note:${note.id}`)}
         onClick={() => !isRenaming && onOpen(note.id)}
         onContextMenu={(e) => {

@@ -1079,24 +1079,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     async (id: string, path: string) => {
       if (!activeVaultId) return;
       try {
-        const cached = notesById[id];
-        await api.update(activeVaultId, id, {
-          title: cached?.title,
-          body: cached?.body,
-          path,
-        });
+        // Send ONLY the path. The backend persists title/body when the
+        // request omits them, so a move that races the editor's debounced
+        // save can neither overwrite a fresh draft with the cached body nor
+        // revert the path (previously the stale cached body was sent
+        // explicitly and could clobber recent edits).
+        await api.update(activeVaultId, id, { path });
         await refresh();
-        if (cached) {
-          setNotesById((prev) => ({
-            ...prev,
-            [id]: { ...cached, path },
-          }));
-        }
+        setNotesById((prev) => {
+          const cached = prev[id];
+          if (!cached) return prev;
+          return { ...prev, [id]: { ...cached, path } };
+        });
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to move note");
       }
     },
-    [notesById, activeVaultId, refresh],
+    [activeVaultId, refresh],
   );
 
   const refreshJournal = useCallback(async () => {
