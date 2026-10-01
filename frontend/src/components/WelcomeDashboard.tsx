@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowRight,
   Bookmark,
   CalendarDays,
   ChevronDown,
@@ -175,18 +174,8 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
   return (
     <main className="flex flex-1 items-start justify-center overflow-y-auto bg-background p-6 md:p-10">
       <div className="flex w-full max-w-3xl flex-col gap-8">
-        {/* Hero */}
-        <div className="flex flex-col items-center gap-2 pt-4 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: "var(--muted)" }}>
-            <FileText className="h-6 w-6 text-muted-foreground" />
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
-            Welcome to Nexote
-          </h1>
-        </div>
-
         {/* Row 1: Quick actions */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           <QuickAction icon={<FilePlus className="h-5 w-5" />} label="New note" hint="Ctrl+Shift+N" onClick={() => void create()} />
           <QuickAction icon={<CalendarDays className="h-5 w-5" />} label="Today" hint="Ctrl+D" onClick={() => void openDaily()} />
           <QuickAction icon={<Search className="h-5 w-5" />} label="Search" hint="Ctrl+P" onClick={openPalette} />
@@ -202,11 +191,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             onToggle={toggleShortcuts}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "shortcuts" }))}
           >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
               {(shortcutsOpen ? shortcutNotes : shortcutNotes.slice(0, 3)).map((n) => (
                 <NoteCard
                   key={n.id}
-                  icon={<Star className="h-4 w-4 shrink-0 text-muted-foreground/60" />}
+                  icon={<Star className="h-4 w-4 shrink-0" />}
                   title={n.title || "Untitled"}
                   subtitle={n.path || "No folder"}
                   time={formatRelative(n.updatedAt)}
@@ -226,11 +215,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             open={recentsOpen}
             onToggle={toggleRecents}
           >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {(recentsOpen ? recents : recents.slice(0, 3)).map((entry) => (
+            <div className="flex flex-col gap-1">
+              {(recentsOpen ? recents.slice(0, 10) : recents.slice(0, 3)).map((entry) => (
                 <NoteCard
                   key={`${entry.source}-${entry.id}`}
-                  icon={entry.source === "journal" ? <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground/60" /> : <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60" />}
+                  icon={entry.source === "journal" ? <CalendarDays className="h-4 w-4 shrink-0" /> : <FileText className="h-4 w-4 shrink-0" />}
                   title={entry.title || "Untitled"}
                   subtitle={entry.source === "journal" ? "Journal" : entry.path || "No folder"}
                   time={formatRelative(entry.updatedAt)}
@@ -240,7 +229,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             </div>
           </CollapsibleSection>
         ) : (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border px-6 py-8 text-center">
+          <div className="flex flex-col items-center gap-2 rounded-2xl px-6 py-8 text-center" style={{ background: "var(--card)" }}>
             <FileText className="h-6 w-6 text-muted-foreground" />
             <p className="text-sm font-medium text-foreground">No notes yet</p>
             <p className="text-xs text-muted-foreground">Create a note or open today's journal to get started.</p>
@@ -251,22 +240,17 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
         {pinned.length > 0 && (
           <div className="flex flex-col gap-2">
             <SectionHeading icon={<Disc3 className="h-4 w-4" />} title="Collections" />
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {pinned.map((c) => (
                 <button
                   key={c.id}
                   type="button"
                   onClick={() => setGalleryCollection(c)}
-                  className="group flex items-center gap-3 rounded-xl border border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+                  className="group flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl px-4 py-4 text-center transition-colors hover:bg-muted/50"
+                  style={{ background: "var(--card)" }}
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Disc3 className="h-5 w-5" />
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-sm font-medium text-foreground">{c.name}</span>
-                    <span className="mt-0.5 text-xs text-muted-foreground">Browse the {c.name.toLowerCase()} gallery</span>
-                  </div>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
+                  <Disc3 className="h-5 w-5 text-primary" />
+                  <span className="text-xs font-medium text-foreground">{c.name}</span>
                 </button>
               ))}
             </div>
@@ -277,16 +261,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
         <button
           type="button"
           onClick={() => setFormOpen(true)}
-          className="group flex items-center gap-3 rounded-xl border border-dashed border-border p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
+          className="group flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border px-4 py-4 text-center transition-colors hover:border-primary/40 hover:bg-muted/50"
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <FolderPlus className="h-5 w-5" />
-          </span>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="text-sm font-medium text-foreground">New collection</span>
-            <span className="mt-0.5 text-xs text-muted-foreground">Create a customizable collection</span>
-          </div>
-          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-primary" />
+          <FolderPlus className="h-5 w-5 text-primary" />
+          <span className="text-xs font-medium text-foreground">New collection</span>
+          <span className="text-[11px] text-muted-foreground">Create a customizable collection</span>
         </button>
 
         {/* Bookmarks */}
@@ -299,11 +278,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             onToggle={toggleBookmarks}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "bookmarks" }))}
           >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
               {(bookmarksOpen ? bookmarkNotes : bookmarkNotes.slice(0, 3)).map((n) => (
                 <NoteCard
                   key={n.id}
-                  icon={<Bookmark className="h-4 w-4 shrink-0 text-muted-foreground/60" />}
+                  icon={<Bookmark className="h-4 w-4 shrink-0" />}
                   title={n.title || "Untitled"}
                   subtitle={n.path || "No folder"}
                   time={formatRelative(n.updatedAt)}
@@ -324,11 +303,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             onToggle={toggleTasks}
             onViewAll={() => window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))}
           >
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1">
               {(tasksOpen ? openTasks : openTasks.slice(0, 3)).map((t) => (
                 <div
                   key={`${t.vaultId}-${t.noteId}-${t.line}`}
-                  className="flex items-center gap-3 rounded-lg px-2 py-1.5"
+                  className="flex min-h-[44px] items-center gap-3 rounded-lg px-2 py-1.5"
                 >
                   <button
                     type="button"
@@ -336,8 +315,8 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                       e.stopPropagation();
                       void toggleTaskItem(t.vaultId, t.noteId, t.line, !t.checked);
                     }}
-                    className="flex shrink-0 items-center justify-center rounded"
-                    style={{ width: 18, height: 18, border: `2px solid var(--primary)`, background: "transparent" }}
+                    className="flex shrink-0 items-center justify-center rounded-md"
+                    style={{ width: 20, height: 20, border: `2px solid var(--primary)`, background: "transparent" }}
                   />
                   <button type="button" onClick={() => openTaskNote(t)} className="flex min-w-0 flex-1 flex-col text-left">
                     <span className="truncate text-sm font-medium text-foreground">{t.text}</span>
@@ -365,7 +344,8 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                   key={t.name}
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: t.name }))}
-                  className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+                  style={{ background: "var(--card)" }}
                 >
                   <Hash size={13} className="text-primary" />
                   {t.name}
@@ -448,15 +428,15 @@ function CollapsibleSection({
 }) {
   return (
     <section
-      className="flex flex-col gap-2 rounded-xl p-4"
+      className="flex flex-col gap-2 rounded-2xl p-3"
       style={{
-        background: "color-mix(in oklab, var(--muted) 30%, transparent)",
+        background: "color-mix(in oklab, var(--card) 50%, transparent)",
       }}
     >
       <button type="button" onClick={onToggle} className="flex items-center gap-2">
-        <span className="text-muted-foreground">{icon}</span>
-        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
-        {count !== undefined && <span className="text-xs text-muted-foreground/60">{count}</span>}
+        <span className="text-primary">{icon}</span>
+        <h2 className="text-sm font-semibold tracking-wide text-foreground">{title}</h2>
+        {count !== undefined && <span className="text-xs text-muted-foreground">{count}</span>}
         <ChevronDown
           size={16}
           className="ml-auto text-muted-foreground transition-transform"
@@ -482,9 +462,9 @@ function CollapsibleSection({
 
 function SectionHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-muted-foreground">{icon}</span>
-      <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+    <div className="flex items-center gap-2 px-1 pt-1">
+      <span className="text-primary">{icon}</span>
+      <h2 className="text-sm font-semibold tracking-wide text-foreground">{title}</h2>
     </div>
   );
 }
@@ -506,14 +486,16 @@ function NoteCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/50"
+      className="group flex min-h-[48px] items-center gap-3 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-muted/50"
     >
-      {icon}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm text-foreground">{title}</span>
-        <span className="truncate text-xs text-muted-foreground/60">{subtitle}</span>
-      </div>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">{time}</span>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary">
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium text-foreground">{title}</span>
+        <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
+      </span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{time}</span>
     </button>
   );
 }
@@ -533,13 +515,14 @@ function QuickAction({
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col items-center gap-1.5 rounded-xl border border-border p-4 transition-colors hover:border-primary/40 hover:bg-muted/50"
+      className="group flex min-h-[88px] flex-col items-center justify-center gap-1.5 rounded-2xl p-4 transition-colors hover:bg-muted/50"
+      style={{ background: "var(--card)" }}
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground transition-colors group-hover:text-primary">
+      <span className="text-primary transition-transform group-hover:scale-105">
         {icon}
       </span>
       <span className="text-sm font-medium text-foreground">{label}</span>
-      <kbd className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{hint}</kbd>
+      <kbd className="rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">{hint}</kbd>
     </button>
   );
 }
