@@ -13,10 +13,10 @@ import {
   Settings,
   SlidersHorizontal,
   SquareStack,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
 
 type Props = {
@@ -64,21 +64,16 @@ export default function MobileBottomPill({
   const vv = useVisualViewport();
   const shown = visible && !vv.isKeyboardOpen;
 
-  // Hamburger menu state — positioned above the pill.
+  // Hamburger menu — rendered as a CommandPalette-style bottom sheet.
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
 
-  const openMenu = () => {
-    const r = menuBtnRef.current?.getBoundingClientRect();
-    if (r) {
-      setMenuPos({ x: r.right, y: r.top - 8 });
-      setMenuOpen(true);
-    }
-  };
+  const openMenu = () => setMenuOpen(true);
 
-  const menuItems: MenuItem[] = [
+  type SheetEntry = { label: string; icon: React.ReactNode; onClick: () => void; section?: "main" | "settings" };
+  const menuItems: SheetEntry[] = [
     {
+      section: "main",
       label: "Notes list",
       icon: <SquareStack className="h-4 w-4" />,
       onClick: () => {
@@ -87,6 +82,7 @@ export default function MobileBottomPill({
       },
     },
     {
+      section: "main",
       label: "Today's note",
       icon: <CalendarDays className="h-4 w-4" />,
       onClick: () => {
@@ -95,6 +91,7 @@ export default function MobileBottomPill({
       },
     },
     {
+      section: "main",
       label: "Command palette",
       icon: <SlidersHorizontal className="h-4 w-4" />,
       onClick: () => {
@@ -103,6 +100,7 @@ export default function MobileBottomPill({
       },
     },
     {
+      section: "main",
       label: "Table of contents",
       icon: <ListTree className="h-4 w-4" />,
       onClick: () => {
@@ -111,6 +109,7 @@ export default function MobileBottomPill({
       },
     },
     {
+      section: "main",
       label: "Toggle theme",
       icon: <Moon className="h-4 w-4" />,
       onClick: () => {
@@ -118,8 +117,8 @@ export default function MobileBottomPill({
         onToggleTheme();
       },
     },
-    { label: "", onClick: () => {}, separator: true },
     {
+      section: "settings",
       label: "Settings",
       icon: <Settings className="h-4 w-4" />,
       onClick: () => {
@@ -225,13 +224,76 @@ export default function MobileBottomPill({
         </div>
       </div>
 
-      {menuOpen && menuPos && (
-        <ContextMenu
-          x={menuPos.x}
-          y={menuPos.y}
-          items={menuItems}
-          onClose={() => setMenuOpen(false)}
-        />
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm"
+          style={{
+            paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+          }}
+          onClick={() => setMenuOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            className="flex w-full flex-col overflow-hidden rounded-2xl border-2 bg-background shadow-xl"
+            style={{ borderColor: "color-mix(in srgb, var(--primary) 55%, transparent)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header — mirrors the palette search-input row */}
+            <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+              <Menu className="shrink-0 text-muted-foreground" size={16} />
+              <span className="flex-1 text-sm text-foreground">Menu</span>
+              <button
+                type="button"
+                aria-label="Close menu"
+                title="Close"
+                onClick={() => setMenuOpen(false)}
+                className="flex shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
+                style={{ width: 36, height: 36, marginRight: -8 }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Items — palette row styling, grouped like palette kind headers */}
+            <ul className="max-h-[60vh] overflow-y-auto py-1">
+              {menuItems.map((item, i) => {
+                const prev = menuItems[i - 1];
+                const showHeader = !prev || prev.section !== item.section;
+                return (
+                  <li key={item.label}>
+                    {showHeader && (
+                      <div className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
+                        {item.section === "settings" ? "Settings" : "Actions"}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={item.onClick}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-foreground/80 transition-colors hover:bg-muted active:bg-primary/15 active:text-foreground"
+                    >
+                      {item.icon}
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Footer with hints — same as the palette footer */}
+            <div className="kbd-hints flex items-center gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground/70">
+              <span className="flex items-center gap-1">
+                <kbd className="rounded border border-border px-1 py-0.5">↵</kbd>
+                select
+              </span>
+              <span className="flex items-center gap-1">
+                <kbd className="rounded border border-border px-1 py-0.5">Esc</kbd>
+                close
+              </span>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
