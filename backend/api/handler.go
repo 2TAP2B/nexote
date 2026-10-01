@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +69,7 @@ func (h *Handler) Routes() http.Handler {
 
 	// Vault-scoped note routes
 	mux.HandleFunc("GET /api/vaults/{vaultId}/notes", h.listNotes)
+	mux.HandleFunc("GET /api/vaults/{vaultId}/search", h.searchVault)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes", h.createNote)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/copy", h.copyNote)
 	mux.HandleFunc("POST /api/vaults/{vaultId}/notes/move", h.moveNote)
@@ -130,6 +132,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/ai/test", h.aiTest)
 
 	// Git sync routes (vault-independent, operate on $NEXOTE_HOME root)
+	mux.HandleFunc("GET /api/search", h.searchGlobal)
 	mux.HandleFunc("GET /api/git/config", h.getGitConfig)
 	mux.HandleFunc("PUT /api/git/config", h.setGitConfig)
 	mux.HandleFunc("POST /api/git/init", h.gitInit)
@@ -395,6 +398,76 @@ func (h *Handler) listNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// SearchHit extends a note search result with which vault owns it.
+type SearchHit struct {
+	notes.SearchEntry
+	VaultID   string `json:"vaultId"`
+	VaultName string `json:"vaultName"`
+}
+
+func (h *Handler) searchVault(w http.ResponseWriter, r *http.Request) {
+	store, _, err := h.resolveStore(r)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	q := r.URL.Query().Get("q")
+hits, err := store.Search(q, 20)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": hits})
+}
+
+// searchGlobal runs q over every vault + the journal store and returns
+// ranked hits with vault attribution — used by the command palette.
+func (h *Handler) searchGlobal(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	all := []SearchHit{}
+	vaults, err := h.Registry.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, v := range vaults {
+		store, err := h.Registry.Store(v.ID)
+		if err != nil {
+			continue
+		}
+	hits, err := store.Search(q, 20)
+		if err != nil {
+			continue
+		}
+		for _, hit := range hits {
+			all = append(all, SearchHit{
+				SearchEntry: hit,
+				VaultID:     v.ID,
+				VaultName:   v.Name,
+			})
+		}
+	}
+	if h.JournalStore != nil {
+		if hits, err := h.JournalStore.Search(q, 10); err == nil {
+			for _, hit := range hits {
+				all = append(all, SearchHit{
+					SearchEntry: hit,
+					VaultID:     "journal",
+					VaultName:   "Journal",
+				})
+			}
+		}
+	}
+	// Title matches first, then most recently updated.
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Match != all[j].Match {
+			return all[i].Match == "title"
+		}
+		return all[i].UpdatedAt.After(all[j].UpdatedAt)
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"results": all})
 }
 
 func (h *Handler) createNote(w http.ResponseWriter, r *http.Request) {

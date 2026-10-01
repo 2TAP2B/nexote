@@ -17,12 +17,13 @@ import {
   Sparkles,
   Star,
   Sun,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
-import { isCollectionsVault } from "@/lib/api";
+import { api, isCollectionsVault, type SearchHit } from "@/lib/api";
 import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
 
 type CommandPaletteProps = {
@@ -40,13 +41,13 @@ type Command = {
 
 type Item =
   | { kind: "command"; cmd: Command }
-  | { kind: "note"; id: string; title: string; path?: string }
+  | { kind: "note"; id: string; title: string; path?: string; vaultId?: string; vaultName?: string; snippet?: string }
   | { kind: "create"; label: string; title: string }
   | { kind: "vault"; id: string; name: string }
   | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily, vaults, switchVault, activeVault, tagsByVault } = useNotes();
+  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, switchVault, activeVault, tagsByVault } = useNotes();
   const { theme, setTheme } = useTheme();
   // Track the visual viewport: when the touch keyboard opens (iOS keeps the
   // layout viewport full-height), the backdrop must shrink to end at the
@@ -72,6 +73,31 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, onClose]);
+
+  // Full-text search (title + content) across all vaults + journal, served
+  // by the backend. Debounced so each keystroke doesn't fire a request; the
+  // local title filter below still shows instant hits while this resolves.
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const hitsReqRef = useRef(0);
+  useEffect(() => {
+    if (!open) return;
+    const q = query.trim();
+    if (q.length < 2 || q.startsWith("#")) {
+      setHits([]);
+      hitsReqRef.current++;
+      return;
+    }
+    const req = ++hitsReqRef.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.search(q);
+        if (req === hitsReqRef.current && open) setHits(res.results ?? []);
+      } catch {
+        // search is best-effort; keep the local filter usable
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [open, query]);
 
   const commands = useMemo<Command[]>(
     () => [
@@ -246,17 +272,42 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
     }
 
-    // Then notes
-    const matched = q
-      ? notes.filter((n) => n.title.toLowerCase().includes(q))
-      : notes;
-    const sorted = [...matched].sort((a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt),
-    );
-    // If empty query, limit notes to 8 so commands are visible
-    const noteLimit = q ? Infinity : 8;
-    for (const n of sorted.slice(0, noteLimit)) {
-      result.push({ kind: "note", id: n.id, title: n.title, path: n.path });
+    // Then notes — merged from the instant local title filter and the
+    // backend full-text (title + content) hits, de-duplicated by vault:id.
+    const key = (vid: string | undefined, id: string) => `${vid ?? activeVault?.id ?? ""}:${id}`;
+    const seen = new Set<string>();
+    if (q) {
+      // Sorted by updatedAt desc locally (instant).
+      const localMatched = [...notes]
+        .filter((n) => n.title.toLowerCase().includes(q))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      for (const n of localMatched) {
+        const k = key(undefined, n.id);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        result.push({ kind: "note", id: n.id, title: n.title, path: n.path });
+      }
+      for (const h of hits) {
+        const k = key(h.vaultId === "journal" ? "" : h.vaultId, h.id);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        result.push({
+          kind: "note",
+          id: h.id,
+          title: h.title || "Untitled",
+          path: h.vaultName,
+          vaultId: h.vaultId,
+          snippet: h.snippet,
+        });
+      }
+    } else {
+      const sorted = [...notes].sort((a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt),
+      );
+      // If empty query, limit notes to 8 so commands are visible
+      for (const n of sorted.slice(0, 8)) {
+        result.push({ kind: "note", id: n.id, title: n.title, path: n.path });
+      }
     }
 
     // Create note action at the end if there's a query
@@ -283,7 +334,13 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         item.cmd.run();
         break;
       case "note":
-        void openTab(item.id);
+        if (item.vaultId === "journal") {
+          void openJournalNote(item.id);
+        } else if (item.vaultId && item.vaultId !== activeVault?.id) {
+          void openNoteInVault(item.vaultId, item.id);
+        } else {
+          void openTab(item.id);
+        }
         break;
       case "create":
         void create({ title: item.title });
@@ -356,9 +413,22 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
             placeholder="Type a command or search notes…"
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
+          <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground md:block">
             Esc
           </kbd>
+          {/* Always-visible close affordance — on touch devices there is no
+              Escape key, and the backdrop strips are too small to tap
+              reliably with the keyboard-open sheet layout. */}
+          <button
+            type="button"
+            aria-label="Close palette"
+            title="Close"
+            onClick={onClose}
+            className="flex shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
+            style={{ width: 36, height: 36, marginRight: -8 }}
+          >
+            <X size={18} />
+          </button>
         </div>
 
         {/* Results — full height sheet on mobile, capped box on desktop. */}
@@ -414,17 +484,26 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     {item.kind === "tag" && (
                       <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
                     )}
-                    <span className="truncate">
-                      {item.kind === "command"
-                        ? item.cmd.label
-                        : item.kind === "vault"
-                          ? item.name
-                          : item.kind === "note"
-                            ? item.title || "Untitled"
-                            : item.kind === "tag"
-                              ? `#${item.name}`
-                              : item.label}
-                    </span>
+                    {item.kind === "note" && item.snippet !== undefined && item.snippet !== "" ? (
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate">{item.title || "Untitled"}</span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {item.snippet}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="truncate">
+                        {item.kind === "command"
+                          ? item.cmd.label
+                          : item.kind === "vault"
+                            ? item.name
+                            : item.kind === "note"
+                              ? item.title || "Untitled"
+                              : item.kind === "tag"
+                                ? `#${item.name}`
+                                : item.label}
+                      </span>
+                    )}
                     {item.kind === "command" && item.cmd.hint && (
                       <kbd className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
                         {item.cmd.hint}

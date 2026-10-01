@@ -177,6 +177,18 @@ export type GitCommitLogEntry = {
   when: string;
 };
 
+export type SearchHit = {
+  id: string;
+  title: string;
+  path?: string;
+  updatedAt: string;
+  /** "title" or "content" */
+  match: string;
+  snippet?: string;
+  vaultId: string;
+  vaultName: string;
+};
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -265,6 +277,11 @@ export const api = {
   // --- Notes (vault-scoped) ---
   list: (vaultId: string) =>
     request<ListResult>(`${vaultBase(vaultId)}/notes`),
+  // Search: global over all vaults + journal (title & content; ranked).
+  search: (q: string) => {
+    const qs = new URLSearchParams({ q }).toString();
+    return request<{ results: SearchHit[] }>(`/api/search?${qs}`);
+  },
   get: (vaultId: string, id: string) =>
     request<Note>(`${vaultBase(vaultId)}/notes/${id}`),
   // Journal (vault-independent) — always available

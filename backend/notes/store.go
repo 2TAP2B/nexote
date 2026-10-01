@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1094,4 +1095,135 @@ func makeSnippet(body string, max int) string {
 		return text[:max] + "…"
 	}
 	return text
+}
+
+// SearchEntry is one result of a full-text Search: title matches carry no
+// snippet; content matches carry a trimmed body slice around the hit.
+type SearchEntry struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Path      string    `json:"path"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	// "title" or "content"
+	Match   string `json:"match"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+// Search returns up to limit notes whose title or content contains q
+// (case-insensitive). Title matches are ranked first, then by updatedAt.
+func (s *Store) Search(q string, limit int) ([]SearchEntry, error) {
+	ql := strings.ToLower(strings.TrimSpace(q))
+	if ql == "" {
+		return []SearchEntry{}, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	var results []SearchEntry
+	err := filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() != filepath.Base(s.Dir) && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		if len(results) >= limit {
+			return filepath.SkipAll
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil // unreadable stray file: skip
+		}
+		doc, err := Decode(data)
+		if err != nil {
+			return nil // not a valid note: skip
+		}
+		tl := strings.ToLower(doc.Meta.Title)
+		bl := strings.ToLower(doc.Body)
+		titleMatch := strings.Contains(tl, ql)
+		contentIdx := strings.Index(bl, ql)
+		if !titleMatch && contentIdx < 0 {
+			return nil
+		}
+		e := SearchEntry{
+			ID:        doc.Meta.ID,
+			Title:     doc.Meta.Title,
+			Path:      doc.Meta.Path,
+			UpdatedAt: doc.Meta.UpdatedAt,
+			Match:     "title",
+		}
+		if titleMatch {
+			// Content also matching is secondary information; only surface
+			// it (with a snippet) when the title does not already match.
+			results = append(results, e)
+			return nil
+		}
+		e.Match = "content"
+		e.Snippet = contentSnippet(doc.Body, contentIdx, ql, 120)
+		results = append(results, e)
+		return nil
+	})
+	if err != nil && err != filepath.SkipAll {
+		return results, fmt.Errorf("walk notes dir: %w", err)
+	}
+	// Title matches first, then most recently updated.
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Match != results[j].Match {
+			return results[i].Match == "title"
+		}
+		return results[i].UpdatedAt.After(results[j].UpdatedAt)
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+// contentSnippet builds a matched-context preview around the first hit
+// (assumed to be a byte offset in lower(body) projected back to original
+// body — adequate for the predominantly-latin case). Newlines collapse and
+// markdown is stripped per line.
+func contentSnippet(body string, idx int, q string, max int) string {
+	if idx < 0 || max <= 0 {
+		return ""
+	}
+	// Take a window in the lowercased body around the hit and project the
+	// same window onto the original body positions.
+	start := idx - max/3
+	if start < 0 {
+		start = 0
+	}
+	end := idx + len(q) + max
+	if end > len(body) {
+		end = len(body)
+	}
+	window := body[start:min(end, len(body))]
+	// Strip markdown per line (headers etc.), then collapse whitespace.
+	var parts []string
+	for _, line := range strings.Split(window, "\n") {
+		t := strings.TrimSpace(line)
+		t = regexp.MustCompile(`^#+\s*`).ReplaceAllString(t, "")
+		parts = append(parts, t)
+	}
+	window = strings.Join(parts, " ")
+	window = regexp.MustCompile(`\s+`).ReplaceAllString(window, " ")
+	window = strings.TrimSpace(window)
+	if start > 0 {
+		window = "…" + window
+	}
+	if end < len(body) {
+		window += "…"
+	}
+	r := regexp.MustCompile(`[*_` + "`" + `~]+`)
+	window = r.ReplaceAllString(window, "")
+	if len(window) > max {
+		window = window[:max]
+	}
+	return window
 }
