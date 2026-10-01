@@ -53,7 +53,20 @@ export default function MobileSidebar({
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
-  const { openDaily } = useNotes();
+  const { openDaily, settings } = useNotes();
+
+  // Honor the Features toggles: hidden views disappear from the switcher.
+  const visibleItems = RIBBON_ITEMS.filter(
+    (item) =>
+      (item.view !== "tags" || settings.showTagsSection) &&
+      (item.view !== "tasks" || settings.showTasksSection),
+  );
+
+  // If the persisted view is now hidden, fall back to the note tree.
+  useEffect(() => {
+    if (view === "tags" && !settings.showTagsSection) onSelectView("tree");
+    else if (view === "tasks" && !settings.showTasksSection) onSelectView("tree");
+  }, [view, settings.showTagsSection, settings.showTasksSection, onSelectView]);
 
   useEffect(() => {
     const el = fileTreeBox.current;
@@ -66,7 +79,7 @@ export default function MobileSidebar({
     return () => el.removeEventListener("click", onTapNote, true);
   }, [onClose]);
 
-  const activeLabel = RIBBON_ITEMS.find((r) => r.view === view)?.label ?? "Notes";
+  const activeLabel = visibleItems.find((r) => r.view === view)?.label ?? "Notes";
 
   const newNote = () => document.getElementById("nexote-new-note-btn")?.click();
   const newFolder = () => document.getElementById("nexote-new-folder-btn")?.click();
@@ -118,7 +131,7 @@ export default function MobileSidebar({
             borderBottom: "1px solid var(--mob-surface)",
           }}
         >
-          {RIBBON_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const active = view === item.view;
             return (
               <button

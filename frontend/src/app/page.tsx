@@ -78,6 +78,12 @@ function AppShell() {
       setSidebarView(saved as SidebarView);
     }
   }, []);
+  // Features toggles: if the persisted/active view is hidden, fall back to tree.
+  const { settings } = useNotes();
+  useEffect(() => {
+    if (sidebarView === "tags" && !settings.showTagsSection) setSidebarView("tree");
+    else if (sidebarView === "tasks" && !settings.showTasksSection) setSidebarView("tree");
+  }, [sidebarView, settings.showTagsSection, settings.showTasksSection]);
   const [tagSelection, setTagSelection] = useState<string | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);

@@ -321,7 +321,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, vaults, activeVault, tagsByVault, query]);
+  }, [commands, notes, vaults, activeVault, tagsByVault, query, settings]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));
