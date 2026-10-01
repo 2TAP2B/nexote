@@ -15,6 +15,7 @@ import {
   SquareStack,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 
 import { useVisualViewport } from "./useVirtualKeyboardInset";
@@ -65,8 +66,15 @@ export default function MobileBottomPill({
   const shown = visible && !vv.isKeyboardOpen;
 
   // Hamburger menu — rendered as a CommandPalette-style bottom sheet.
+  // Portalled into the mobile shell root: the pill lives inside the
+  // transform-panned .mob-pager track, which would break position:fixed.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setPortalTarget(document.querySelector<HTMLElement>(".mob-shell-root"));
+  }, []);
 
   const openMenu = () => setMenuOpen(true);
 
@@ -224,14 +232,16 @@ export default function MobileBottomPill({
         </div>
       </div>
 
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm"
-          style={{
-            paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
-          }}
-          onClick={() => setMenuOpen(false)}
-        >
+      {menuOpen &&
+        portalTarget &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm"
+            style={{
+              paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+            }}
+            onClick={() => setMenuOpen(false)}
+          >
           <div
             role="dialog"
             aria-modal="true"
@@ -293,7 +303,8 @@ export default function MobileBottomPill({
               </span>
             </div>
           </div>
-        </div>
+        </div>,
+        portalTarget
       )}
     </>
   );
