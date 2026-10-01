@@ -10,6 +10,7 @@ import AICommandPanel from "@/components/AICommandPanel";
 import CollectionItemHeader from "@/components/CollectionItemHeader";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
+import { editorFontStack } from "@/lib/editor-fonts";
 import type { Note } from "@/lib/api";
 import MobileDashboard from "./MobileDashboard";
 import MobileEditorToolbar from "./MobileEditorToolbar";
@@ -296,6 +297,7 @@ export default function MobileNoteView({
         style={
           {
             "--editor-font-size": `${settings.editorFontSize}px`,
+            "--editor-font-family": editorFontStack(settings.editorFontFamily) || undefined,
             height: kbdInset > 0 ? `calc(100% - ${kbdInset + 24}px)` : undefined,
           } as React.CSSProperties
         }

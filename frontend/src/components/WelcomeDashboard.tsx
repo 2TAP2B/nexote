@@ -81,6 +81,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
     tagsByVault,
     refreshTags,
     toggleTaskItem,
+    settings,
   } = useNotes();
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
@@ -294,7 +295,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
         )}
 
         {/* Todo */}
-        {openTasks.length > 0 && (
+        {settings.showTasksSection && openTasks.length > 0 && (
           <CollapsibleSection
             icon={<ListTodo className="h-4 w-4" />}
             title="Todo"
@@ -329,7 +330,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
         )}
 
         {/* Tags at the bottom */}
-        {allTags.length > 0 && (
+        {settings.showTagsSection && allTags.length > 0 && (
           <CollapsibleSection
             icon={<Hash className="h-4 w-4" />}
             title="Tags"

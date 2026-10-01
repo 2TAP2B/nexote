@@ -23,6 +23,15 @@ export type AppSettings = {
   aiBaseUrl: string;
   aiApiKey: string;
   aiModel: string;
+  // General — start-up behaviour
+  openDashboardOnStart: boolean;
+  startVaultId: string; // "" = last active vault
+  // Editor
+  editorFontFamily: string; // "" = default theme font
+  // Features — section visibility
+  showTagsSection: boolean;
+  showTasksSection: boolean;
+  showTagsOnPalette: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -33,6 +42,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiBaseUrl: "",
   aiApiKey: "",
   aiModel: "",
+  openDashboardOnStart: false,
+  startVaultId: "",
+  editorFontFamily: "",
+  showTagsSection: true,
+  showTasksSection: true,
+  showTagsOnPalette: true,
 };
 
 type NotesContextValue = {
@@ -299,6 +314,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Read-only mirror for callbacks that need fresh settings value without
+  // re-creating (e.g. the tab-restore logic below, which runs once).
+  const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch };
@@ -359,6 +381,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     try {
       const storedTabs = localStorage.getItem("nexote:open-tabs");
       const storedActive = localStorage.getItem("nexote:active-id");
+      // "Show dashboard at start-up": skip tab restore entirely — the shell
+      // boots with its single dashboard tab (initial state).
+      if (settingsRef.current.openDashboardOnStart) {
+        setRestoredTabs(true);
+        return;
+      }
       if (!storedTabs) {
         setRestoredTabs(true);
         return;
@@ -407,7 +435,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         // Never restore the system Collections vault as the active vault —
         // it is hidden from the tree, so a stale stored id would leave the
         // app focused on a vault with no visible section.
+        const startVault = settingsRef.current.startVaultId;
         const pick =
+          (startVault
+            ? list.find((v) => v.id === startVault && !isCollectionsVault(v))?.id
+            : undefined) ??
           list.find((v) => v.id === stored && !isCollectionsVault(v))?.id ??
           list.find((v) => !isCollectionsVault(v))?.id ??
           list[0]?.id ??

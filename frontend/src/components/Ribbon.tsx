@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import ThemeToggle from "./ThemeToggle";
+import { useNotes } from "@/lib/notes-context";
 
 export type SidebarView =
   | "tree"
@@ -40,6 +41,7 @@ export default function Ribbon({
   onCommandPalette,
   onOpenSettings,
 }: RibbonProps) {
+  const { settings } = useNotes();
   const icons: {
     icon: typeof FileStack;
     label: string;
@@ -50,8 +52,8 @@ export default function Ribbon({
     { icon: Clock, label: "Recent", view: "recent" },
     { icon: Star, label: "Shortcuts", view: "shortcuts" },
     { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
-    { icon: Hash, label: "Tags", view: "tags" },
-    { icon: ListTodo, label: "Tasks", view: "tasks" },
+    ...(settings.showTagsSection ? [{ icon: Hash, label: "Tags", view: "tags" as const }] : []),
+    ...(settings.showTasksSection ? [{ icon: ListTodo, label: "Tasks", view: "tasks" as const }] : []),
     { icon: Library, label: "Collections", view: "collections" },
     { icon: CalendarDays, label: "Daily notes", view: "journal", daily: true },
   ];

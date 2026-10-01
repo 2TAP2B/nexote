@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNotes } from "@/lib/notes-context";
 import { generateNoteTitle } from "@/lib/ai";
 import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
+import { editorFontStack } from "@/lib/editor-fonts";
 import ContextMenu from "@/components/ContextMenu";
 import AICommandPanel from "@/components/AICommandPanel";
 import CollectionItemHeader from "@/components/CollectionItemHeader";
@@ -533,7 +534,12 @@ export default function EditorPane({
             "nexote-editor-scroll min-h-0 flex-1 overflow-y-auto" +
             (activeNote?.type === "collection-item" ? " has-collection-header" : "")
           }
-          style={{ "--editor-font-size": `${settings.editorFontSize}px` } as React.CSSProperties}
+          style={
+            {
+              "--editor-font-size": `${settings.editorFontSize}px`,
+              "--editor-font-family": editorFontStack(settings.editorFontFamily) || undefined,
+            } as React.CSSProperties
+          }
         >
           {!rawMode && <CollectionItemHeader note={activeNote} />}
           {rawMode ? (

@@ -31,6 +31,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useNotes, formatTitle } from "@/lib/notes-context";
+import { EDITOR_FONTS } from "@/lib/editor-fonts";
 import { getIcon, ICON_OPTIONS as SHARED_ICON_OPTIONS } from "@/lib/icons";
 import { api } from "@/lib/api";
 import { isCollectionsVault } from "@/lib/api";
@@ -43,17 +44,20 @@ type Props = {
   onColorSchemeChange?: (scheme: string) => void;
 };
 
-type CategoryId = "appearance" | "vaults" | "editor" | "ai" | "sync" | "shortcuts" | "about";
+type CategoryId = "general" | "appearance" | "vaults" | "editor" | "features" | "ai" | "metadata" | "sync" | "shortcuts" | "about";
 
 const CATEGORIES: {
   id: CategoryId;
   label: string;
   icon: React.ReactNode;
 }[] = [
+  { id: "general", label: "General", icon: <Home className="h-4 w-4" /> },
   { id: "appearance", label: "Appearance", icon: <Palette className="h-4 w-4" /> },
   { id: "vaults", label: "Vaults", icon: <FolderPlus className="h-4 w-4" /> },
   { id: "editor", label: "Editor", icon: <PenLine className="h-4 w-4" /> },
+  { id: "features", label: "Features", icon: <Settings2 className="h-4 w-4" /> },
   { id: "ai", label: "AI", icon: <Zap className="h-4 w-4" /> },
+  { id: "metadata", label: "Metadata", icon: <Music className="h-4 w-4" /> },
   { id: "sync", label: "Sync", icon: <GitBranch className="h-4 w-4" /> },
   { id: "shortcuts", label: "Shortcuts", icon: <Keyboard className="h-4 w-4" /> },
   { id: "about", label: "About", icon: <Info className="h-4 w-4" /> },
@@ -108,11 +112,6 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
   // works), the change is persisted to the backend on blur. Re-synced from
   // the provider whenever the panel opens or the remote config changes.
   const [gitDraft, setGitDraft] = useState<GitConfig | null>(null);
-  // Metadata (Discogs) config draft — same draft pattern as the git config.
-  const [metadataDraft, setMetadataDraft] = useState<MetadataConfig>({ discogsToken: "" });
-  const [mdConfig, setMdConfig] = useState<MetadataConfig>({ discogsToken: "" });
-  const [mdTestState, setMdTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
-  const [mdTestMessage, setMdTestMessage] = useState("");
   const setDraftField = (patch: Partial<GitConfig>) => {
     setGitDraft((d) => (d ? { ...d, ...patch } : d));
   };
@@ -127,44 +126,6 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
     if (!open) return;
     void api.listCollections().then((res) => setCollections(res.collections ?? []));
   }, [open]);
-
-  // Load the metadata (Discogs) config when the panel opens.
-  useEffect(() => {
-    if (!open) return;
-    void api
-      .getMetadataConfig()
-      .then((cfg) => {
-        setMdConfig(cfg);
-        setMetadataDraft(cfg);
-      })
-      .catch(() => {});
-  }, [open]);
-
-  // Verify the Discogs token against the Discogs API (via a search probe).
-  const handleTestDiscogs = async () => {
-    setMdTestState("testing");
-    setMdTestMessage("");
-    try {
-      // Save the draft first so the backend probe uses the entered token.
-      await api.setMetadataConfig(metadataDraft);
-      setMdConfig(metadataDraft);
-      const res = await fetch(
-        "/api/metadata/discogs/search?q=test",
-        { cache: "no-store" },
-      );
-      if (res.ok) {
-        setMdTestState("ok");
-        setMdTestMessage("Token works");
-      } else {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setMdTestState("error");
-        setMdTestMessage(body?.error ?? `HTTP ${res.status}`);
-      }
-    } catch (err) {
-      setMdTestState("error");
-      setMdTestMessage(err instanceof Error ? err.message : "Test failed");
-    }
-  };
 
   useEffect(() => setMounted(true), []);
 
@@ -292,6 +253,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
 
           {/* Content pane */}
           <div className="nexote-settings-content min-w-0 flex-1 overflow-y-auto">
+            {activeCategory === "general" && <GeneralSection />}
             {activeCategory === "appearance" && (
               <AppearanceSection
                 theme={resolvedTheme}
@@ -538,8 +500,41 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                     className="mt-2 w-full accent-[var(--primary)]"
                   />
                 </div>
+
+                {/* Editor font family */}
+                <label className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="flex flex-col">
+                    <span className="text-sm text-foreground">Editor font family</span>
+                    <span className="text-xs text-muted-foreground">Typeface used in the note editor</span>
+                  </span>
+                  <select
+                    value={settings.editorFontFamily}
+                    onChange={(e) => updateSettings({ editorFontFamily: e.target.value })}
+                    className="shrink-0 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+                  >
+                    {EDITOR_FONTS.map((f) => (
+                      <option key={f.value} value={f.value}>{f.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {/* Default note title */}
+                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+                  <span className="text-sm text-foreground">Default note title</span>
+                  <span className="text-xs text-muted-foreground">
+                    Fallback title for new notes when the template is empty
+                  </span>
+                  <input
+                    value={settings.defaultTitle}
+                    onChange={(e) => updateSettings({ defaultTitle: e.target.value })}
+                    placeholder="Untitled"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                  />
+                </label>
               </div>
             )}
+
+            {activeCategory === "features" && <FeaturesSection />}
 
             {activeCategory === "ai" && (
               <div className="flex flex-col gap-3 p-4">
@@ -614,89 +609,10 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                     </span>
                   )}
                 </div>
-
-                {/* Metadata lookups (Discogs / Google Books) */}
-                <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-                  Keys for collection item lookups, stored server-side only.
-                  Free Discogs token: dev.discogs.com. Google Books works
-                  key-less but rate-limits hard (HTTP 429) — a free API key
-                  raises the quota: console.cloud.google.com → enable "Books
-                  API" → create an API key.
-                </div>
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">Discogs token</span>
-                  <span className="text-xs text-muted-foreground">
-                    e.g. aBc123XyZ… (personal access token)
-                  </span>
-                  <input
-                    type="password"
-                    value={metadataDraft.discogsToken}
-                    onChange={(e) =>
-                      setMetadataDraft((d) => ({ ...d, discogsToken: e.target.value }))
-                    }
-                    onBlur={() =>
-                      metadataDraft !== mdConfig &&
-                      void api
-                        .setMetadataConfig(metadataDraft)
-                        .then((cfg) => {
-                          setMdConfig(cfg);
-                          setMetadataDraft(cfg);
-                        })
-                        .catch(() => {})
-                    }
-                    placeholder="Personal access token"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">
-                    Google Books <span className="font-mono">API key</span>
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    optional — avoids "429 Too Many Requests" when searching
-                    books
-                  </span>
-                  <input
-                    type="password"
-                    value={metadataDraft.googleBooksKey ?? ""}
-                    onChange={(e) =>
-                      setMetadataDraft((d) => ({ ...d, googleBooksKey: e.target.value }))
-                    }
-                    onBlur={() =>
-                      metadataDraft !== mdConfig &&
-                      void api
-                        .setMetadataConfig(metadataDraft)
-                        .then((cfg) => {
-                          setMdConfig(cfg);
-                          setMetadataDraft(cfg);
-                        })
-                        .catch(() => {})
-                    }
-                    placeholder="AIza…"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                </label>
-                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleTestDiscogs()}
-                    disabled={mdTestState === "testing" || !metadataDraft.discogsToken.trim()}
-                    className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {mdTestState === "testing" ? "Testing…" : "Test token"}
-                  </button>
-                  {mdTestMessage && (
-                    <span
-                      className={`text-xs ${
-                        mdTestState === "ok" ? "text-green-500" : "text-red-500"
-                      }`}
-                    >
-                      {mdTestMessage}
-                    </span>
-                  )}
-                </div>
               </div>
             )}
+
+            {activeCategory === "metadata" && <MetadataSection />}
 
             {activeCategory === "shortcuts" && (
               <div className="flex flex-col gap-3 p-4">
@@ -1080,6 +996,235 @@ function SectionHeader({
     <div className="flex items-center gap-2">
       {icon}
       <h2 className="text-sm font-medium text-foreground">{title}</h2>
+    </div>
+  );
+}
+
+function GeneralSection() {
+  const { vaults, settings, updateSettings } = useNotes();
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <SectionHeader icon={<Home className="h-4 w-4" />} title="General" />
+
+      {/* Start-up dashboard */}
+      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="flex flex-col">
+          <span className="text-sm text-foreground">Open dashboard at start</span>
+          <span className="text-xs text-muted-foreground">
+            Start on the dashboard instead of restoring the last open notes
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={settings.openDashboardOnStart}
+          onChange={(e) => updateSettings({ openDashboardOnStart: e.target.checked })}
+          className="h-4 w-4 accent-[var(--primary)]"
+        />
+      </label>
+
+      {/* Start-up vault */}
+      <label className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="flex flex-col">
+          <span className="text-sm text-foreground">Start-up vault</span>
+          <span className="text-xs text-muted-foreground">
+            Pick a vault to always start in
+          </span>
+        </span>
+        <select
+          value={settings.startVaultId}
+          onChange={(e) => updateSettings({ startVaultId: e.target.value })}
+          className="shrink-0 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+        >
+          <option value="">Last active</option>
+          {vaults.filter((v) => !isCollectionsVault(v)).map((v) => (
+            <option key={v.id} value={v.id}>{v.name}</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function FeaturesSection() {
+  const { settings, updateSettings } = useNotes();
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Features" />
+
+      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="flex flex-col">
+          <span className="text-sm text-foreground">Tags sections</span>
+          <span className="text-xs text-muted-foreground">
+            Tags view in the sidebar and on the dashboard
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={settings.showTagsSection}
+          onChange={(e) => updateSettings({ showTagsSection: e.target.checked })}
+          className="h-4 w-4 accent-[var(--primary)]"
+        />
+      </label>
+
+      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="flex flex-col">
+          <span className="text-sm text-foreground">Todo sections</span>
+          <span className="text-xs text-muted-foreground">
+            Open-task list on the dashboard
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={settings.showTasksSection}
+          onChange={(e) => updateSettings({ showTasksSection: e.target.checked })}
+          className="h-4 w-4 accent-[var(--primary)]"
+        />
+      </label>
+
+      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="flex flex-col">
+          <span className="text-sm text-foreground">Tags in command palette</span>
+          <span className="text-xs text-muted-foreground">
+            Type # in the palette to search tags
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={settings.showTagsOnPalette}
+          onChange={(e) => updateSettings({ showTagsOnPalette: e.target.checked })}
+          className="h-4 w-4 accent-[var(--primary)]"
+        />
+      </label>
+
+      <div className="text-xs text-muted-foreground/70">
+        Note previews and metadata lines in the note list are coming in a later release.
+      </div>
+    </div>
+  );
+}
+
+function MetadataSection() {
+  const [metadataDraft, setMetadataDraft] = useState<MetadataConfig>({ discogsToken: "" });
+  const [mdConfig, setMdConfig] = useState<MetadataConfig>({ discogsToken: "" });
+  const [testState, setTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [testMessage, setTestMessage] = useState("");
+
+  useEffect(() => {
+    void api
+      .getMetadataConfig()
+      .then((cfg) => {
+        setMdConfig(cfg);
+        setMetadataDraft(cfg);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleTestDiscogs = async () => {
+    setTestState("testing");
+    setTestMessage("");
+    try {
+      // Save the draft first so the backend probe uses the entered token.
+      await api.setMetadataConfig(metadataDraft);
+      setMdConfig(metadataDraft);
+      const res = await fetch("/api/metadata/discogs/search?q=test", { cache: "no-store" });
+      if (res.ok) {
+        setTestState("ok");
+        setTestMessage("Token works");
+      } else {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setTestState("error");
+        setTestMessage(body?.error ?? `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      setTestState("error");
+      setTestMessage(err instanceof Error ? err.message : "Test failed");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <SectionHeader icon={<Music className="h-4 w-4" />} title="Metadata" />
+
+      <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+        Keys for collection item lookups, stored server-side only. Free Discogs
+        token: dev.discogs.com. Google Books works key-less but rate-limits
+        hard (HTTP 429) — a free API key raises the quota:
+        console.cloud.google.com → enable "Books API" → create an API key.
+      </div>
+
+      <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="text-sm text-foreground">Discogs token</span>
+        <span className="text-xs text-muted-foreground">
+          e.g. aBc123XyZ… (personal access token)
+        </span>
+        <input
+          type="password"
+          value={metadataDraft.discogsToken}
+          onChange={(e) =>
+            setMetadataDraft((d) => ({ ...d, discogsToken: e.target.value }))
+          }
+          onBlur={() =>
+            metadataDraft !== mdConfig &&
+            void api
+              .setMetadataConfig(metadataDraft)
+              .then((cfg) => {
+                setMdConfig(cfg);
+                setMetadataDraft(cfg);
+              })
+              .catch(() => {})
+          }
+          placeholder="Personal access token"
+          className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
+        <span className="text-sm text-foreground">
+          Google Books <span className="font-mono">API key</span>
+        </span>
+        <span className="text-xs text-muted-foreground">
+          optional — avoids "429 Too Many Requests" when searching books
+        </span>
+        <input
+          type="password"
+          value={metadataDraft.googleBooksKey ?? ""}
+          onChange={(e) =>
+            setMetadataDraft((d) => ({ ...d, googleBooksKey: e.target.value }))
+          }
+          onBlur={() =>
+            metadataDraft !== mdConfig &&
+            void api
+              .setMetadataConfig(metadataDraft)
+              .then((cfg) => {
+                setMdConfig(cfg);
+                setMetadataDraft(cfg);
+              })
+              .catch(() => {})
+          }
+          placeholder="AIza…"
+          className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+        />
+      </label>
+
+      <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+        <button
+          type="button"
+          onClick={() => void handleTestDiscogs()}
+          disabled={testState === "testing" || !metadataDraft.discogsToken.trim()}
+          className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {testState === "testing" ? "Testing…" : "Test token"}
+        </button>
+        {testMessage && (
+          <span
+            className={`text-xs ${
+              testState === "ok" ? "text-green-500" : "text-red-500"
+            }`}
+          >
+            {testMessage}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

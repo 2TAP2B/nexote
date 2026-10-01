@@ -47,7 +47,7 @@ type Item =
   | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, switchVault, activeVault, tagsByVault } = useNotes();
+  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, switchVault, activeVault, tagsByVault, settings } = useNotes();
   const { theme, setTheme } = useTheme();
   // Track the visual viewport: when the touch keyboard opens (iOS keeps the
   // layout viewport full-height), the backdrop must shrink to end at the
@@ -237,7 +237,8 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const result: Item[] = [];
 
     // Tag search: when query starts with #, only show matching tags.
-    if (q.startsWith("#")) {
+    // Disabled entirely when the tags feature toggle is off.
+    if (settings.showTagsOnPalette && q.startsWith("#")) {
       const tagQuery = q.slice(1);
       const allTags = new Map<string, number>();
       for (const v of vaults) {

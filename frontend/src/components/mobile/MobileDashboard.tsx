@@ -88,6 +88,7 @@ export default function MobileDashboard({
     tagsByVault,
     refreshTags,
     toggleTaskItem,
+    settings,
   } = useNotes();
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
@@ -304,7 +305,7 @@ export default function MobileDashboard({
       )}
 
       {/* Todo list */}
-      {openTasks.length > 0 && (
+      {settings.showTasksSection && openTasks.length > 0 && (
         <CollapsibleSection
           icon={<ListTodo size={16} />}
           title="Todo"
@@ -349,7 +350,7 @@ export default function MobileDashboard({
       )}
 
       {/* Tags at the bottom */}
-      {allTags.length > 0 && (
+      {settings.showTagsSection && allTags.length > 0 && (
         <CollapsibleSection
           icon={<Hash size={16} />}
           title="Tags"

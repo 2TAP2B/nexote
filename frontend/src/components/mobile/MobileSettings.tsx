@@ -17,6 +17,7 @@ import {
   PenLine,
   Plus,
   Shield,
+  SlidersHorizontal,
   Sun,
   Trash2,
   Zap,
@@ -25,6 +26,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { formatTitle, useNotes } from "@/lib/notes-context";
+import { EDITOR_FONTS } from "@/lib/editor-fonts";
 import { getIcon, ICON_OPTIONS as SHARED_ICON_OPTIONS } from "@/lib/icons";
 import { api, isCollectionsVault } from "@/lib/api";
 import type { CollectionMeta, GitConfig, GitStatusInfo, MetadataConfig } from "@/lib/api";
@@ -36,7 +38,7 @@ type Props = {
   onColorSchemeChange: (scheme: string) => void;
 };
 
-type Page = "root" | "appearance" | "vaults" | "editor" | "ai" | "sync" | "about";
+type Page = "root" | "general" | "appearance" | "vaults" | "editor" | "features" | "ai" | "metadata" | "sync" | "about";
 
 const SCHEMES = [
   { value: "default", label: "Default", swatch: "#7c3aed" },
@@ -155,10 +157,13 @@ export default function MobileSettings({
 
   const pageTitle: Record<Page, string> = {
     root: "Settings",
+    general: "General",
     appearance: "Appearance",
     vaults: "Vaults",
     editor: "Editor",
+    features: "Features",
     ai: "AI",
+    metadata: "Metadata",
     sync: "Git Sync",
     about: "About",
   };
@@ -203,6 +208,7 @@ export default function MobileSettings({
         {page === "root" && (
           <RootPage onNavigate={setPage} resolvedTheme={resolvedTheme} colorScheme={colorScheme} />
         )}
+        {page === "general" && <GeneralPage />}
         {page === "appearance" && (
           <AppearancePage
             resolvedTheme={resolvedTheme}
@@ -236,6 +242,7 @@ export default function MobileSettings({
             updateSettings={updateSettings}
           />
         )}
+        {page === "features" && <FeaturesPage />}
         {page === "ai" && (
           <AIPage
             settings={settings}
@@ -245,6 +252,7 @@ export default function MobileSettings({
             onTest={handleTestAI}
           />
         )}
+        {page === "metadata" && <MetadataPage />}
         {page === "sync" && (
           <SyncPage
             gitConfig={gitConfig}
@@ -292,13 +300,19 @@ function RootPage({
   const schemeLabel = SCHEMES.find((s) => s.value === (colorScheme ?? "default"))?.label ?? "Default";
   return (
     <Group label="General">
+      <NavRow icon={<Home size={18} />} label="General" onClick={() => onNavigate("general")} />
+      <Divider />
       <NavRow icon={<Palette size={18} />} label="Appearance" value={`${schemeLabel} · ${resolvedTheme}`} onClick={() => onNavigate("appearance")} />
       <Divider />
       <NavRow icon={<FolderPlus size={18} />} label="Vaults" onClick={() => onNavigate("vaults")} />
       <Divider />
       <NavRow icon={<PenLine size={18} />} label="Editor" onClick={() => onNavigate("editor")} />
       <Divider />
+      <NavRow icon={<SlidersHorizontal size={18} />} label="Features" onClick={() => onNavigate("features")} />
+      <Divider />
       <NavRow icon={<Zap size={18} />} label="AI" onClick={() => onNavigate("ai")} />
+      <Divider />
+      <NavRow icon={<Music size={18} />} label="Metadata lookup" onClick={() => onNavigate("metadata")} />
       <Divider />
       <NavRow icon={<GitBranch size={18} />} label="Git sync" onClick={() => onNavigate("sync")} />
       <Divider />
@@ -599,6 +613,15 @@ function EditorPage({
           </div>
         </div>
       </Group>
+      <Group label="Default note title">
+        <FieldInput
+          label="Default title"
+          hint="Used when the title template is empty"
+          value={settings.defaultTitle}
+          onChange={(v) => updateSettings({ defaultTitle: v })}
+          placeholder="Untitled"
+        />
+      </Group>
       <Group label="Typography">
         <div className="px-3 py-3">
           <div className="flex items-center justify-between">
@@ -616,7 +639,98 @@ function EditorPage({
             style={{ accentColor: "var(--mob-accent)" }}
           />
         </div>
+        <Divider />
+        <div
+          className="flex items-center justify-between gap-3 px-3"
+          style={{ minHeight: 52 }}
+        >
+          <span className="text-[15px]" style={{ color: "var(--mob-text)" }}>Editor font family</span>
+          <select
+            value={settings.editorFontFamily}
+            onChange={(e) => updateSettings({ editorFontFamily: e.target.value })}
+            className="rounded px-2 py-1.5 text-sm"
+            style={{ background: "var(--mob-card)", color: "var(--mob-text)" }}
+          >
+            {EDITOR_FONTS.map((f) => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
+        </div>
       </Group>
+    </>
+  );
+}
+
+// ── General page ──────────────────────────────────────────────────
+
+function GeneralPage() {
+  const { vaults, settings, updateSettings } = useNotes();
+  return (
+    <>
+      <Group label="Start-up">
+        <ToggleRow
+          label="Open dashboard at start"
+          desc="Start on the dashboard instead of restoring the last open notes"
+          checked={settings.openDashboardOnStart}
+          onChange={(v) => updateSettings({ openDashboardOnStart: v })}
+        />
+        <Divider />
+        <div
+          className="flex items-center justify-between gap-3 px-3"
+          style={{ minHeight: 56 }}
+        >
+          <div className="flex min-w-0 flex-col">
+            <span className="text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>Start-up vault</span>
+            <span className="text-xs" style={{ color: "var(--mob-muted)" }}>Pick a vault to always start in</span>
+          </div>
+          <select
+            value={settings.startVaultId}
+            onChange={(e) => updateSettings({ startVaultId: e.target.value })}
+            className="shrink-0 rounded px-2 py-1.5 text-sm"
+            style={{ background: "var(--mob-card)", color: "var(--mob-text)" }}
+          >
+            <option value="">Last active</option>
+            {vaults.filter((v) => !isCollectionsVault(v)).map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+        </div>
+      </Group>
+    </>
+  );
+}
+
+// ── Features page ─────────────────────────────────────────────────
+
+function FeaturesPage() {
+  const { settings, updateSettings } = useNotes();
+  return (
+    <>
+      <Group label="Sections">
+        <ToggleRow
+          label="Tags sections"
+          desc="Tags view in the sidebar and on the dashboard"
+          checked={settings.showTagsSection}
+          onChange={(v) => updateSettings({ showTagsSection: v })}
+        />
+        <Divider />
+        <ToggleRow
+          label="Todo sections"
+          desc="Open-task list on the dashboard"
+          checked={settings.showTasksSection}
+          onChange={(v) => updateSettings({ showTasksSection: v })}
+        />
+        <Divider />
+        <ToggleRow
+          label="Tags in command palette"
+          desc="Type # in the palette to search tags"
+          checked={settings.showTagsOnPalette}
+          onChange={(v) => updateSettings({ showTagsOnPalette: v })}
+        />
+      </Group>
+      <div className="px-4 pb-6 pt-3 text-xs" style={{ color: "var(--mob-muted)" }}>
+        Note previews and metadata lines in the note list are coming in a later release.
+      </div>
     </>
   );
 }
@@ -690,14 +804,13 @@ function AIPage({
           )}
         </div>
       </Group>
-      <DiscogsSection />
     </>
   );
 }
 
-// ── Discogs token (metadata lookups) ───────────────────────────────
+// ── Metadata page (Discogs / Books lookups) ────────────────────────
 
-function DiscogsSection() {
+function MetadataPage() {
   const [draft, setDraft] = useState<MetadataConfig>({ discogsToken: "" });
   const [saved, setSaved] = useState<MetadataConfig>({ discogsToken: "" });
   const [testState, setTestState] = useState<"idle" | "testing" | "ok" | "error">("idle");
