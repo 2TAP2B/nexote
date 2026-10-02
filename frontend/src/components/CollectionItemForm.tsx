@@ -7,6 +7,7 @@ import { api, isCollectionsVault } from "@/lib/api";
 import { cacheImage } from "@/lib/image-cache";
 import { useNotes } from "@/lib/notes-context";
 import type { CollectionMeta, MetadataSearchResult, NoteMeta } from "@/lib/api";
+import IsbnScanner from "./IsbnScanner";
 
 type Props = {
   open: boolean;
@@ -59,6 +60,10 @@ export default function CollectionItemForm({
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<MetadataSearchResult[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Camera-first: a NEW book item starts with the ISBN scanner; the manual
+  // form appears via the "Enter ISBN manually" link (or if the camera is
+  // unavailable — the scanner's error panel includes the same link).
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   // Apply a metadata result: title, mapped fields, and a cover preview from
   // the remote URL. Everything stays manually editable afterwards.
@@ -105,13 +110,15 @@ export default function CollectionItemForm({
       setCover(note.cover ?? "");
       setFieldValues(note.fields ?? {});
       setCoverPreview("");
+      setScannerOpen(false);
     } else {
       setTitle("");
       setCover("");
       setFieldValues({});
       setCoverPreview("");
+      setScannerOpen(lookupSource === "book");
     }
-  }, [open, note, collection.id]);
+  }, [open, note, collection.id, lookupSource]);
 
   useEffect(() => {
     if (!open) return;
@@ -207,8 +214,8 @@ export default function CollectionItemForm({
   const currentCover = coverPreview || cover;
 
   // Fetch metadata for the entered lookup key (Discogs release id or ISBN).
-  const runLookup = async () => {
-    const key = lookupValue.trim();
+  const runLookup = async (explicit?: string) => {
+    const key = (explicit ?? lookupValue).trim();
     if (!key || !lookupSource) return;
     setLookupLoading(true);
     setError(null);
@@ -279,7 +286,20 @@ export default function CollectionItemForm({
   };
 
   return (
-    <div
+    <>
+      {/* Camera-first ISBN scanner for NEW book items */}
+      {open && scannerOpen && lookupSource === "book" && !note && (
+        <IsbnScanner
+          onScan={(isbn) => {
+            setScannerOpen(false);
+            setLookupValue(isbn);
+            void runLookup(isbn);
+          }}
+          onManual={() => setScannerOpen(false)}
+          onClose={onClose}
+        />
+      )}
+      <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
@@ -525,6 +545,7 @@ export default function CollectionItemForm({
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

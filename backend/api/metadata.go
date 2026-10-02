@@ -308,10 +308,23 @@ func firstImage(images []struct {
 
 const googleBooksBase = "https://www.googleapis.com/books/v1/volumes"
 
+// normalizeISBN strips dashes/spaces and uppercases the check digit so
+// hand-typed (or scanned) ISBN-10/13 with separators resolve the same way
+// bare digits do.
+func normalizeISBN(s string) string {
+	s = strings.ToUpper(strings.Map(func(r rune) rune {
+		if r == '-' || r == ' ' {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s)))
+	return s
+}
+
 // bookLookup resolves a book by ISBN. Google Books first; if nothing is
-// found, Open Library is tried as a fallback.
+// found (or Google rate-limits), Open Library is tried as a fallback.
 func (h *Handler) bookLookup(w http.ResponseWriter, r *http.Request) {
-	isbn := strings.TrimSpace(r.URL.Query().Get("isbn"))
+	isbn := normalizeISBN(r.URL.Query().Get("isbn"))
 	if isbn == "" {
 		writeError(w, http.StatusBadRequest, errors.New("isbn is required"))
 		return
@@ -324,14 +337,25 @@ func (h *Handler) bookLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Open Library fallback.
+	// Open Library fallback — the books API first (full records with covers),
 	res, found, err = openLibraryLookup(r.Context(), isbn)
+	if err == nil && found {
+		writeJSON(w, http.StatusOK, res)
+		return
+	}
+	// …then Open Library's search index, which knows editions the books API
+	// above does not list (anything not imported with full data).
+	res, found, err = openLibrarySearchISBN(r.Context(), isbn)
+
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no book found for isbn"})
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"error": "no book found for isbn " + isbn,
+			"hint":  "Not in Google Books or Open Library. Check the ISBN, or configure a Google Books API key in Settings → Metadata for wider coverage.",
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -572,6 +596,24 @@ func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, 
 		Label:    publisher,
 		Pages:    strconv.Itoa(book.NumberPages),
 		CoverURL: cover,
+	}, true, nil
+}
+
+// openLibrarySearchISBN resolves an ISBN via Open Library's search index
+// (which knows editions the full-record books API does not list). It returns
+// a lightweight result (title/authors/year/cover) like the free-text search.
+func openLibrarySearchISBN(ctx context.Context, isbn string) (MetadataResult, bool, error) {
+	q := "isbn:" + isbn
+	results, err := openLibrarySearch(ctx, q)
+	if err != nil || len(results) == 0 {
+		return MetadataResult{}, false, err
+	}
+	hit := results[0]
+	return MetadataResult{
+		Source:     hit.Source,
+		ExternalID: isbn,
+		Title:      hit.Title,
+		CoverURL:   hit.CoverURL,
 	}, true, nil
 }
 
