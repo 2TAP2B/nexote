@@ -833,6 +833,13 @@ body {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
 }
+/* Horizontal swipes anywhere in the editor pan the pager; stop the browser
+ * from also treating them as overscroll back/forward navigation. (The iOS
+ * Safari screen-edge back gesture is system-level and unaffected.) */
+html:has(.mob-shell-root),
+html:has(.mob-shell-root) body {
+  overscroll-behavior-x: none;
+}
 .mob-shell-root[data-pager-focus="sidebar"] .mob-pager {
   transform: translateX(0);
 }

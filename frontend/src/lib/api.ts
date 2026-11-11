@@ -284,9 +284,10 @@ export const api = {
   },
   get: (vaultId: string, id: string) =>
     request<Note>(`${vaultBase(vaultId)}/notes/${id}`),
-  // Journal (vault-independent) — always available
-  journalDaily: () =>
-    request<Note>("/api/journal/daily"),
+  // Journal (vault-independent) — always available. Opens-or-creates the note
+  // for date (local YYYY-MM-DD), past and future days included.
+  journalDaily: (date: string) =>
+    request<Note>(`/api/journal/daily?${new URLSearchParams({ date })}`),
   journalList: () =>
     request<ListResult>("/api/journal/notes"),
   journalGet: (id: string) =>

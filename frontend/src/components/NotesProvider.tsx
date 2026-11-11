@@ -12,6 +12,7 @@ import {
 
 import { api, isCollectionsVault, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { offlinePrecache } from "@/lib/offline-db";
+import { localDateKey } from "@/lib/note-utils";
 
 type Draft = { title: string; body: string };
 
@@ -84,7 +85,8 @@ type NotesContextValue = {
   setFolderLabel: (vaultId: string, path: string, color: string) => Promise<void>;
   renameFolder: (oldPath: string, newPath: string) => Promise<void>;
   moveNote: (id: string, path: string) => Promise<void>;
-  openDaily: () => Promise<void>;
+  // Opens-or-creates the journal note for date (local YYYY-MM-DD; default today).
+  openDaily: (date?: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   removeJournal: (id: string) => Promise<void>;
   save: (id: string, input: Draft) => Promise<void>;
@@ -1309,9 +1311,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     void refreshTasks();
   }, [refreshTasks]);
 
-  const openDaily = useCallback(async () => {
+  const openDaily = useCallback(async (date?: string) => {
     try {
-      const note = await api.journalDaily();
+      const note = await api.journalDaily(date ?? localDateKey());
       journalIdsRef.current.add(note.id);
       setNotesById((prev) => ({ ...prev, [note.id]: note }));
       void refreshJournal();

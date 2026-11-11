@@ -46,7 +46,7 @@ import { createPortal } from "react-dom";
 import { useNotes } from "@/lib/notes-context";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
 import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
-import { replaceOrAddTitleHeading } from "@/lib/note-utils";
+import { localDateKey, makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
 
@@ -1085,7 +1085,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                 setActiveSource("journal");
                 void openJournalNote(id);
               }}
-              onOpenDaily={() => void openDaily()}
+              onOpenDaily={(date) => void openDaily(date)}
             />
           ) : view === "tags" ? (
             <TagsView
@@ -2080,33 +2080,6 @@ function formatTime(updatedAt: string) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// Build a preview snippet from the note body, skipping the first H1
-// heading (which is the title) and taking the next meaningful content.
-// Strips HTML tags, markdown markers, and image/link syntax.
-function makeSnippetAfterH1(body: string | undefined, max = 100) {
-  if (!body) return "";
-  const lines = body.split("\n");
-  let start = 0;
-  if (lines[0] && /^#\s+/.test(lines[0])) {
-    start = 1;
-  }
-  const rest = lines
-    .slice(start)
-    .map((l) =>
-      l
-        .replace(/<[^>]+>/g, " ")
-        .replace(/^#+\s*/, "")
-        .replace(/[*_`~]/g, "")
-        .replace(/\[(.+?)\]\(.+?\)/g, "$1")
-        .replace(/!\[.*?\]\(.*?\)/g, "")
-        .replace(/^\s*[-+*]\s+/, "")
-        .trim(),
-    )
-    .filter((l) => l.length > 0);
-  const text = rest.join(" ").replace(/\s+/g, " ").trim();
-  return text.length > max ? text.slice(0, max) + "…" : text;
-}
-
 // --- Detailed note list (time-bucketed with body previews) ---
 // Used by the Recent, Shortcuts, Bookmarks, and Daily sidebar views for a
 // richer overview than the flat NoteItem list. Notes are grouped by time
@@ -2178,7 +2151,7 @@ function DetailedNoteList({
               {items.map((n) => {
                 const active = n.id === activeId && activeSource === sourceTag;
                 const navSelected = treeSelectedNav === `note:${n.id}`;
-                const snippet = n.snippet ?? makeSnippetAfterH1(notesById[n.id]?.body);
+                const snippet = n.snippet ?? makeSnippet(notesById[n.id]?.body);
                 return (
                   <li key={n.id}>
                     <button
@@ -2619,7 +2592,7 @@ function TagsView({
           {matchingNotes.map((n) => {
             const active = n.id === activeId;
             const navSelected = treeSelectedNav === `note:${n.id}`;
-            const snippet = n.snippet ?? makeSnippetAfterH1(notesById[n.id]?.body);
+            const snippet = n.snippet ?? makeSnippet(notesById[n.id]?.body);
             return (
               <li key={`${n.vaultId}:${n.id}`}>
                 <button
@@ -2976,9 +2949,9 @@ function TasksView({
 }
 
 // --- Calendar / Journal view ---
-// A month grid where days with journal notes show a dot. Clicking a day that
-// has a note opens it; clicking today opens-or-creates the daily note. Below
-// the grid is a compact list of the selected month's notes.
+// A month grid where days with journal notes show a dot. Clicking a day opens
+// its note, creating it first when that day (past, today or future) has none.
+// Below the grid is a compact list of the selected month's notes.
 function CalendarView({
   journalNotes,
   activeId,
@@ -2988,9 +2961,9 @@ function CalendarView({
   journalNotes: { id: string; title: string; updatedAt: string }[];
   activeId: string | null;
   onOpenNote: (id: string) => void;
-  onOpenDaily: () => void;
+  onOpenDaily: (date?: string) => void;
 }) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localDateKey();
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
@@ -3032,11 +3005,8 @@ function CalendarView({
   const handleDayClick = (day: number) => {
     const dateStr = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const noteId = notesByDate[dateStr];
-    if (noteId) {
-      onOpenNote(noteId);
-    } else if (dateStr === todayStr) {
-      onOpenDaily();
-    }
+    if (noteId) onOpenNote(noteId);
+    else onOpenDaily(dateStr);
   };
 
   const cells: (number | null)[] = [];
@@ -3100,6 +3070,7 @@ function CalendarView({
               key={i}
               type="button"
               onClick={() => handleDayClick(day)}
+              title={hasNote ? undefined : `Create journal note for ${dateStr}`}
               className="relative flex h-8 items-center justify-center rounded-md transition-colors"
               style={{
                 fontSize: 13,
@@ -3131,7 +3102,7 @@ function CalendarView({
       <div className="mt-1.5 px-2">
         <button
           type="button"
-          onClick={onOpenDaily}
+          onClick={() => onOpenDaily()}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 transition-colors hover:bg-muted/50"
           style={{ fontSize: 12, fontWeight: 500, color: "var(--foreground)" }}
         >

@@ -631,20 +631,27 @@ func (s *Store) pruneEmptyDirs(dir string) {
 	}
 }
 
-// Daily opens-or-creates today's journal note under "Journal". The note is
-// named by date (YYYY-MM-DD) and titled "YYYY-MM-DD". If it already exists it
-// is returned as-is; otherwise it is created. The whole check-then-create runs
-// under the write mutex so two concurrent calls can never create two notes for
-// the same date.
-func (s *Store) Daily() (Document, error) {
+// ErrInvalidDate is returned by Daily for a date not in YYYY-MM-DD form.
+var ErrInvalidDate = errors.New("invalid date, want YYYY-MM-DD")
+
+// Daily opens-or-creates the journal note for date (YYYY-MM-DD; "" means
+// today in UTC) under "Journal". The note is titled by its date. If it already
+// exists it is returned as-is; otherwise it is created — past and future dates
+// included. The whole check-then-create runs under the write mutex so two
+// concurrent calls can never create two notes for the same date.
+func (s *Store) Daily(date string) (Document, error) {
+	now := time.Now().UTC()
+	if date == "" {
+		date = now.Format("2006-01-02")
+	} else if _, err := time.Parse("2006-01-02", date); err != nil {
+		return Document{}, ErrInvalidDate
+	}
+
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	defer s.afterWrite()
 
-	now := time.Now().UTC()
-	date := now.Format("2006-01-02")
 	folder := "Journal"
-
 	list, err := s.List()
 	if err != nil {
 		return Document{}, err
@@ -1059,44 +1066,6 @@ func sanitizePath(p string) string {
 	return p
 }
 
-// makeSnippet extracts a plain-text preview from a note body, skipping the
-// first heading line (which is the title) and stripping markdown syntax.
-// Returns at most max characters.
-func makeSnippet(body string, max int) string {
-	lines := strings.Split(body, "\n")
-	start := 0
-	if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[0]), "#") {
-		start = 1
-	}
-	var parts []string
-	for _, line := range lines[start:] {
-		// Skip empty lines and frontmatter markers.
-		t := strings.TrimSpace(line)
-		if t == "" || t == "---" {
-			continue
-		}
-		// Strip markdown: HTML tags, headers, emphasis, code, links, images, list markers.
-		t = regexp.MustCompile(`<[^>]+>`).ReplaceAllString(t, " ")
-		t = regexp.MustCompile(`^#+\s*`).ReplaceAllString(t, "")
-		t = regexp.MustCompile(`[*_` + "`" + `~]`).ReplaceAllString(t, "")
-		t = regexp.MustCompile(`!\[.*?\]\(.*?\)`).ReplaceAllString(t, "")
-		t = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`).ReplaceAllString(t, "$1")
-		t = regexp.MustCompile(`^\s*[-+*]\s+`).ReplaceAllString(t, "")
-		t = regexp.MustCompile(`^\s*\d+\.\s+`).ReplaceAllString(t, "")
-		t = strings.TrimSpace(t)
-		if t != "" {
-			parts = append(parts, t)
-		}
-	}
-	text := strings.Join(parts, " ")
-	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
-	text = strings.TrimSpace(text)
-	if len(text) > max {
-		return text[:max] + "…"
-	}
-	return text
-}
-
 // SearchEntry is one result of a full-text Search: title matches carry no
 // snippet; content matches carry a trimmed body slice around the hit.
 type SearchEntry struct {
@@ -1183,47 +1152,4 @@ func (s *Store) Search(q string, limit int) ([]SearchEntry, error) {
 		results = results[:limit]
 	}
 	return results, nil
-}
-
-// contentSnippet builds a matched-context preview around the first hit
-// (assumed to be a byte offset in lower(body) projected back to original
-// body — adequate for the predominantly-latin case). Newlines collapse and
-// markdown is stripped per line.
-func contentSnippet(body string, idx int, q string, max int) string {
-	if idx < 0 || max <= 0 {
-		return ""
-	}
-	// Take a window in the lowercased body around the hit and project the
-	// same window onto the original body positions.
-	start := idx - max/3
-	if start < 0 {
-		start = 0
-	}
-	end := idx + len(q) + max
-	if end > len(body) {
-		end = len(body)
-	}
-	window := body[start:min(end, len(body))]
-	// Strip markdown per line (headers etc.), then collapse whitespace.
-	var parts []string
-	for _, line := range strings.Split(window, "\n") {
-		t := strings.TrimSpace(line)
-		t = regexp.MustCompile(`^#+\s*`).ReplaceAllString(t, "")
-		parts = append(parts, t)
-	}
-	window = strings.Join(parts, " ")
-	window = regexp.MustCompile(`\s+`).ReplaceAllString(window, " ")
-	window = strings.TrimSpace(window)
-	if start > 0 {
-		window = "…" + window
-	}
-	if end < len(body) {
-		window += "…"
-	}
-	r := regexp.MustCompile(`[*_` + "`" + `~]+`)
-	window = r.ReplaceAllString(window, "")
-	if len(window) > max {
-		window = window[:max]
-	}
-	return window
 }

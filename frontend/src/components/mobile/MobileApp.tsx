@@ -240,8 +240,9 @@ export default function MobileApp() {
     [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
   );
 
-  // Swipe to pan between the sidebar / editor / contents panes.
-  useSwipeSidebar({ focus: pagerFocus, onFocus: setPagerFocus });
+  // Swipe to pan between the sidebar / editor / contents panes — from the
+  // pill or anywhere in the editor pane.
+  useSwipeSidebar({ focus: pagerFocus, onFocus: setPagerFocus, swipeFromContent: true });
 
   // Keep the body background in sync with the mobile shell (so the safe-area
   // / overscroll areas match). Uses the CSS variable so it follows the active

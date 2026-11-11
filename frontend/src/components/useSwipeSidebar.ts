@@ -12,6 +12,8 @@ const PANE_INDEX: Record<PagerFocus, number> = { sidebar: 0, editor: 1, toc: 2 }
 type SwipeHandlers = {
   focus: PagerFocus;
   onFocus: (pane: PagerFocus) => void;
+  // Also start a swipe anywhere inside the editor pane, not only on the pill.
+  swipeFromContent?: boolean;
 };
 
 const THRESHOLD = 60;
@@ -32,13 +34,17 @@ const VERTICAL_LIMIT = 1.5;
 // Open:  drag right on the bottom navigation pill → the track follows the
 //        finger, pulling the sidebar pane into focus.
 // Open:  drag left on the pill (from the editor) → pulls the TOC pane in.
+// Open:  with swipeFromContent, the same drags work anywhere inside the
+//        pager track (editor text included), except on form fields,
+//        [data-no-swipe] elements, horizontally scrollable content (code
+//        blocks, tables, toolbars) and while text is selected.
 // Close: when a side pane is focused, drag toward the editor anywhere on it
 //        (left on the sidebar, right on the TOC) → the track slides back.
 //
 // Drags write the transform straight to the DOM (transitions disabled); on
 // release the inline style is cleared so the CSS rule + transition snap to
 // whichever pane won. React owns the final position via data-pager-focus.
-export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
+export function useSwipeSidebar({ focus, onFocus, swipeFromContent = false }: SwipeHandlers) {
   const handlers = useRef({ focus, onFocus });
   handlers.current = { focus, onFocus };
   const state = useRef({
@@ -129,10 +135,20 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
           Math.abs(vx) > FLICK_VELOCITY ? FLICK_THRESHOLD : THRESHOLD;
 
         const fi = PANE_INDEX[h.focus];
-        if (dx < -threshold && fi < PANE_COUNT - 1) {
-          h.onFocus(PANES[fi + 1]);
-        } else if (dx > threshold && fi > 0) {
-          h.onFocus(PANES[fi - 1]);
+        const next =
+          dx < -threshold && fi < PANE_COUNT - 1
+            ? PANES[fi + 1]
+            : dx > threshold && fi > 0
+              ? PANES[fi - 1]
+              : null;
+        if (next) {
+          // Leaving the editor mid-typing: drop focus so the on-screen
+          // keyboard closes instead of covering the side pane.
+          const active = document.activeElement;
+          if (h.focus === "editor" && active instanceof HTMLElement && track?.contains(active)) {
+            active.blur();
+          }
+          h.onFocus(next);
         }
       }
 
@@ -150,14 +166,34 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
       }
     };
 
-    // The pill starts an open/close swipe from the editor in either direction.
-    // A document-level drag only initiates while a side pane is focused (so
-    // it can slide back to the editor), matching the old close-on-sidebar
-    // behavior and extending it to the TOC pane.
+    // Whether a touch at target may begin a pager drag from the editor pane:
+    // anything that needs horizontal touch input of its own keeps it. The
+    // vertical note scroller computes overflow-x:auto too (overflow-y-auto
+    // forces it), so only elements that overflow horizontally but not
+    // vertically count as horizontal scrollers (code blocks, tables, chips).
+    const canSwipeFromContent = (target: EventTarget | null): boolean => {
+      const track = getTrack();
+      if (!(target instanceof Element) || !track?.contains(target)) return false;
+      if (target.closest("input, textarea, select, [data-no-swipe]")) return false;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return false;
+      for (let el: Element | null = target; el && el !== track; el = el.parentElement) {
+        if (el.scrollWidth > el.clientWidth + 1 && el.scrollHeight <= el.clientHeight + 1) {
+          const ox = getComputedStyle(el).overflowX;
+          if (ox === "auto" || ox === "scroll") return false;
+        }
+      }
+      return true;
+    };
+
+    // The pill starts an open/close swipe from the editor in either direction
+    // (and, with swipeFromContent, so does the rest of the editor pane). A
+    // document-level drag otherwise only initiates while a side pane is
+    // focused, so it can slide back to the editor.
     const onPillDown = (e: PointerEvent) => onStart(e);
     const onDocDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
-      if (handlers.current.focus === "editor") return;
+      if (handlers.current.focus === "editor" && !(swipeFromContent && canSwipeFromContent(e.target))) return;
       onStart(e);
     };
 
@@ -177,5 +213,5 @@ export function useSwipeSidebar({ focus, onFocus }: SwipeHandlers) {
       document.removeEventListener("pointercancel", finishDrag);
       document.removeEventListener("click", onCaptureClick, true);
     };
-  }, []);
+  }, [swipeFromContent]);
 }

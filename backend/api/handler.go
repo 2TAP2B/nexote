@@ -1030,7 +1030,13 @@ func (h *Handler) journalDaily(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
 		return
 	}
-	doc, err := h.JournalStore.Daily()
+	// Optional ?date=YYYY-MM-DD opens-or-creates that day's note; the client
+	// sends its local date so "today" follows the user's timezone.
+	doc, err := h.JournalStore.Daily(r.URL.Query().Get("date"))
+	if errors.Is(err, notes.ErrInvalidDate) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

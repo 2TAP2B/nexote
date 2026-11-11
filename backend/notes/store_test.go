@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -248,7 +249,7 @@ func TestSanitizePath(t *testing.T) {
 
 func TestDailyCreatesAndReuses(t *testing.T) {
 	s := newTestStore(t)
-	d1, err := s.Daily()
+	d1, err := s.Daily("")
 	if err != nil {
 		t.Fatalf("Daily: %v", err)
 	}
@@ -259,12 +260,36 @@ func TestDailyCreatesAndReuses(t *testing.T) {
 		t.Fatal("daily body should be seeded")
 	}
 	// Second call returns the same note (not a new one).
-	d2, err := s.Daily()
+	d2, err := s.Daily("")
 	if err != nil {
 		t.Fatalf("Daily 2: %v", err)
 	}
 	if d2.Meta.ID != d1.Meta.ID {
 		t.Fatalf("Daily created a second note: %q vs %q", d1.Meta.ID, d2.Meta.ID)
+	}
+}
+
+func TestDailyForExplicitDate(t *testing.T) {
+	s := newTestStore(t)
+	past, err := s.Daily("2020-02-29")
+	if err != nil {
+		t.Fatalf("Daily past: %v", err)
+	}
+	if past.Meta.Title != "2020-02-29" || past.Meta.Path != "Journal" {
+		t.Fatalf("got title %q path %q", past.Meta.Title, past.Meta.Path)
+	}
+	future, err := s.Daily("2999-12-31")
+	if err != nil || future.Meta.ID == past.Meta.ID {
+		t.Fatalf("Daily future: %v (id %q)", err, future.Meta.ID)
+	}
+	again, err := s.Daily("2020-02-29")
+	if err != nil || again.Meta.ID != past.Meta.ID {
+		t.Fatalf("Daily reuse: %v, %q vs %q", err, again.Meta.ID, past.Meta.ID)
+	}
+	for _, bad := range []string{"2020-02-30", "20200229", "../etc", "2020-1-1"} {
+		if _, err := s.Daily(bad); !errors.Is(err, ErrInvalidDate) {
+			t.Errorf("Daily(%q) err = %v, want ErrInvalidDate", bad, err)
+		}
 	}
 }
 

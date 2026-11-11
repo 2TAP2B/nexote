@@ -50,6 +50,7 @@ touches**. Do not re-read the whole repo per session.
 | `notes/vaults.go` | `VaultMeta` + `VaultRegistry` (`vaults.json`, ensures default "Default" vault). |
 | `notes/collections.go` | `CollectionMeta`/`CollectionField`/`CollectionFieldType` + `CollectionRegistry`. |
 | `notes/history.go` | Per-note full snapshots under `<store>/.history/<noteId>/<unix-ms>.md`. |
+| `notes/snippet.go` | Plain-text note previews (`makeSnippet`, `contentSnippet`) for lists/history/search. Mirrored by `makeSnippet` in `src/lib/note-utils.ts` — keep both in sync. |
 | `notes/images.go` | Image upload/list/read/delete + cross-folder & cross-vault migration on note move. Traversal-guarded. |
 | `notes/bookmarks.go` | `idList` (order-preserving ID set) backing `Bookmarks` and `Shortcuts`. |
 | `api/events.go` | SSE hub (`NoteEvent`) — real-time note-change broadcast. |
@@ -64,7 +65,7 @@ touches**. Do not re-read the whole repo per session.
 | `src/components/MilkdownEditor.tsx` | The editor (Milkdown Crepe). |
 | `src/components/{FileTree,EditorPane,Ribbon,TopBar}.tsx` | Desktop shell panes. |
 | `src/components/{CollectionGallery,VinylGallery,NoteHistoryPanel,AICommandPanel,SettingsPanel,CommandPalette}.tsx` | Feature panels. |
-| `src/lib/ai.ts` / `note-utils.ts` | AI client (streams via `/api/ai/chat`) + note helpers. |
+| `src/lib/ai.ts` / `note-utils.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview). |
 | `src/app/page.tsx` · `layout.tsx` | Desktop shell composition. |
 | `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`). |
 
