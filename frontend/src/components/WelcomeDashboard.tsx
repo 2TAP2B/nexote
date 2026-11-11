@@ -4,12 +4,9 @@ import {
   Bookmark,
   CalendarDays,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Database,
   FilePlus,
   FileText,
-  FolderOpen,
   FolderPlus,
   Hash,
   History,
@@ -25,9 +22,9 @@ import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { getIcon } from "@/lib/icons";
 import { useNotes } from "@/lib/notes-context";
-import { localDateKey } from "@/lib/note-utils";
 import CollectionFormDialog from "./CollectionFormDialog";
 import CollectionGallery from "./CollectionGallery";
+import JournalCalendar from "./JournalCalendar";
 import type { SidebarView } from "./Ribbon";
 
 function formatRelative(iso: string): string {
@@ -171,26 +168,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
       .map(([name, count]) => ({ name, count }));
   }, [tagsByVault]);
 
-  // Journal entry per local day and edit counts per day for the calendar heat
-  // shading. Journal notes are titled by their day (YYYY-MM-DD), which also
-  // covers notes created ahead of / after the fact; others fall back to
-  // their creation day.
-  const journalByDay = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const j of [...journalNotes].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))) {
-      map.set(/^\d{4}-\d{2}-\d{2}$/.test(j.title) ? j.title : localDateKey(new Date(j.createdAt)), j.id);
-    }
-    return map;
-  }, [journalNotes]);
-  const activityByDay = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const n of recents) {
-      const k = localDateKey(new Date(n.updatedAt));
-      map.set(k, (map.get(k) ?? 0) + 1);
-    }
-    return map;
-  }, [recents]);
-
   const pinned = collections.filter((c) => c.pinned && !c.hidden);
   const reloadCollections = () =>
     void api.listCollections().then((res) => setCollections(res.collections ?? []));
@@ -234,11 +211,10 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             <span className="flex-1">Search notes, run commands…</span>
             <Kbd>Ctrl P</Kbd>
           </button>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <QuickAction icon={<FilePlus className="h-4 w-4" />} label="New note" hint="Ctrl Shift N" onClick={() => void create()} />
             <QuickAction icon={<CalendarDays className="h-4 w-4" />} label="Today's journal" hint="Ctrl D" onClick={() => void openDaily()} />
             <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={() => setFormOpen(true)} />
-            <QuickAction icon={<FolderOpen className="h-4 w-4" />} label="Browse files" onClick={() => selectView("tree")} />
           </div>
         </header>
 
@@ -314,15 +290,10 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
 
           {/* Side column */}
           <aside className="flex min-w-0 flex-col gap-4">
-            {now && (
-              <MiniCalendar
-                today={now}
-                journalByDay={journalByDay}
-                activityByDay={activityByDay}
-                onOpenDay={(date) => void openDaily(date)}
-                onOpenJournal={(id) => void openJournalNote(id)}
-              />
-            )}
+            <JournalCalendar
+              onOpenDay={(date) => void openDaily(date)}
+              onOpenJournal={(id) => void openJournalNote(id)}
+            />
 
             {shortcutNotes.length > 0 && (
               <Panel
@@ -603,91 +574,5 @@ function ListRow({ title, meta, onClick }: { title: string; meta: string; onClic
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">{title}</span>
       <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{meta}</span>
     </button>
-  );
-}
-
-const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-
-// Month view: days with a journal entry carry a dot and open it; any other
-// day (past or future) creates its journal note; shading reflects how many
-// notes were last edited that day.
-function MiniCalendar({
-  today,
-  journalByDay,
-  activityByDay,
-  onOpenDay,
-  onOpenJournal,
-}: {
-  today: Date;
-  journalByDay: Map<string, string>;
-  activityByDay: Map<string, number>;
-  onOpenDay: (date: string) => void;
-  onOpenJournal: (id: string) => void;
-}) {
-  const [offset, setOffset] = useState(0);
-  const month = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-  const lead = (month.getDay() + 6) % 7; // Monday-first
-  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  const todayKey = localDateKey(today);
-  const cells: (Date | null)[] = [
-    ...Array.from({ length: lead }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) => new Date(month.getFullYear(), month.getMonth(), i + 1)),
-  ];
-
-  return (
-    <section className="flex flex-col gap-2 rounded-2xl border border-border bg-muted/30 p-3">
-      <div className="flex items-center gap-2 px-1">
-        <CalendarDays className="h-4 w-4 text-primary" />
-        <h2 className="flex-1 text-sm font-semibold text-foreground">
-          {month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-        </h2>
-        <button type="button" aria-label="Previous month" onClick={() => setOffset((o) => o - 1)} className="rounded-md p-1 text-muted-foreground hover:bg-background/60 hover:text-foreground">
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        {offset !== 0 && (
-          <button type="button" onClick={() => setOffset(0)} className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-primary hover:bg-background/60">
-            Today
-          </button>
-        )}
-        <button type="button" aria-label="Next month" onClick={() => setOffset((o) => o + 1)} className="rounded-md p-1 text-muted-foreground hover:bg-background/60 hover:text-foreground">
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-0.5 text-center">
-        {WEEKDAYS.map((d) => (
-          <span key={d} className="py-1 text-[10px] font-medium uppercase text-muted-foreground/70">{d}</span>
-        ))}
-        {cells.map((d, i) => {
-          if (!d) return <span key={`pad-${i}`} />;
-          const key = localDateKey(d);
-          const journalId = journalByDay.get(key);
-          const isToday = key === todayKey;
-          const activity = activityByDay.get(key) ?? 0;
-          const shade = activity === 0 ? undefined : `color-mix(in oklab, var(--primary) ${Math.min(10 + activity * 8, 42)}%, transparent)`;
-          const edited = activity ? ` · ${activity} note${activity > 1 ? "s" : ""} edited` : "";
-          return (
-            <button
-              key={key}
-              type="button"
-              title={journalId ? `Open journal ${key}${edited}` : `Create journal note for ${key}${edited}`}
-              onClick={() => (journalId ? onOpenJournal(journalId) : onOpenDay(key))}
-              className={`relative flex aspect-square items-center justify-center rounded-md text-xs tabular-nums transition-colors ${
-                isToday
-                  ? "bg-primary font-semibold text-primary-foreground"
-                  : journalId
-                    ? "text-foreground hover:ring-1 hover:ring-primary/60"
-                    : "text-muted-foreground hover:ring-1 hover:ring-primary/40 hover:text-foreground"
-              }`}
-              style={isToday ? undefined : { background: shade }}
-            >
-              {d.getDate()}
-              {journalId && (
-                <span className={`absolute bottom-1 h-1 w-1 rounded-full ${isToday ? "bg-primary-foreground" : "bg-primary"}`} />
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </section>
   );
 }

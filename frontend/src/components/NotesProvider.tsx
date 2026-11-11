@@ -142,6 +142,22 @@ function appendOpenTab(tabs: string[], id: string): string[] {
     : [...tabs, id];
 }
 
+// The persisted tab strip (dashboard first), or null when there is none or
+// "Show dashboard at start-up" is on. Reads settings straight from storage:
+// it runs on mount, before the settings state has been loaded.
+function readStoredTabs(): string[] | null {
+  try {
+    const settings = JSON.parse(localStorage.getItem("nexote:settings") ?? "{}") as Partial<AppSettings>;
+    if (settings.openDashboardOnStart) return null;
+    const parsed: unknown = JSON.parse(localStorage.getItem("nexote:open-tabs") ?? "null");
+    if (!Array.isArray(parsed)) return null;
+    const ids = parsed.filter((t): t is string => typeof t === "string");
+    return ids.includes(DASHBOARD_ID) ? ids : [DASHBOARD_ID, ...ids];
+  } catch {
+    return null;
+  }
+}
+
 const NotesContext = createContext<NotesContextValue | null>(null);
 
 export function useNotes() {
@@ -381,24 +397,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // If the URL named a specific note, the URL-nav effect already restored it.
     if (urlNavRef.current) return;
     try {
-      const storedTabs = localStorage.getItem("nexote:open-tabs");
+      const validTabs = readStoredTabs();
+      if (!validTabs) {
+        setRestoredTabs(true);
+        return;
+      }
       const storedActive = localStorage.getItem("nexote:active-id");
-      // "Show dashboard at start-up": skip tab restore entirely — the shell
-      // boots with its single dashboard tab (initial state).
-      if (settingsRef.current.openDashboardOnStart) {
-        setRestoredTabs(true);
-        return;
-      }
-      if (!storedTabs) {
-        setRestoredTabs(true);
-        return;
-      }
-      const tabs = JSON.parse(storedTabs) as string[];
-      // Trust the persisted tabs (they were saved with valid membership); keep
-      // the dashboard, and drop nothing here. Body loads below skip failures.
-      const validTabs = tabs.includes(DASHBOARD_ID)
-        ? tabs
-        : [DASHBOARD_ID, ...tabs];
+      // Trust the persisted tabs (they were saved with valid membership).
+      // Body loads below skip failures.
       setOpenTabs(validTabs);
       const activeToRestore =
         storedActive && validTabs.includes(storedActive)
@@ -406,7 +412,6 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           : DASHBOARD_ID;
       setActiveId(activeToRestore);
       setRestoredTabs(true);
-
       // Load the ACTIVE note's body first — the tab the user is looking at.
       if (activeToRestore !== DASHBOARD_ID) {
         const journalIds = journalIdsRef.current;
@@ -508,7 +513,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         try {
           const note = await api.get(fromUrl.vaultId!, fromUrl.noteId!);
           setNotesById((prev) => ({ ...prev, [note.id]: note }));
-          setOpenTabs((prev) => appendOpenTab(prev, note.id));
+          // A refresh lands here (the URL names the active note): keep the
+          // rest of the saved tab strip instead of collapsing to this tab.
+          setOpenTabs(appendOpenTab(readStoredTabs() ?? [DASHBOARD_ID], note.id));
           setActiveId(note.id);
         } catch {
           // note not found via deep link — fall back to restoreTabs
@@ -523,7 +530,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           journalIdsRef.current.add(fromUrl.noteId!);
           const note = await api.journalGet(fromUrl.noteId!);
           setNotesById((prev) => ({ ...prev, [note.id]: note }));
-          setOpenTabs((prev) => appendOpenTab(prev, note.id));
+          setOpenTabs(appendOpenTab(readStoredTabs() ?? [DASHBOARD_ID], note.id));
           setActiveId(note.id);
         } catch {
           urlNavRef.current = false;

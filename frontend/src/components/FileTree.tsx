@@ -46,7 +46,7 @@ import { createPortal } from "react-dom";
 import { useNotes } from "@/lib/notes-context";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
 import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
-import { localDateKey, makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
+import { makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
 
@@ -73,6 +73,7 @@ function clampPopTop(y: number, h: number): number {
 import ContextMenu, { type MenuItem } from "./ContextMenu";
 import DeleteConfirm from "./DeleteConfirm";
 import FolderCreateDialog from "./FolderCreateDialog";
+import JournalCalendar from "./JournalCalendar";
 
 type TreeNode = {
   name: string;
@@ -2949,9 +2950,9 @@ function TasksView({
 }
 
 // --- Calendar / Journal view ---
-// A month grid where days with journal notes show a dot. Clicking a day opens
-// its note, creating it first when that day (past, today or future) has none.
-// Below the grid is a compact list of the selected month's notes.
+// The shared JournalCalendar (same as the dashboard): days with a journal
+// note show a dot and open it, any other day (past, today or future) creates
+// its note. Below it, a compact list of the displayed month's notes.
 function CalendarView({
   journalNotes,
   activeId,
@@ -2963,20 +2964,11 @@ function CalendarView({
   onOpenNote: (id: string) => void;
   onOpenDaily: (date?: string) => void;
 }) {
-  const todayStr = localDateKey();
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
   });
-
-  // Map "YYYY-MM-DD" -> note id for quick lookup.
-  const notesByDate = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const n of journalNotes) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(n.title)) m[n.title] = n.id;
-    }
-    return m;
-  }, [journalNotes]);
+  const onMonthChange = useCallback((year: number, month: number) => setCursor({ year, month }), []);
 
   const monthNotes = useMemo(
     () =>
@@ -2986,117 +2978,14 @@ function CalendarView({
     [journalNotes, cursor],
   );
 
-  const firstDay = new Date(cursor.year, cursor.month, 1);
-  const startWeekday = (firstDay.getDay() + 6) % 7; // Mon=0 … Sun=6
-  const daysInMonth = new Date(cursor.year, cursor.month + 1, 0).getDate();
-  const monthName = firstDay.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-
-  const weekdays = ["M", "T", "W", "T", "F", "S", "S"];
-
-  const goPrev = () =>
-    setCursor((c) => (c.month === 0 ? { year: c.year - 1, month: 11 } : { year: c.year, month: c.month - 1 }));
-  const goNext = () =>
-    setCursor((c) => (c.month === 11 ? { year: c.year + 1, month: 0 } : { year: c.year, month: c.month + 1 }));
-  const goToday = () => {
-    const d = new Date();
-    setCursor({ year: d.getFullYear(), month: d.getMonth() });
-  };
-
-  const handleDayClick = (day: number) => {
-    const dateStr = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const noteId = notesByDate[dateStr];
-    if (noteId) onOpenNote(noteId);
-    else onOpenDaily(dateStr);
-  };
-
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < startWeekday; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
   return (
-    <div className="pt-1">
-      {/* Month navigation */}
-      <div className="mb-1 flex items-center gap-1 px-2">
-        <button
-          type="button"
-          aria-label="Previous month"
-          onClick={goPrev}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          <ChevronLeft size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={goToday}
-          className="flex-1 truncate text-center"
-          style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}
-          title="Jump to today"
-        >
-          {monthName}
-        </button>
-        <button
-          type="button"
-          aria-label="Next month"
-          onClick={goNext}
-          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          <ChevronRight size={14} />
-        </button>
-      </div>
-
-      {/* Weekday header */}
-      <div className="mb-0.5 grid grid-cols-7 px-2">
-        {weekdays.map((w, i) => (
-          <div
-            key={i}
-            className="text-center"
-            style={{ fontSize: 10, fontWeight: 500, color: "var(--muted-foreground)", opacity: 0.6 }}
-          >
-            {w}
-          </div>
-        ))}
-      </div>
-
-      {/* Day grid */}
-      <div className="grid grid-cols-7 gap-0.5 px-1.5">
-        {cells.map((day, i) => {
-          if (day === null) return <div key={i} />;
-          const dateStr = `${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-          const hasNote = Boolean(notesByDate[dateStr]);
-          const isToday = dateStr === todayStr;
-          const isActive = hasNote && notesByDate[dateStr] === activeId;
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => handleDayClick(day)}
-              title={hasNote ? undefined : `Create journal note for ${dateStr}`}
-              className="relative flex h-8 items-center justify-center rounded-md transition-colors"
-              style={{
-                fontSize: 13,
-                color: isToday
-                  ? "var(--primary)"
-                  : "var(--muted-foreground)",
-                fontWeight: isToday ? 600 : 400,
-                background: isActive
-                  ? "color-mix(in oklab, var(--primary) 18%, transparent)"
-                  : isToday
-                    ? "color-mix(in oklab, var(--primary) 8%, transparent)"
-                    : "transparent",
-                border: isToday && !isActive ? "1px solid color-mix(in oklab, var(--primary) 30%, transparent)" : "1px solid transparent",
-              }}
-            >
-              {day}
-              {hasNote && (
-                <span
-                  className="absolute bottom-0.5 h-1 w-1 rounded-full"
-                  style={{ background: "var(--primary)", opacity: isActive ? 1 : 0.5 }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+    <div className="px-1.5 pt-1">
+      <JournalCalendar
+        activeId={activeId}
+        onOpenJournal={onOpenNote}
+        onOpenDay={(date) => onOpenDaily(date)}
+        onMonthChange={onMonthChange}
+      />
 
       {/* Today button */}
       <div className="mt-1.5 px-2">
