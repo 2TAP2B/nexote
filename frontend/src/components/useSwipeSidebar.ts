@@ -16,11 +16,13 @@ type SwipeHandlers = {
   swipeFromContent?: boolean;
 };
 
-const THRESHOLD = 60;
-const FLICK_THRESHOLD = 18;
-const FLICK_VELOCITY = 0.6; // px/ms — a fast, deliberate flick wins without distance
-const DRAG_X = 8;
-const VERTICAL_LIMIT = 1.5;
+const THRESHOLD_RATIO = 0.3; // drag past 30% of the pane width commits
+const FLICK_VELOCITY = 0.35; // px/ms — a quick flick commits regardless of distance
+const LOCK_DISTANCE = 10; // px of travel before deciding horizontal vs vertical
+const EDGE_RESISTANCE = 0.25; // rubber-band factor past the first/last pane
+const SNAP_MIN_MS = 160;
+const SNAP_MAX_MS = 380;
+const SNAP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 // Drag-to-follow swipe for the mobile three-pane pager.
 //
@@ -31,140 +33,42 @@ const VERTICAL_LIMIT = 1.5;
 //   editor  → -100vw (one pane off the left)
 //   toc     → -200vw (two panes off the left)
 //
-// Open:  drag right on the bottom navigation pill → the track follows the
-//        finger, pulling the sidebar pane into focus.
-// Open:  drag left on the pill (from the editor) → pulls the TOC pane in.
-// Open:  with swipeFromContent, the same drags work anywhere inside the
-//        pager track (editor text included), except on form fields,
-//        [data-no-swipe] elements, horizontally scrollable content (code
-//        blocks, tables, toolbars) and while text is selected.
-// Close: when a side pane is focused, drag toward the editor anywhere on it
-//        (left on the sidebar, right on the TOC) → the track slides back.
+// From the editor: drag right → the note tree slides in; drag left → the TOC
+// slides in. On the pill always; with swipeFromContent anywhere in the pager
+// track (editor text included), except on form fields, [data-no-swipe]
+// elements, horizontally scrollable content (code blocks, tables, toolbars)
+// and while text is selected. From a side pane: drag toward the editor
+// anywhere on it.
 //
-// Drags write the transform straight to the DOM (transitions disabled); on
-// release the inline style is cleared so the CSS rule + transition snap to
-// whichever pane won. React owns the final position via data-pager-focus.
+// Touch events (not pointer events) drive it: the editor's vertical scroller
+// would otherwise claim the gesture and fire pointercancel mid-drag. Once a
+// drag locks horizontal, touchmove is preventDefault-ed so neither the page
+// scroll nor the browser's back/forward swipe competes. The track follows the
+// finger (rAF-batched, rubber-banded at the ends); on release it snaps with a
+// duration derived from the finger's velocity, then hands the transform back
+// to the CSS rule driven by data-pager-focus.
 export function useSwipeSidebar({ focus, onFocus, swipeFromContent = false }: SwipeHandlers) {
   const handlers = useRef({ focus, onFocus });
   handlers.current = { focus, onFocus };
-  const state = useRef({
-    start: null as null | { x: number; y: number; id: number; t: number },
-    last: null as null | { x: number; t: number },
-    horizontal: false,
-    dragging: false,
-    lastSwipe: 0,
-  });
 
   useEffect(() => {
-    const isTouch =
-      typeof window !== "undefined" &&
-      (window.matchMedia?.("(pointer: coarse)").matches ||
-        "ontouchstart" in window);
+    if (typeof window === "undefined") return;
+    const isTouch = window.matchMedia?.("(pointer: coarse)").matches || "ontouchstart" in window;
     if (!isTouch) return;
 
-    const getTrack = (): HTMLElement | null =>
-      document.querySelector(".mob-pager");
-    const getPill = (): HTMLElement | null =>
-      document.querySelector(".mob-bottom-pill");
+    const getTrack = (): HTMLElement | null => document.querySelector(".mob-pager");
 
-    const onStart = (e: PointerEvent) => {
-      if (e.pointerType !== "touch") return;
-      state.current.start = { x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now() };
-      state.current.last = null;
-      state.current.horizontal = false;
-      state.current.dragging = false;
+    type Drag = {
+      id: number;
+      x0: number;
+      y0: number;
+      mode: "pending" | "horizontal" | "ignored";
+      dx: number;
+      samples: { x: number; t: number }[];
+      frame: number;
     };
-
-    const onMove = (e: PointerEvent) => {
-      const s = state.current.start;
-      if (!s || e.pointerId !== s.id) return;
-      const dx = e.clientX - s.x;
-      const dy = e.clientY - s.y;
-
-      if (!state.current.horizontal) {
-        if (Math.abs(dx) > DRAG_X && Math.abs(dx) > Math.abs(dy)) {
-          state.current.horizontal = true;
-        } else {
-          return;
-        }
-      }
-      if (Math.abs(dy) > Math.abs(dx) * VERTICAL_LIMIT) return;
-
-      state.current.dragging = true;
-      state.current.last = { x: e.clientX, t: performance.now() };
-      const track = getTrack();
-      const h = handlers.current;
-      // One pager pane is a full viewport wide (the track is 300vw).
-      const paneW = window.innerWidth;
-      const base = -PANE_INDEX[h.focus] * paneW;
-
-      // Disable transitions for smooth finger-following.
-      if (track) track.style.transition = "none";
-
-      // Track follows the finger, clamped to the track's own bounds.
-      const x = Math.max(-(PANE_COUNT - 1) * paneW, Math.min(0, base + dx));
-      if (track) track.style.transform = `translateX(${x}px)`;
-    };
-
-    const finishDrag = (e: PointerEvent) => {
-      const s = state.current.start;
-      state.current.start = null;
-      if (!s || e.pointerId !== s.id) return;
-      if (!state.current.horizontal) return;
-
-      const dx = e.clientX - s.x;
-      const h = handlers.current;
-      const track = getTrack();
-
-      // Re-enable transitions so the snap animation runs from the dragged
-      // position to the focused pane's rest transform.
-      if (track) track.style.transition = "";
-
-      if (state.current.dragging) {
-        state.current.dragging = false;
-        state.current.lastSwipe = Date.now();
-
-        // A quick flick snaps even a short drag home; deliberate slower drags
-        // need the distance threshold. Either way the pane pans to the
-        // neighbor in the dragged direction.
-        const now = performance.now();
-        const last = state.current.last;
-        const dt = last ? now - last.t : 0;
-        const vx = last && dt > 0 ? (e.clientX - last.x) / dt : 0;
-        const threshold =
-          Math.abs(vx) > FLICK_VELOCITY ? FLICK_THRESHOLD : THRESHOLD;
-
-        const fi = PANE_INDEX[h.focus];
-        const next =
-          dx < -threshold && fi < PANE_COUNT - 1
-            ? PANES[fi + 1]
-            : dx > threshold && fi > 0
-              ? PANES[fi - 1]
-              : null;
-        if (next) {
-          // Leaving the editor mid-typing: drop focus so the on-screen
-          // keyboard closes instead of covering the side pane.
-          const active = document.activeElement;
-          if (h.focus === "editor" && active instanceof HTMLElement && track?.contains(active)) {
-            active.blur();
-          }
-          h.onFocus(next);
-        }
-      }
-
-      // Clear the dragged transform → the CSS rule (data-pager-focus) takes
-      // back over and the transition snaps to the winning pane.
-      if (track) track.style.transform = "";
-    };
-
-    // Swallows the click that would otherwise fire on the pill/tap right after
-    // a swipe gesture (which would immediately re-toggle the pane).
-    const onCaptureClick = (e: Event) => {
-      if (Date.now() - state.current.lastSwipe < 400) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
+    let drag: Drag | null = null;
+    let lastSwipe = 0;
 
     // Whether a touch at target may begin a pager drag from the editor pane:
     // anything that needs horizontal touch input of its own keeps it. The
@@ -186,31 +90,170 @@ export function useSwipeSidebar({ focus, onFocus, swipeFromContent = false }: Sw
       return true;
     };
 
-    // The pill starts an open/close swipe from the editor in either direction
-    // (and, with swipeFromContent, so does the rest of the editor pane). A
-    // document-level drag otherwise only initiates while a side pane is
-    // focused, so it can slide back to the editor.
-    const onPillDown = (e: PointerEvent) => onStart(e);
-    const onDocDown = (e: PointerEvent) => {
-      if (e.pointerType !== "touch") return;
-      if (handlers.current.focus === "editor" && !(swipeFromContent && canSwipeFromContent(e.target))) return;
-      onStart(e);
+    const canStart = (target: EventTarget | null): boolean => {
+      if (handlers.current.focus !== "editor") return true;
+      if (target instanceof Element && target.closest(".mob-bottom-pill")) return true;
+      return swipeFromContent && canSwipeFromContent(target);
     };
 
-    const pill = getPill();
-    pill?.addEventListener("pointerdown", onPillDown, { passive: true });
-    document.addEventListener("pointerdown", onDocDown, { passive: true });
-    document.addEventListener("pointermove", onMove, { passive: true });
-    document.addEventListener("pointerup", finishDrag, { passive: true });
-    document.addEventListener("pointercancel", finishDrag, { passive: true });
+    const paneWidth = () => window.innerWidth;
+
+    const applyTransform = () => {
+      if (!drag) return;
+      drag.frame = 0;
+      const track = getTrack();
+      if (!track) return;
+      const w = paneWidth();
+      const min = -(PANE_COUNT - 1) * w;
+      let x = -PANE_INDEX[handlers.current.focus] * w + drag.dx;
+      if (x > 0) x *= EDGE_RESISTANCE;
+      else if (x < min) x = min + (x - min) * EDGE_RESISTANCE;
+      track.style.transform = `translate3d(${x}px, 0, 0)`;
+    };
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        drag = null;
+        return;
+      }
+      const t = e.touches[0];
+      if (!canStart(e.target)) return;
+      drag = {
+        id: t.identifier,
+        x0: t.clientX,
+        y0: t.clientY,
+        mode: "pending",
+        dx: 0,
+        samples: [{ x: t.clientX, t: e.timeStamp }],
+        frame: 0,
+      };
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (!drag || drag.mode === "ignored") return;
+      const t = Array.from(e.changedTouches).find((c) => c.identifier === drag!.id);
+      if (!t) return;
+      const dx = t.clientX - drag.x0;
+      const dy = t.clientY - drag.y0;
+
+      if (drag.mode === "pending") {
+        if (Math.abs(dx) < LOCK_DISTANCE && Math.abs(dy) < LOCK_DISTANCE) {
+          // Chrome commits to a native scroll on the first uncancelled move;
+          // later touchmoves then arrive non-cancelable and the pager would
+          // slide while the page scrolls. Claim horizontal-leaning moves now.
+          if (Math.abs(dx) > Math.abs(dy) && e.cancelable) e.preventDefault();
+          return;
+        }
+        const sel = window.getSelection();
+        if (Math.abs(dx) <= Math.abs(dy) * 1.2 || (sel && !sel.isCollapsed)) {
+          drag.mode = "ignored"; // vertical scroll or text selection: hands off
+          return;
+        }
+        drag.mode = "horizontal";
+        // Start the follow from the lock point so the track doesn't jump.
+        drag.x0 += Math.sign(dx) * LOCK_DISTANCE;
+        const track = getTrack();
+        if (track) track.style.transition = "none";
+      }
+
+      if (e.cancelable) e.preventDefault();
+      drag.dx = t.clientX - drag.x0;
+      drag.samples.push({ x: t.clientX, t: e.timeStamp });
+      if (drag.samples.length > 6) drag.samples.shift();
+      if (!drag.frame) drag.frame = requestAnimationFrame(applyTransform);
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      const d = drag;
+      if (!d) return;
+      const t = Array.from(e.changedTouches).find((c) => c.identifier === d.id);
+      if (!t) return;
+      drag = null;
+      if (d.frame) cancelAnimationFrame(d.frame);
+      if (d.mode !== "horizontal") return;
+      lastSwipe = Date.now();
+
+      // Velocity over the last ~100ms of samples (px/ms, + = rightwards).
+      const now = e.timeStamp;
+      const recent = d.samples.filter((s) => now - s.t < 100);
+      const first = recent[0] ?? d.samples[0];
+      const dt = now - first.t;
+      const vx = dt > 0 ? (t.clientX - first.x) / dt : 0;
+
+      const h = handlers.current;
+      const w = paneWidth();
+      const fi = PANE_INDEX[h.focus];
+      const dx = t.clientX - d.x0;
+      let next = fi;
+      if (e.type === "touchend") {
+        const flick = Math.abs(vx) > FLICK_VELOCITY && Math.sign(vx) === Math.sign(dx);
+        if (flick || Math.abs(dx) > w * THRESHOLD_RATIO) next = dx < 0 ? fi + 1 : fi - 1;
+        next = Math.max(0, Math.min(PANE_COUNT - 1, next));
+      }
+
+      // Snap from wherever the finger left the track: faster flicks finish
+      // faster, so the motion continues the gesture instead of restarting.
+      // The snap animates to an explicit target; once it lands, the inline
+      // style is dropped and the data-pager-focus CSS rule (same position)
+      // takes over without a visible jump.
+      const track = getTrack();
+      if (track) {
+        const current = -fi * w + dx;
+        const target = -next * w;
+        const remaining = Math.abs(target - current);
+        const ms = Math.round(
+          Math.max(SNAP_MIN_MS, Math.min(SNAP_MAX_MS, Math.abs(vx) > 0.05 ? remaining / Math.abs(vx) : SNAP_MAX_MS)),
+        );
+        track.style.transition = `transform ${ms}ms ${SNAP_EASING}`;
+        track.style.transform = `translate3d(${target}px, 0, 0)`;
+        let done = false;
+        const reset = () => {
+          if (done) return;
+          done = true;
+          track.removeEventListener("transitionend", reset);
+          // A new drag may own the track by now; leave its styles alone.
+          if (drag?.mode === "horizontal") return;
+          track.style.transition = "none";
+          track.style.transform = "";
+          void track.offsetWidth; // commit the rule-driven position before re-enabling transitions
+          track.style.transition = "";
+        };
+        track.addEventListener("transitionend", reset);
+        window.setTimeout(reset, ms + 60);
+      }
+
+      if (next !== fi) {
+        // Leaving the editor mid-typing: drop focus so the on-screen keyboard
+        // closes instead of covering the side pane.
+        const active = document.activeElement;
+        if (h.focus === "editor" && active instanceof HTMLElement && track?.contains(active)) {
+          active.blur();
+        }
+        h.onFocus(PANES[next]);
+      }
+    };
+
+    // Swallows the click that would otherwise fire on the pill/tap right after
+    // a swipe gesture (which would immediately re-toggle the pane).
+    const onCaptureClick = (e: Event) => {
+      if (Date.now() - lastSwipe < 400) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    document.addEventListener("touchstart", onStart, { passive: true });
+    // Non-passive: a locked horizontal drag must be able to cancel scrolling.
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd, { passive: true });
+    document.addEventListener("touchcancel", onEnd, { passive: true });
     document.addEventListener("click", onCaptureClick, true);
 
     return () => {
-      pill?.removeEventListener("pointerdown", onPillDown);
-      document.removeEventListener("pointerdown", onDocDown);
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", finishDrag);
-      document.removeEventListener("pointercancel", finishDrag);
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", onEnd);
       document.removeEventListener("click", onCaptureClick, true);
     };
   }, [swipeFromContent]);
