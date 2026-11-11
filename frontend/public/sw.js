@@ -211,6 +211,9 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return; // only same-origin
   if (req.method === "GET" && url.pathname.startsWith("/_next/webpack-hmr")) return;
   if (url.pathname.startsWith("/api/ai/")) return; // AI proxy — never queue
+  // Git push/pull/config: replaying later would be wrong and a fake 200
+  // would report "Pushed." for a sync that never happened.
+  if (url.pathname.startsWith("/api/git/")) return;
 
   // ---- Mutations ----
   if (MUTATION.includes(req.method)) {

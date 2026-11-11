@@ -864,7 +864,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                             disabled={gitBusy}
                             onClick={async () => {
                               setGitBusy(true);
-                              setGitMsg("");
+                              setGitMsg("Pushing…");
                               try {
                                 await gitPush(gitDraft?.username ? { username: gitDraft.username, password: gitDraft.password ?? "" } : undefined);
                                 setGitMsg("Pushed.");
@@ -883,7 +883,7 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                             disabled={gitBusy}
                             onClick={async () => {
                               setGitBusy(true);
-                              setGitMsg("");
+                              setGitMsg("Pulling…");
                               try {
                                 await gitPull(gitDraft?.username ? { username: gitDraft.username, password: gitDraft.password ?? "" } : undefined);
                                 setGitMsg("Pulled.");

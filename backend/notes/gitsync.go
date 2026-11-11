@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -15,7 +16,10 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
 // GitConfig is the persisted git-sync configuration. It lives at
@@ -169,19 +173,23 @@ func (gs *GitSync) scheduleAutoSync() {
 		return
 	}
 	interval := time.Duration(gs.cfg.AutoSyncMinutes) * time.Minute
-	gs.autosyncTimer = time.AfterFunc(interval, func() {
-		gs.mu.Lock()
-		defer gs.mu.Unlock()
-		if !gs.cfg.Enabled || gs.cfg.AutoSyncMinutes <= 0 {
-			return // config changed while the timer was pending
-		}
+	gs.autosyncTimer = time.AfterFunc(interval, gs.runAutoSync)
+}
+
+// runAutoSync is the timer body: commit + push, then re-arm. It must not hold
+// gs.mu across Commit/Push — both take the lock themselves, and holding it
+// here deadlocked every later git call (manual push/pull spun forever).
+func (gs *GitSync) runAutoSync() {
+	gs.mu.Lock()
+	enabled := gs.cfg.Enabled && gs.cfg.AutoSyncMinutes > 0
+	gs.mu.Unlock()
+	if enabled {
 		_ = gs.Commit("Auto-sync from Nexote")
-		_ = gs.Push(context.Background(), GitCredentials{
-			Username: gs.cfg.Username,
-			Password: gs.cfg.Password,
-		})
-		gs.scheduleAutoSync()
-	})
+		_ = gs.Push(context.Background(), GitCredentials{})
+	}
+	gs.mu.Lock()
+	gs.scheduleAutoSync()
+	gs.mu.Unlock()
 }
 
 // ensureRemote makes the repo's origin match gs.cfg.Remote: creates it when
@@ -438,7 +446,8 @@ func (gs *GitSync) writeGitignoreLocked() error {
 				"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
 		}
 	} else {
-		lines = append(lines, "*/.history/", ".history/")
+		// git.json holds the remote credentials: never commit it.
+		lines = append(lines, "*/.history/", ".history/", "/git.json")
 		if !gs.cfg.IncludeImages {
 			lines = append(lines,
 				"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
@@ -468,7 +477,7 @@ func (gs *GitSync) ensureRepo() error {	if gs.repo != nil {
 // commitDebounced schedules a commit after a short delay. Multiple calls
 // within the debounce window coalesce into one commit.
 func (gs *GitSync) commitDebounced() {
-	if !gs.cfg.Enabled {
+	if !gs.Config().Enabled {
 		return
 	}
 	gs.commitMu.Lock()
@@ -478,11 +487,8 @@ func (gs *GitSync) commitDebounced() {
 	}
 	gs.timer = time.AfterFunc(500*time.Millisecond, func() {
 		_ = gs.Commit("Auto-commit from Nexote")
-		if gs.cfg.AutoPush {
-			_ = gs.Push(context.Background(), GitCredentials{
-				Username: gs.cfg.Username,
-				Password: gs.cfg.Password,
-			})
+		if gs.Config().AutoPush {
+			_ = gs.Push(context.Background(), GitCredentials{})
 		}
 	})
 }
@@ -498,8 +504,12 @@ func (gs *GitSync) commitLocked(msg string) error {
 	if err := gs.ensureRepo(); err != nil {
 		return err
 	}
-	// Rebuild the readable mirror before staging so the committed tree
-	// always reflects the current vault contents.
+	// Keep .gitignore current (repos initialized by older builds lack the
+	// git.json rule) and rebuild the readable mirror before staging so the
+	// committed tree always reflects the current vault contents.
+	if err := gs.writeGitignoreLocked(); err != nil {
+		return err
+	}
 	if err := gs.writeMirrorLocked(); err != nil {
 		return err
 	}
@@ -512,6 +522,16 @@ func (gs *GitSync) commitLocked(msg string) error {
 	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
 		// If there's nothing to stage, that's fine.
 		_ = err
+	}
+	// git.json (credentials) may already be tracked from an older build;
+	// drop it from the index so the next commit stops carrying it. The file
+	// on disk stays.
+	if idx, err := gs.repo.Storer.Index(); err == nil {
+		if _, err := idx.Remove("git.json"); err == nil {
+			if err := gs.repo.Storer.SetIndex(idx); err != nil {
+				return fmt.Errorf("untrack git.json: %w", err)
+			}
+		}
 	}
 
 	// Check if there are any changes to commit.
@@ -551,22 +571,113 @@ func (gs *GitSync) commitLocked(msg string) error {
 	return nil
 }
 
-// Push pushes the current branch to the configured remote.
+// gitNetworkTimeout bounds one push/pull. Without it an unreachable remote
+// left the request (and the UI's busy state) hanging, with gs.mu held so
+// every other git call queued behind it.
+const gitNetworkTimeout = 90 * time.Second
+
+// authLocked picks the transport auth for the configured remote: HTTP(S)
+// takes basic auth (per-request creds, else the stored ones); SSH uses the
+// ssh-agent or a default key in ~/.ssh (key passphrase = stored password).
+// Caller must hold gs.mu.
+func (gs *GitSync) authLocked(creds GitCredentials) (transport.AuthMethod, error) {
+	user, pass := creds.Username, creds.Password
+	if user == "" && pass == "" {
+		user, pass = gs.cfg.Username, gs.cfg.Password
+	}
+	ep, err := transport.NewEndpoint(gs.cfg.Remote)
+	if err != nil {
+		return nil, fmt.Errorf("invalid remote URL: %w", err)
+	}
+	switch ep.Protocol {
+	case "http", "https":
+		if user == "" && pass == "" {
+			return nil, nil
+		}
+		if user == "" {
+			user = "git" // token-only: GitHub/GitLab/Gitea ignore the name
+		}
+		return &http.BasicAuth{Username: user, Password: pass}, nil
+	case "ssh":
+		sshUser := ep.User
+		if sshUser == "" {
+			sshUser = "git"
+		}
+		if os.Getenv("SSH_AUTH_SOCK") != "" {
+			if a, err := gitssh.NewSSHAgentAuth(sshUser); err == nil {
+				return a, nil
+			}
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+				p := filepath.Join(home, ".ssh", name)
+				if _, err := os.Stat(p); err != nil {
+					continue
+				}
+				keys, err := gitssh.NewPublicKeysFromFile(sshUser, p, pass)
+				if err != nil {
+					return nil, fmt.Errorf("load SSH key %s: %w", p, err)
+				}
+				return keys, nil
+			}
+		}
+		return nil, fmt.Errorf("SSH remote needs a key: no ssh-agent and no key in ~/.ssh on the server — use an HTTPS remote with a token instead")
+	default:
+		return nil, nil // file:// and other local transports
+	}
+}
+
+// remoteErr turns go-git's terse transport errors into actionable messages.
+func remoteErr(op string, err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%s timed out after %s — is the remote reachable?", op, gitNetworkTimeout)
+	case errors.Is(err, transport.ErrAuthenticationRequired), errors.Is(err, transport.ErrAuthorizationFailed):
+		return fmt.Errorf("%s: authentication failed — check username and password/token", op)
+	case errors.Is(err, transport.ErrRepositoryNotFound):
+		return fmt.Errorf("%s: remote repository not found — check the URL", op)
+	case errors.Is(err, git.ErrNonFastForwardUpdate):
+		return fmt.Errorf("%s: local and remote history have diverged — the remote has commits this vault doesn't (or vice versa) and they can't be fast-forwarded", op)
+	case strings.Contains(err.Error(), "knownhosts"):
+		return fmt.Errorf("%s: SSH host key unknown — add the host to ~/.ssh/known_hosts on the server (%v)", op, err)
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
+
+// remoteReadyLocked opens the repo, syncs origin and returns the branch.
+// Caller must hold gs.mu.
+func (gs *GitSync) remoteReadyLocked() (string, error) {
+	if err := gs.ensureRepo(); err != nil {
+		return "", fmt.Errorf("no git repository yet — enable sync or press Init repo first")
+	}
+	if gs.cfg.Remote == "" {
+		return "", fmt.Errorf("no remote configured")
+	}
+	if err := gs.ensureRemote(); err != nil {
+		return "", err
+	}
+	if gs.cfg.Branch == "" {
+		return "main", nil
+	}
+	return gs.cfg.Branch, nil
+}
+
+// Push commits pending changes and pushes the branch to the configured
+// remote. "Already up to date" counts as success.
 func (gs *GitSync) Push(ctx context.Context, creds GitCredentials) error {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
-	if err := gs.ensureRepo(); err != nil {
+	branch, err := gs.remoteReadyLocked()
+	if err != nil {
 		return err
 	}
-	if err := gs.ensureRemote(); err != nil {
+	// Push what the user sees: edits since the last debounced commit too.
+	if err := gs.commitLocked("Sync from Nexote"); err != nil {
 		return err
 	}
-	if gs.cfg.Remote == "" {
-		return fmt.Errorf("no remote configured")
-	}
-	branch := gs.cfg.Branch
-	if branch == "" {
-		branch = "main"
+	auth, err := gs.authLocked(creds)
+	if err != nil {
+		return err
 	}
 	// Push the configured branch when it exists locally (i.e. the repo was
 	// initialized with the same branch). If the user's repo predates a branch
@@ -577,74 +688,72 @@ func (gs *GitSync) Push(ctx context.Context, creds GitCredentials) error {
 		localRef = plumbing.HEAD
 	}
 	refSpec := fmt.Sprintf("%s:refs/heads/%s", localRef.String(), branch)
-	opts := &git.PushOptions{
+	ctx, cancel := context.WithTimeout(ctx, gitNetworkTimeout)
+	defer cancel()
+	err = gs.repo.PushContext(ctx, &git.PushOptions{
 		RemoteName: "origin",
 		RefSpecs:   []config.RefSpec{config.RefSpec(refSpec)},
+		Auth:       auth,
+	})
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return remoteErr("push", err)
 	}
-	if creds.Username != "" || creds.Password != "" {
-		opts.Auth = &http.BasicAuth{
-			Username: creds.Username,
-			Password: creds.Password,
-		}
-	} else if gs.cfg.Username != "" || gs.cfg.Password != "" {
-		// Fall back to the credentials stored in the config (git.json) so
-		// background auto-sync can authenticate without a UI roundtrip.
-		opts.Auth = &http.BasicAuth{
-			Username: gs.cfg.Username,
-			Password: gs.cfg.Password,
-		}
+	// Record what the remote now has so Status' ahead count drops to 0.
+	if ref, rerr := gs.repo.Reference(localRef, true); rerr == nil {
+		_ = gs.repo.Storer.SetReference(plumbing.NewHashReference(
+			plumbing.NewRemoteReferenceName("origin", branch), ref.Hash()))
 	}
-	return gs.repo.PushContext(ctx, opts)
+	return nil
 }
 
-// Pull fetches and merges from the configured remote into the current branch.
+// Pull commits pending changes (go-git refuses to pull into a dirty
+// worktree) and fast-forwards from the configured remote. "Already up to
+// date" and a remote without the branch yet count as success.
 func (gs *GitSync) Pull(ctx context.Context, creds GitCredentials) error {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
-	if err := gs.ensureRepo(); err != nil {
+	branch, err := gs.remoteReadyLocked()
+	if err != nil {
 		return err
 	}
-	if err := gs.ensureRemote(); err != nil {
+	if err := gs.commitLocked("Sync from Nexote"); err != nil {
 		return err
 	}
-	if gs.cfg.Remote == "" {
-		return fmt.Errorf("no remote configured")
+	auth, err := gs.authLocked(creds)
+	if err != nil {
+		return err
 	}
 	wt, err := gs.repo.Worktree()
 	if err != nil {
 		return fmt.Errorf("worktree: %w", err)
 	}
-	branch := gs.cfg.Branch
-	if branch == "" {
-		branch = "main"
-	}
-	opts := &git.PullOptions{
+	ctx, cancel := context.WithTimeout(ctx, gitNetworkTimeout)
+	defer cancel()
+	err = wt.PullContext(ctx, &git.PullOptions{
 		RemoteName:    "origin",
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
+		Auth:          auth,
+	})
+	switch {
+	case err == nil, errors.Is(err, git.NoErrAlreadyUpToDate):
+		return nil
+	case errors.Is(err, transport.ErrEmptyRemoteRepository):
+		return nil // nothing on the remote yet — the first push creates it
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		return fmt.Errorf("pull: remote has no branch %q — check the branch setting (or push first)", branch)
 	}
-	if creds.Username != "" || creds.Password != "" {
-		opts.Auth = &http.BasicAuth{
-			Username: creds.Username,
-			Password: creds.Password,
-		}
-	} else if gs.cfg.Username != "" || gs.cfg.Password != "" {
-		opts.Auth = &http.BasicAuth{
-			Username: gs.cfg.Username,
-			Password: gs.cfg.Password,
-		}
-	}
-	return wt.PullContext(ctx, opts)
+	return remoteErr("pull", err)
 }
 
 // Status returns the current repo status for UI display.
 func (gs *GitSync) Status() (GitStatusInfo, error) {
+	gs.mu.Lock()
+	defer gs.mu.Unlock()
 	info := GitStatusInfo{
 		Enabled: gs.cfg.Enabled,
 		Branch:  gs.cfg.Branch,
 		Remote:  gs.cfg.Remote,
 	}
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
 	if err := gs.ensureRepo(); err != nil {
 		info.HasRepo = false
 		return info, nil // no repo yet — not an error
@@ -674,35 +783,32 @@ func (gs *GitSync) Status() (GitStatusInfo, error) {
 			localHash := localRef.Hash()
 			remoteHash := remoteRef.Hash()
 			if localHash != remoteHash {
-				// Count commits ahead/behind by walking the log.
-				localIter, _ := gs.repo.Log(&git.LogOptions{From: localHash})
-				ahead := 0
-				localIter.ForEach(func(c *object.Commit) error {
-					if c.Hash == remoteHash {
-						return plumbing.ErrReferenceNotFound
-					}
-					ahead++
-					return nil
-				})
-				localIter.Close()
-				info.Ahead = ahead
-
-				remoteIter, _ := gs.repo.Log(&git.LogOptions{From: remoteHash})
-				behind := 0
-				remoteIter.ForEach(func(c *object.Commit) error {
-					if c.Hash == localHash {
-						return plumbing.ErrReferenceNotFound
-					}
-					behind++
-					return nil
-				})
-				remoteIter.Close()
-				info.Behind = behind
+				info.Ahead = gs.countUntilLocked(localHash, remoteHash)
+				info.Behind = gs.countUntilLocked(remoteHash, localHash)
 			}
 		}
 	}
 
 	return info, nil
+}
+
+// countUntilLocked counts commits reachable from `from` before hitting
+// `stop` (0 when the log can't be read). Caller must hold gs.mu.
+func (gs *GitSync) countUntilLocked(from, stop plumbing.Hash) int {
+	iter, err := gs.repo.Log(&git.LogOptions{From: from})
+	if err != nil {
+		return 0
+	}
+	defer iter.Close()
+	n := 0
+	_ = iter.ForEach(func(c *object.Commit) error {
+		if c.Hash == stop {
+			return storer.ErrStop
+		}
+		n++
+		return nil
+	})
+	return n
 }
 
 // Log returns the last limit commits for UI display.

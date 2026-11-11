@@ -1499,23 +1499,38 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Several refreshes can overlap (mount, config save, after push/pull);
+  // only the newest response may land, or a stale one regresses the panel.
+  const gitStatusSeqRef = useRef(0);
   const refreshGitStatus = useCallback(async () => {
+    const seq = ++gitStatusSeqRef.current;
+    let next: GitStatusInfo | null;
     try {
-      setGitStatus(await api.gitStatus());
+      next = await api.gitStatus();
     } catch {
-      setGitStatus(null);
+      next = null;
     }
+    if (seq === gitStatusSeqRef.current) setGitStatus(next);
   }, []);
 
+  // Settings fields persist on blur, and clicking Push/Pull is what blurs
+  // them — so a freshly typed remote/token is still in flight when the git
+  // action starts. Git actions await the latest save first.
+  const pendingGitSaveRef = useRef<Promise<void>>(Promise.resolve());
   const saveGitConfig = useCallback(async (config: GitConfig) => {
-    try {
-      await api.gitSetConfig(config);
-      setGitConfig(config);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save git config");
-      throw e;
-    }
-  }, []);
+    const save = (async () => {
+      try {
+        await api.gitSetConfig(config);
+        setGitConfig(config);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to save git config");
+        throw e;
+      }
+    })();
+    pendingGitSaveRef.current = save.catch(() => {});
+    await save;
+    void refreshGitStatus();
+  }, [refreshGitStatus]);
 
   const gitInit = useCallback(async () => {
     try {
@@ -1529,6 +1544,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const gitPush = useCallback(async (creds?: { username?: string; password?: string }) => {
     try {
+      await pendingGitSaveRef.current;
       await api.gitPush(creds);
       await refreshGitStatus();
     } catch (e) {
@@ -1539,6 +1555,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const gitPull = useCallback(async (creds?: { username?: string; password?: string }) => {
     try {
+      await pendingGitSaveRef.current;
       await api.gitPull(creds);
       await refresh();
       await refreshAllMarks();
