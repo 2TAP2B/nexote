@@ -31,8 +31,10 @@ func TestCreateAndRead(t *testing.T) {
 	if doc.Meta.Title != "First" {
 		t.Errorf("title = %q, want %q", doc.Meta.Title, "First")
 	}
-	if doc.Body != "" {
-		t.Errorf("body = %q, want empty", doc.Body)
+	// New notes are seeded with their title as an H2 heading (the editor's
+	// title convention).
+	if doc.Body != "## First\n\n" {
+		t.Errorf("body = %q, want the seeded title heading", doc.Body)
 	}
 
 	// File exists on disk with the right name.
