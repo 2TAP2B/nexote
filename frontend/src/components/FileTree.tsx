@@ -2981,7 +2981,6 @@ function CalendarView({
   return (
     <div className="px-1.5 pt-1">
       <JournalCalendar
-        activeId={activeId}
         onOpenJournal={onOpenNote}
         onOpenDay={(date) => onOpenDaily(date)}
         onMonthChange={onMonthChange}

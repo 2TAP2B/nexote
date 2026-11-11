@@ -10,23 +10,20 @@ const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const DATE_TITLE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Month calendar for the journal, shared by the desktop dashboard and the
-// Daily-notes sidebar view (desktop + mobile). Days with a journal note carry
-// a dot and open it; any other day (past or future) creates its note; the
-// background shading shows how many notes were last edited that day.
+// Daily-notes sidebar view (desktop + mobile). Today is filled; days with a
+// journal note carry a dot and open it; any other day (past or future)
+// creates its note.
 export default function JournalCalendar({
-  activeId,
   onOpenJournal,
   onOpenDay,
   onMonthChange,
 }: {
-  // Open journal note to outline (e.g. the note in the editor).
-  activeId?: string | null;
   onOpenJournal: (id: string) => void;
   onOpenDay: (date: string) => void;
   // Fires with the displayed month (0-based) whenever it changes.
   onMonthChange?: (year: number, month: number) => void;
 }) {
-  const { journalNotes, vaults, allVaultData } = useNotes();
+  const { journalNotes } = useNotes();
   // Client-only "today": avoids an SSR/hydration date mismatch.
   const [today, setToday] = useState<Date | null>(null);
   const [offset, setOffset] = useState(0);
@@ -42,19 +39,6 @@ export default function JournalCalendar({
     }
     return map;
   }, [journalNotes]);
-
-  const activityByDay = useMemo(() => {
-    const map = new Map<string, number>();
-    const bump = (iso: string) => {
-      const k = localDateKey(new Date(iso));
-      map.set(k, (map.get(k) ?? 0) + 1);
-    };
-    for (const v of vaults) {
-      for (const n of allVaultData[v.id]?.notes ?? []) if (!n.collection) bump(n.updatedAt);
-    }
-    for (const j of journalNotes) bump(j.updatedAt);
-    return map;
-  }, [vaults, allVaultData, journalNotes]);
 
   const month = today ? new Date(today.getFullYear(), today.getMonth() + offset, 1) : null;
   const monthYear = month?.getFullYear();
@@ -104,27 +88,23 @@ export default function JournalCalendar({
           const key = localDateKey(d);
           const journalId = journalByDay.get(key);
           const isToday = key === todayKey;
-          const isActive = Boolean(journalId) && journalId === activeId;
-          const activity = activityByDay.get(key) ?? 0;
-          const shade = activity === 0 ? undefined : `color-mix(in oklab, var(--primary) ${Math.min(10 + activity * 8, 42)}%, transparent)`;
-          const edited = activity ? ` · ${activity} note${activity > 1 ? "s" : ""} edited` : "";
           return (
             <button
               key={key}
               type="button"
-              title={journalId ? `Open journal ${key}${edited}` : `Create journal note for ${key}${edited}`}
+              title={journalId ? `Open journal ${key}` : `Create journal note for ${key}`}
               onClick={() => (journalId ? onOpenJournal(journalId) : onOpenDay(key))}
               className={`group relative flex aspect-square items-center justify-center rounded-md text-xs tabular-nums transition-colors ${
                 journalId ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
-              style={shade ? { background: shade } : undefined}
             >
-              {/* Inner highlight, inset from the cell: today's filled square
-                  and the open-note ring must never touch neighbouring cells. */}
+              {/* Inner highlight, inset from the cell so it never touches
+                  neighbouring cells. Only today is filled; journal days show
+                  their dot marker below the number. */}
               <span
                 className={`absolute inset-[3px] rounded-[7px] ${
                   isToday ? "bg-primary" : "group-hover:ring-1 group-hover:ring-primary/50"
-                } ${isActive ? "ring-2 ring-primary" : ""}`}
+                }`}
               />
               <span className={`relative ${isToday ? "font-semibold text-primary-foreground" : ""}`}>{d.getDate()}</span>
               {journalId && (
