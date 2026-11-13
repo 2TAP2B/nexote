@@ -145,23 +145,42 @@ export default function MobileNoteView({
     if (heading) setTitle(heading);
   }, []);
 
-  // When the keyboard opens the editor viewport shrinks; bring the caret into
-  // view once the new height has had a chance to apply (ProseMirror only
-  // re-scrolls on the next selection change).
+  // While the keyboard is open the editor's scroll box ends above the format
+  // bar (see the container height below), so ProseMirror's and the
+  // textarea's own caret-following keep the line being typed visible. Both
+  // only react to edits, not to the box shrinking when the keyboard opens:
+  // bring the caret into view once the new height has applied.
   useEffect(() => {
-    if (kbdInset <= 0) return;
-    const t = setTimeout(() => {
-      const sel = window.getSelection();
+    if (!vv.isKeyboardOpen) return;
+    const t = window.setTimeout(() => {
       const cont = document.querySelector<HTMLElement>(".mob-editor-scroll");
-      if (!sel || !cont || sel.rangeCount === 0) return;
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
-      const bottomLimit = (window.visualViewport?.height ?? window.innerHeight) - 24;
-      if (rect.bottom > bottomLimit) {
-        cont.scrollTop += rect.bottom - bottomLimit;
+      if (!cont) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLTextAreaElement && cont.contains(active)) {
+        // Raw mode wraps nothing (wrap="off"), so the caret's line is the
+        // number of newlines before it.
+        const style = getComputedStyle(active);
+        const lineHeight = parseFloat(style.lineHeight) || 28;
+        const line = active.value.slice(0, active.selectionStart).split("\n").length;
+        const caretBottom = (parseFloat(style.paddingTop) || 0) + line * lineHeight - active.scrollTop;
+        const overflow = caretBottom - (active.clientHeight - 24);
+        if (overflow > 0) active.scrollTop += overflow;
+        return;
       }
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || !cont.contains(sel.focusNode)) return;
+      let rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (rect.height === 0) {
+        // A caret in an empty paragraph has an empty rect: use its block.
+        const node = sel.focusNode;
+        const el = node instanceof Element ? node : node?.parentElement;
+        if (el) rect = el.getBoundingClientRect();
+      }
+      const overflow = rect.bottom - (cont.getBoundingClientRect().bottom - 48);
+      if (overflow > 0) cont.scrollTop += overflow;
     }, 160);
-    return () => clearTimeout(t);
-  }, [kbdInset]);
+    return () => window.clearTimeout(t);
+  }, [vv.isKeyboardOpen, kbdInset]);
 
   useEffect(() => {
     setDraft({ title, body });
@@ -298,7 +317,13 @@ export default function MobileNoteView({
           {
             "--editor-font-size": `${settings.editorFontSize}px`,
             "--editor-font-family": editorFontStack(settings.editorFontFamily) || undefined,
-            height: kbdInset > 0 ? `calc(100% - ${kbdInset + 24}px)` : undefined,
+            // With the keyboard open, end the scroll box above the format bar
+            // floating over the keyboard (48px tall, 16px above it, plus the
+            // safe area). Ending at the keyboard instead let ProseMirror
+            // keep the caret "in view" right behind the bar.
+            height: vv.isKeyboardOpen
+              ? `calc(100% - ${kbdInset}px - 76px - env(safe-area-inset-bottom, 0px))`
+              : undefined,
           } as React.CSSProperties
         }
       >

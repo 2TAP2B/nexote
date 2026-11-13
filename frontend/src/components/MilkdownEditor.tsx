@@ -1096,6 +1096,15 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               return false;
             },
           },
+          // Mobile: keep some room around the caret when ProseMirror scrolls
+          // it into view — the top bar overlays the editor's top edge, and a
+          // line or two above the format bar keeps the next line visible.
+          ...(mobile
+            ? {
+                scrollMargin: { top: 72, bottom: 48, left: 0, right: 0 },
+                scrollThreshold: { top: 72, bottom: 48, left: 0, right: 0 },
+              }
+            : {}),
         } as never);
       });
 
