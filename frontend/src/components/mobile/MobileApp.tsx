@@ -12,6 +12,7 @@ import { MoveToDialog } from "@/components/FileTree";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import type { SidebarView } from "@/components/Ribbon";
 import { useSwipeSidebar, type PagerFocus } from "@/components/useSwipeSidebar";
+import QuickCapturePane from "./QuickCapturePane";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
@@ -270,9 +271,10 @@ export default function MobileApp() {
       }
     >
       {/* Pager — a "triple width canvas". The sidebar pane (left), the note
-          view (center) and the contents pane (right) each take a full
-          viewport; the track is 300vw and pans in/out so no pane ever
-          shrinks. */}
+          view (center) and the right pane each take a full viewport; the
+          track is 300vw and pans in/out so no pane ever shrinks. The right
+          pane is the table of contents for a note and quick capture on the
+          dashboard (swipe left there to jot something down). */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div className="mob-pager flex h-full w-[300%]">
           <MobileSidebar
@@ -330,11 +332,18 @@ export default function MobileApp() {
           />
           </main>
 
-          <MobileTocPane
-            noteId={activeId ?? ""}
-            focused={pagerFocus === "toc"}
-            onClose={() => setPagerFocus("editor")}
-          />
+          {activeId === DASHBOARD_ID ? (
+            <QuickCapturePane
+              focused={pagerFocus === "toc"}
+              onBack={() => setPagerFocus("editor")}
+            />
+          ) : (
+            <MobileTocPane
+              noteId={activeId ?? ""}
+              focused={pagerFocus === "toc"}
+              onClose={() => setPagerFocus("editor")}
+            />
+          )}
         </div>
       </div>
 

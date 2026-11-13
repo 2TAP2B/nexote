@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+// "toc" is the right-hand pane: the table of contents for a note, quick
+// capture on the dashboard.
 export type PagerFocus = "sidebar" | "editor" | "toc";
 
 // Pane order in the 300vw mobile pager track: sidebar (0), editor (1), toc (2).
@@ -91,6 +93,11 @@ export function useSwipeSidebar({ focus, onFocus, swipeFromContent = false }: Sw
     };
 
     const canStart = (target: EventTarget | null): boolean => {
+      // Text fields keep their own gestures (caret drag, selection) in every
+      // pane — e.g. the quick-capture composer.
+      if (target instanceof Element && target.closest("input, textarea, select, [data-no-swipe]")) {
+        return false;
+      }
       if (handlers.current.focus !== "editor") return true;
       if (target instanceof Element && target.closest(".mob-bottom-pill")) return true;
       return swipeFromContent && canSwipeFromContent(target);

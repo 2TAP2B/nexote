@@ -824,12 +824,12 @@ body {
 }
 
 /* Mobile pager — a "triple width canvas": the sidebar pane (left), the
- * note-view pane (center) and the table-of-contents pane (right) sit side by
- * side in one track that is 300vw wide. Focusing a pane just pans the track,
- * so every pane keeps its full viewport and nothing is squeezed. Focus is
- * driven by data-pager-focus on the shell (sidebar / editor / toc); the
- * swipe hook overrides with an inline transform mid-drag and clears it to let
- * the transition snap. */
+ * note-view pane (center) and the right pane (table of contents for a note,
+ * quick capture on the dashboard) sit side by side in one track that is
+ * 300vw wide. Focusing a pane just pans the track, so every pane keeps its
+ * full viewport and nothing is squeezed. Focus is driven by data-pager-focus
+ * on the shell (sidebar / editor / toc); the swipe hook overrides with an
+ * inline transform mid-drag and clears it to let the transition snap. */
 .mob-pager {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
