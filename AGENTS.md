@@ -10,7 +10,7 @@ touches**. Do not re-read the whole repo per session.
   files** tables below to jump straight to a target.
 - If a task spans **>3 unrelated files**, delegate the read to an `explore`
   sub-agent and work from its summary instead of loading all of it into context.
-- The backend is dense (`notes/store.go` ~985 lines). Open the specific function
+- The backend is dense (`notes/store.go` ~1200 lines). Open the specific function
   you need, not the whole file.
 
 ## Stack & layout
@@ -23,15 +23,22 @@ touches**. Do not re-read the whole repo per session.
 | `.notes-dev/` | Dev data dir (gitignored). Real default is `$NEXOTE_HOME` → `~/.nexote`. |
 
 ## Data model
-- A **note** = one file `<id>.md`. Frontmatter (YAML) holds `Meta`; the rest is
-  markdown body. See `notes/frontmatter.go`.
+- A **note** = one markdown file named after its title (`My Note.md`; a second
+  note with that title in the folder is `My Note 1.md`). Frontmatter (YAML)
+  holds `Meta`; the rest is markdown body. See `notes/frontmatter.go`,
+  `notes/filenames.go`. The frontmatter `id` is the note's identity — every
+  lookup, URL, tab and history dir uses it; never derive ids from file names.
   - `Meta`: `id, title, path, createdAt, updatedAt, tags[], type, artist, year,
     genre, wantlist, cover, collection, fields{}`. (`path` = folder relative to
     vault root; `""` = root.)
-- **ID** = 16-char base64url random string → `notes/id.go` `NewID()`.
+- **ID** = 16-char base64url random string → `notes/id.go` `NewID()` (some
+  older notes carry 12-char ids).
 - Storage under `$NEXOTE_HOME` (default `~/.nexote`, dev `.envrc`/local may set
   `.notes-dev`):
-  - `vaults/<vaultId>/…` — note files, nested folders. Registry: `vaults.json`.
+  - `vaults/<vault name>/…` — note files, nested folders. Registry:
+    `vaults.json`, which stores **absolute** vault paths: a copied
+    `$NEXOTE_HOME` (e.g. for a test backend) still reads and writes the
+    original vaults until those paths are rewritten.
   - A dedicated **"Collections"** vault is auto-created to hold collection notes.
   - `journal/` — daily journal notes (pseudo id `"journal"`).
   - `collections.json` — collection registry (`CollectionMeta` + custom fields).
@@ -44,10 +51,11 @@ touches**. Do not re-read the whole repo per session.
 | --- | --- |
 | `backend/main.go` | Entrypoint: `$NEXOTE_HOME`, port, init registry + collections vault + journal store, `migrateVinyls`. |
 | `api/handler.go` | `Handler{Registry,Collections,CollectionsStore,JournalStore,Events}` + **all** REST routes + CORS/preflight. Route table lives here (lines 51–126). |
-| `notes/store.go` | Core `Store`: filesystem notes, in-memory id→path index, two locks, create/update/delete/daily/copy/move, path sanitization. |
+| `notes/store.go` | Core `Store`: filesystem notes, in-memory id→path index (verified on every hit), two locks, create/update/delete/daily/copy/move, path sanitization. |
+| `notes/filenames.go` | Title → file name (`fileNameBase`), numbered duplicates (`noteFileTarget`), id-by-frontmatter lookups, startup `NormalizeFileNames` (renames legacy `<id>.md` files). |
 | `notes/frontmatter.go` | `Meta` + `Document` types; encode/parse markdown+YAML frontmatter. |
 | `notes/id.go` | `NewID()` 16-char base64url generator. |
-| `notes/vaults.go` | `VaultMeta` + `VaultRegistry` (`vaults.json`, ensures default "Default" vault). |
+| `notes/vaults.go` | `VaultMeta` + `VaultRegistry` (`vaults.json`, ensures default "Default" vault, caches **one shared `Store` per vault**). |
 | `notes/collections.go` | `CollectionMeta`/`CollectionField`/`CollectionFieldType` + `CollectionRegistry`. |
 | `notes/history.go` | Per-note full snapshots under `<store>/.history/<noteId>/<unix-ms>.md`. |
 | `notes/snippet.go` | Plain-text note previews (`makeSnippet`, `contentSnippet`) for lists/history/search. Mirrored by `makeSnippet` in `src/lib/note-utils.ts` — keep both in sync. |
@@ -65,9 +73,9 @@ touches**. Do not re-read the whole repo per session.
 | `src/components/MilkdownEditor.tsx` | The editor (Milkdown Crepe). |
 | `src/components/{FileTree,EditorPane,Ribbon,TopBar}.tsx` | Desktop shell panes. |
 | `src/components/{CollectionGallery,VinylGallery,NoteHistoryPanel,AICommandPanel,SettingsPanel,CommandPalette}.tsx` | Feature panels. |
-| `src/lib/ai.ts` / `note-utils.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview). |
+| `src/lib/ai.ts` / `note-utils.ts` / `notepad.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview) + the quick-capture "Notepad" format. |
 | `src/app/page.tsx` · `layout.tsx` | Desktop shell composition. |
-| `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`). |
+| `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`): 3-pane pager (sidebar · note · right pane = TOC, or `QuickCapturePane` on the dashboard). |
 
 ## Task → open these files
 | You want to… | Open |
@@ -86,10 +94,17 @@ touches**. Do not re-read the whole repo per session.
 ## Do-not-break invariants
 These are the things that silently corrupt data or hang clients if changed
 carelessly. Comments already live next to each one — read them before editing.
-- **Two locks in `Store`** (`store.go:32-44`): `mu` guards only the in-memory
+- **Two locks in `Store`** (`store.go` struct): `mu` guards only the in-memory
   id→path index; `writeMu` serializes every read-modify-write mutation. Keep
   mutations under `writeMu`. Don't merge them or reads stop being concurrent /
-  writes race (duplicate daily notes, clobbered edits).
+  writes race (duplicate daily notes, clobbered edits, two notes picking one
+  file name). Vault stores must come from `VaultRegistry.Store` (one cached
+  instance per vault) — a fresh `NewStore` per request has its own `writeMu`
+  and serializes nothing.
+- **Note files are written write-then-delete** (`Store.write`): the new
+  title-named file is renamed into place first; the previous file is removed
+  only if it still holds the same id and isn't the same file (case-only rename
+  on macOS/Windows). Keep that order on any new write path.
 - **Optimistic concurrency** (`store.go:18-21`, check at `~361`): `Update`
   returns `ErrConflict` if the note's `updatedAt` changed since read. Preserve
   this guard on any new mutation path.
@@ -109,8 +124,7 @@ go run .                       # serves :8080 (NEXOTE_PORT)
 
 # frontend (from frontend/)
 pnpm install                   # first time
-pnpm typecheck                 # tsc --noEmit
-pnpm lint                      # next lint
+pnpm typecheck                 # tsc --noEmit (there is no lint script)
 pnpm dev                       # Next on :3000, proxies /api/* -> Go
 
 # run both locally:
