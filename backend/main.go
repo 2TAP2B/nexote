@@ -71,8 +71,7 @@ func main() {
 	if gitCfg.Enabled {
 		gs := notes.NewGitSync(home, gitCfg)
 		h.GitSync = gs
-		// All future stores handed out by the registry get the hook;
-		// handlers construct a fresh store per request.
+		// The registry attaches the hook to every vault store it hands out.
 		registry.SetGitSync(gs)
 		if h.JournalStore != nil {
 			h.JournalStore.SetGitSync(gs)
@@ -98,10 +97,44 @@ func main() {
 		}
 	}
 
+	// Name every note file after its title. Migrates the legacy "<id>.md"
+	// layout once; afterwards it only fixes names changed outside the app.
+	normalizeNoteFileNames(registry, h.JournalStore)
+
 	addr := ":" + port
 	log.Printf("nexote backend listening on http://localhost%s (home: %s)", addr, home)
 	if err := http.ListenAndServe(addr, h.Routes()); err != nil {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+// normalizeNoteFileNames renames note files to their titles in every vault
+// and the journal (see Store.NormalizeFileNames). Runs before the server
+// listens, so no request can observe a half-renamed vault.
+func normalizeNoteFileNames(registry *notes.VaultRegistry, journal *notes.Store) {
+	var stores []*notes.Store
+	vaults, err := registry.List()
+	if err != nil {
+		log.Printf("list vaults for file naming: %v", err)
+	}
+	for _, v := range vaults {
+		if s, err := registry.Store(v.ID); err == nil {
+			stores = append(stores, s)
+		}
+	}
+	if journal != nil {
+		stores = append(stores, journal)
+	}
+	renamed := 0
+	for _, s := range stores {
+		n, err := s.NormalizeFileNames()
+		renamed += n
+		if err != nil {
+			log.Printf("name note files in %s: %v", s.Dir, err)
+		}
+	}
+	if renamed > 0 {
+		log.Printf("renamed %d note files to their titles", renamed)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,30 +23,36 @@ var ErrNotFound = errors.New("note not found")
 var ErrConflict = errors.New("note changed since read")
 
 // Store is a filesystem-backed collection of notes. Notes may live in nested
-// folders under Dir; each note is a "<id>.md" file whose frontmatter records
-// its path (the folder, relative to Dir) and title. Empty folders are tracked
-// as real directories so they persist even without notes.
+// folders under Dir; each note is a markdown file named after its title (see
+// filenames.go) whose frontmatter records its id, path (the folder, relative
+// to Dir) and title. Empty folders are tracked as real directories so they
+// persist even without notes.
 //
-// A lazily-built in-memory index maps note id -> absolute file path so that
-// reading a note (and the tree listing) does not re-walk the directory tree
-// for every note. Mutations (create/update/delete/move) keep the index in sync
-// so List/Get are fast even with many notes.
+// The frontmatter id is a note's identity; the file name is only a readable
+// label. An in-memory index maps id -> absolute file path so reads don't
+// re-walk the tree; it is verified on every hit (the file must still hold
+// that id) and rebuilt by List, so files renamed or replaced outside the app
+// never resolve to the wrong note. One Store per directory is shared by all
+// requests (VaultRegistry.Store), so the index and writeMu are too.
 type Store struct {
 	Dir string
 
 	mu    sync.RWMutex
-	index map[string]string // id -> absolute path of "<id>.md"
+	index map[string]string // note id -> absolute path of its file
 
 	// writeMu serializes read-modify-write mutations (create/update/delete/
-	// daily/copy/move). Without it, two concurrent requests can both read the
-	// same base state and then each write, clobbering the other's change (and,
-	// for Daily, creating two notes for the same date). It is separate from mu
-	// (which guards only the in-memory index) so reads stay concurrent.
+	// daily/copy/move/tags/tasks). Without it, two concurrent requests can
+	// both read the same base state and then each write, clobbering the
+	// other's change (and, for Daily, creating two notes for the same date;
+	// with title-named files, two notes could pick the same name). It is
+	// separate from mu (which guards only the in-memory index) so reads stay
+	// concurrent.
 	writeMu sync.Mutex
 
-	// gitSync is an optional git auto-commit hook. When non-nil, it triggers a
-	// debounced commit after each mutation. Set via SetGitSync.
-	gitSync *GitSync
+	// gitSync is an optional git auto-commit hook. When set, it triggers a
+	// debounced commit after each mutation. Atomic because the store is
+	// shared and SetGitSync can swap the hook while a request is writing.
+	gitSync atomic.Pointer[GitSync]
 }
 
 // NewStore creates a Store rooted at dir, creating the directory if needed.
@@ -58,35 +65,15 @@ func NewStore(dir string) (*Store, error) {
 
 // SetGitSync attaches an optional git auto-commit hook. Pass nil to disable.
 func (s *Store) SetGitSync(gs *GitSync) {
-	s.gitSync = gs
+	s.gitSync.Store(gs)
 }
 
-// afterWrite triggers a debounced git commit if gitSync is configured. Called
-// after writeMu is released so git I/O never blocks other writers.
+// afterWrite triggers a debounced git commit if gitSync is configured.
+// commitDebounced only (re)arms a timer, so this never blocks the writer.
 func (s *Store) afterWrite() {
-	if s.gitSync != nil {
-		s.gitSync.commitDebounced()
+	if gs := s.gitSync.Load(); gs != nil {
+		gs.commitDebounced()
 	}
-}
-
-// buildIndex walks the tree once and records every "<id>.md" file's absolute
-// path. Called lazily; must be called with s.mu held (or after ensuring it).
-func (s *Store) buildIndex() {
-	s.index = make(map[string]string)
-	_ = filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-		// Skip history snapshots (they live under .history/<noteId>/).
-		if strings.Contains(filepath.ToSlash(p), "/"+historyDirName+"/") {
-			return nil
-		}
-		s.index[strings.TrimSuffix(d.Name(), ".md")] = p
-		return nil
-	})
 }
 
 // indexPath returns the indexed path for id, or "" if not indexed.
@@ -98,15 +85,6 @@ func (s *Store) indexPath(id string) (string, bool) {
 	}
 	p, ok := s.index[id]
 	return p, ok
-}
-
-// ensureIndex populates the index on first use.
-func (s *Store) ensureIndex() {
-	s.mu.Lock()
-	if s.index == nil {
-		s.buildIndex()
-	}
-	s.mu.Unlock()
 }
 
 // trackIndex records a note's path (after a write or create).
@@ -171,6 +149,11 @@ func (s *Store) List() (ListResult, error) {
 	var folders []FolderEntry = []FolderEntry{}
 
 	idx := make(map[string]string)
+	// One entry per note id. A second file with the same id appears when a
+	// listing races a rename (new name written, old one not yet removed) or
+	// after a crash in between; the newest version wins.
+	pos := make(map[string]int)
+	mod := make(map[string]time.Time)
 
 	err := filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -199,15 +182,18 @@ func (s *Store) List() (ListResult, error) {
 		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
-		id := strings.TrimSuffix(d.Name(), ".md")
-		idx[id] = p
-		doc, err := s.readAt(id, p)
+		doc, err := s.readAt("", p)
 		if err != nil {
 			// Skip files that aren't valid notes rather than failing the whole
 			// listing; a stray .md in the tree shouldn't break the UI.
 			return nil
 		}
-		notes = append(notes, Entry{
+		id := noteIDOf(doc, p)
+		var mtime time.Time
+		if info, err := d.Info(); err == nil {
+			mtime = info.ModTime()
+		}
+		entry := Entry{
 			ID:         doc.Meta.ID,
 			Title:      doc.Meta.Title,
 			Path:       doc.Meta.Path,
@@ -224,7 +210,22 @@ func (s *Store) List() (ListResult, error) {
 			Icon:       doc.Meta.Icon,
 			Collection: doc.Meta.Collection,
 			Fields:     doc.Meta.Fields,
-		})
+		}
+		if i, dup := pos[id]; dup {
+			prev := notes[i]
+			newer := entry.UpdatedAt.After(prev.UpdatedAt) ||
+				(entry.UpdatedAt.Equal(prev.UpdatedAt) && mtime.After(mod[id]))
+			if newer {
+				notes[i] = entry
+				idx[id] = p
+				mod[id] = mtime
+			}
+			return nil
+		}
+		pos[id] = len(notes)
+		mod[id] = mtime
+		idx[id] = p
+		notes = append(notes, entry)
 		return nil
 	})
 	if err != nil {
@@ -543,12 +544,9 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	// frontmatter tags a faithful mirror of the inline hashtags.
 	doc.Meta.Tags = extractInlineTags(doc.Body)
 
-	// If the path changed, delete the old file first, then write the new one.
-	if doc.Meta.Path != oldPath {
-		if oldFile, err := s.resolvePath(id); err == nil {
-			_ = os.Remove(oldFile)
-		}
-	}
+	// write() names the file after the (possibly new) title in the (possibly
+	// new) folder and removes the previous file only once the new one is in
+	// place, so a failed write never loses the note.
 	if err := s.write(doc); err != nil {
 		return Document{}, err
 	}
@@ -719,6 +717,9 @@ func containsString(slice []string, s string) bool {
 // AddTag adds a tag to a note's frontmatter. Idempotent — if the tag is
 // already present nothing changes. Returns the updated document.
 func (s *Store) AddTag(id string, tag string) (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	nt := normalizeTag(tag)
 	if nt == "" {
 		return Document{}, fmt.Errorf("tag cannot be empty")
@@ -741,6 +742,9 @@ func (s *Store) AddTag(id string, tag string) (Document, error) {
 // RemoveTag removes a tag from a note's frontmatter. Returns the updated
 // document.
 func (s *Store) RemoveTag(id string, tag string) (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	nt := normalizeTag(tag)
 	doc, err := s.read(id)
 	if err != nil {
@@ -763,6 +767,9 @@ func (s *Store) RemoveTag(id string, tag string) (Document, error) {
 // RenameTag renames a tag across all notes in the store. Returns the number
 // of notes that had the tag renamed.
 func (s *Store) RenameTag(from string, to string) (int, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	nf := normalizeTag(from)
 	nt := normalizeTag(to)
 	if nf == "" || nt == "" {
@@ -802,6 +809,9 @@ func (s *Store) RenameTag(from string, to string) (int, error) {
 // DeleteTag removes a tag from all notes in the store. Returns the number of
 // notes that had the tag removed.
 func (s *Store) DeleteTag(tag string) (int, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	nt := normalizeTag(tag)
 	list, err := s.List()
 	if err != nil {
@@ -915,6 +925,9 @@ func (s *Store) Tasks() ([]Task, error) {
 // SetTaskChecked flips a task checkbox in a note's body. It reads the note,
 // rewrites the specified line (0-based) to [ ] or [x], and saves.
 func (s *Store) SetTaskChecked(id string, line int, checked bool) (Document, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	defer s.afterWrite()
 	doc, err := s.read(id)
 	if err != nil {
 		return Document{}, err
@@ -940,25 +953,44 @@ func (s *Store) SetTaskChecked(id string, line int, checked bool) (Document, err
 	return doc, nil
 }
 
-// resolvePath finds the on-disk path of a note by id, searching the tree in
-// case the note lives in a subfolder. If not found, returns ErrNotFound.
+// resolvePath returns the on-disk path of note id. An indexed path is used
+// only while the file there still holds that id (it may have been renamed,
+// replaced or deleted outside the app); otherwise the tree is searched.
+// Returns ErrNotFound when no file holds the id.
 func (s *Store) resolvePath(id string) (string, error) {
-	// Fast path: the note is indexed (the common case after a listing or an
-	// earlier read). Falls back to a full tree walk only when the index is
-	// stale (e.g. a file was added out-of-band), keeping lookups O(1).
 	if p, ok := s.indexPath(id); ok {
-		if _, err := os.Stat(p); err == nil {
+		if fid, ok := fileNoteID(p); ok && fid == id {
 			return p, nil
 		}
 		s.untrackIndex(id)
 	}
-	// Search the tree for "<id>.md".
+	return s.findPath(id)
+}
+
+// findPath walks the tree for the file holding note id. File names say
+// nothing about ids, so each note's frontmatter is read; every note passed on
+// the way is indexed, so a cold store pays for the walk only once.
+func (s *Store) findPath(id string) (string, error) {
 	var found string
 	err := filepath.WalkDir(s.Dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && d.Name() == id+".md" {
+		if d.IsDir() {
+			if d.Name() == historyDirName {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		fid, ok := fileNoteID(p)
+		if !ok {
+			return nil
+		}
+		s.trackIndex(fid, p)
+		if fid == id {
 			found = p
 			return filepath.SkipAll
 		}
@@ -970,12 +1002,20 @@ func (s *Store) resolvePath(id string) (string, error) {
 	if found == "" {
 		return "", ErrNotFound
 	}
-	s.trackIndex(id, found)
 	return found, nil
 }
 
+// read loads note id. Like resolvePath, an indexed path counts only if the
+// file there still holds the id; the check costs nothing extra because the
+// file is being read anyway.
 func (s *Store) read(id string) (Document, error) {
-	p, err := s.resolvePath(id)
+	if p, ok := s.indexPath(id); ok {
+		if doc, err := s.readAt(id, p); err == nil && noteIDOf(doc, p) == id {
+			return doc, nil
+		}
+		s.untrackIndex(id)
+	}
+	p, err := s.findPath(id)
 	if err != nil {
 		return Document{}, err
 	}
@@ -1007,6 +1047,9 @@ func (s *Store) readAt(id, p string) (Document, error) {
 	return doc, nil
 }
 
+// write persists doc under its title-derived file name (see noteFileTarget).
+// The caller must hold writeMu, and for an existing note must have read it
+// through this store first, which puts its current file in the index.
 func (s *Store) write(doc Document) error {
 	notePath := sanitizePath(doc.Meta.Path)
 	dir := s.Dir
@@ -1020,12 +1063,15 @@ func (s *Store) write(doc Document) error {
 	if err != nil {
 		return fmt.Errorf("encode note: %w", err)
 	}
+	id := doc.Meta.ID
+	prev, _ := s.indexPath(id)
+	path := s.noteFileTarget(dir, id, doc.Meta.Title, prev)
+
 	// Write to a temp file in the same directory, then rename over the real
 	// file. Readers never see a partially-written note, and without an atomic
 	// swap a reader (e.g. another client's GET or the file listing) could
 	// observe a half-written body. os.Rename is atomic on the local FS.
-	path := filepath.Join(dir, doc.Meta.ID+".md")
-	tmp, err := os.CreateTemp(dir, doc.Meta.ID+".*.tmp")
+	tmp, err := os.CreateTemp(dir, id+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("create note temp: %w", err)
 	}
@@ -1048,8 +1094,16 @@ func (s *Store) write(doc Document) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("rename note: %w", err)
 	}
-	// Keep the id->path index in sync with the on-disk location.
-	s.trackIndex(doc.Meta.ID, path)
+	// The note's previous file (old title, old folder, or a legacy "<id>.md")
+	// goes only now that the new one is in place, and only if it still holds
+	// this note (an outside change may have reused the name) and isn't the
+	// very same file (a case-only rename on a case-insensitive filesystem).
+	if prev != "" && prev != path && !sameFile(prev, path) {
+		if fid, ok := fileNoteID(prev); ok && fid == id {
+			_ = os.Remove(prev)
+		}
+	}
+	s.trackIndex(id, path)
 	return nil
 }
 

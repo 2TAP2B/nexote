@@ -37,8 +37,8 @@ func TestCreateAndRead(t *testing.T) {
 		t.Errorf("body = %q, want the seeded title heading", doc.Body)
 	}
 
-	// File exists on disk with the right name.
-	if _, err := os.Stat(filepath.Join(s.Dir, doc.Meta.ID+".md")); err != nil {
+	// File exists on disk, named after the title.
+	if _, err := os.Stat(filepath.Join(s.Dir, "First.md")); err != nil {
 		t.Fatalf("file not created: %v", err)
 	}
 
@@ -194,8 +194,8 @@ func TestCreateWithPath(t *testing.T) {
 	if doc.Meta.Path != "Folder/Sub" {
 		t.Fatalf("path = %q, want Folder/Sub", doc.Meta.Path)
 	}
-	// File lives in the nested folder.
-	p := filepath.Join(s.Dir, "Folder", "Sub", doc.Meta.ID+".md")
+	// File lives in the nested folder, named after the title.
+	p := filepath.Join(s.Dir, "Folder", "Sub", "Nested.md")
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("file not in nested folder: %v", err)
 	}

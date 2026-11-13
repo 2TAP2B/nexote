@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -40,9 +39,6 @@ type GitConfig struct {
 	// a settings roundtrip; git.json holds them at 0600.
 	Username         string `json:"username,omitempty"`
 	Password         string `json:"password,omitempty"`
-	// ReadableNames: commit a mirror with vault/folder/titled file names
-	// (.gitsync/ tree) instead of the cryptic internal <id>.md layout.
-	ReadableNames    bool   `json:"readableNames,omitempty"`
 }
 
 var DefaultGitConfig = GitConfig{
@@ -156,8 +152,8 @@ func (gs *GitSync) SetConfig(cfg GitConfig) {
 	if gs.repo != nil {
 		_ = gs.ensureRemote()
 	}
-	// Keep the root .gitignore in step with the current mode (e.g. toggling
-	// ReadableNames or the image include) without requiring a re-init.
+	// Keep the root .gitignore in step with the current settings (e.g.
+	// toggling the image include) without requiring a re-init.
 	_ = gs.writeGitignoreLocked()
 	gs.scheduleAutoSync()
 }
@@ -259,199 +255,20 @@ func (gs *GitSync) InitRepo() error {
 		return err
 	}
 
-	// Store the readable mirror tree (visible to git) when enabled.
-	_ = gs.writeMirrorLocked()
-
 	// Initial commit.
 	return gs.commitLocked("Initial commit (Nexote)")
 }
 
-// mirrorDirName is the directory inside NEXOTE_HOME where the readable
-// snapshot lives. When ReadableNames is enabled, .gitignore hides everything
-// except this tree — the remote sees real vault/folder/note names instead of
-// the internal <id>.md file layout.
-const mirrorDirName = ".gitsync"
-
-// writeMirrorLocked rebuilds .gitsync/ from the live vaults when
-// ReadableNames is on; when it is off it removes a leftover mirror (and any
-// stale .gitignore entries for it are gone after the next writeGitignore).
-// Caller must hold gs.mu.
-func (gs *GitSync) writeMirrorLocked() error {
-	mirror := filepath.Join(gs.root, mirrorDirName)
-	if !gs.cfg.ReadableNames {
-		_ = os.RemoveAll(mirror)
-		return nil
-	}
-	if err := os.RemoveAll(mirror); err != nil {
-		return fmt.Errorf("clear mirror: %w", err)
-	}
-	if err := os.MkdirAll(mirror, 0o755); err != nil {
-		return err
-	}
-
-	// Entries: vault dirs (from vaults.json) + the journal store dir.
-	type src struct{ name, dir string }
-	var sources []src
-	// vaults.json may be a bare array (legacy) or {"vaults":[...]}.
-	var arr []struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
-		Path string `json:"path"`
-	}
-	if data, err := os.ReadFile(filepath.Join(gs.root, "vaults.json")); err == nil {
-		var ok bool
-		if ok = json.Unmarshal(data, &arr) == nil; !ok {
-			var wrapped struct {
-				Vaults []struct {
-					Name string `json:"name"`
-					Type string `json:"type"`
-					Path string `json:"path"`
-				} `json:"vaults"`
-			}
-			if json.Unmarshal(data, &wrapped) == nil {
-				arr = wrapped.Vaults
-			}
-		}
-		for _, v := range arr {
-			if v.Path == "" {
-				continue
-			}
-			name := v.Name
-			if name == "" {
-				name = filepath.Base(v.Path)
-			}
-			sources = append(sources, src{name: name, dir: v.Path})
-		}
-	}
-	if journalDir := filepath.Join(gs.root, "journal"); true {
-		sources = append(sources, src{name: "Journal", dir: journalDir})
-	}
-
-	for _, s := range sources {
-		err := filepath.WalkDir(s.dir, func(p string, d os.DirEntry, err error) error {
-			if err != nil || p == s.dir {
-				return err //nolint:errcheck
-			}
-			rel, _ := filepath.Rel(s.dir, p)
-			rel = filepath.ToSlash(rel)
-			if d.IsDir() {
-				if d.Name() == historyDirName || strings.HasPrefix(d.Name(), ".") {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if strings.HasPrefix(d.Name(), ".") {
-				return nil
-			}
-			ext := strings.ToLower(filepath.Ext(d.Name()))
-			if ext == ".md" {
-				data, err := os.ReadFile(p)
-				if err != nil {
-					return nil // unreadable: skip, failed listing shouldn't block
-				}
-				doc, err := Decode(data)
-				title := sanitizeMirrorName(doc.Meta.Title)
-				id := doc.Meta.ID
-				if id == "" {
-					id = strings.TrimSuffix(d.Name(), ".md")
-				}
-				if doc.Meta.Path != "" {
-					rel = doc.Meta.Path + "/" + filepath.Base(p)
-				}
-				name := title
-				if name == "" {
-					name = strings.TrimSuffix(d.Name(), ".md")
-				}
-				name = fmt.Sprintf("%s [%s].md", name, id)
-				dst := filepath.Join(mirror, sanitizeMirrorSegment(s.name))
-				for _, seg := range strings.Split(path.Dir(rel), "/") {
-					if seg != "" && seg != "." {
-						dst = filepath.Join(dst, sanitizeMirrorSegment(seg))
-					}
-				}
-				dst = filepath.Join(dst, name)
-				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-					return nil
-				}
-				if err := os.WriteFile(dst, data, 0o644); err != nil {
-					return nil
-				}
-				return nil
-			}
-			// Non-note files: images & attachments, kept unchanged when enabled.
-			if !gs.cfg.IncludeImages && imageExtensions[ext] {
-				return nil
-			}
-			dir := filepath.Dir(rel)
-			dst := filepath.Join(mirror, sanitizeMirrorSegment(s.name))
-			for _, seg := range strings.Split(dir, "/") {
-				if seg != "" && seg != "." {
-					dst = filepath.Join(dst, sanitizeMirrorSegment(seg))
-				}
-			}
-			if err := os.MkdirAll(dst, 0o755); err != nil {
-				return nil
-			}
-			out, err := os.ReadFile(p)
-			if err == nil {
-				_ = os.WriteFile(filepath.Join(dst, d.Name()), out, 0o644)
-			}
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("mirror %s: %w", s.name, err)
-		}
-	}
-	return nil
-}
-
-// sanitizeMirrorName makes a note title safe as a file name: strips path
-// separators, controls and trims dot/space edges. Usage of the trailing
-// " [<id>]" suffix keeps names unique regardless of duplicates.
-func sanitizeMirrorName(name string) string {
-	repl := strings.NewReplacer(
-		"/", "-", "\\", "-", ":", "-", "\n", " ", "\r", " ", "\t", " ",
-	)
-	name = strings.TrimSpace(repl.Replace(name))
-	name = strings.Trim(name, ". ")
-	if len(name) > 120 {
-		name = name[:120]
-	}
-	return strings.TrimSpace(name)
-}
-
-func sanitizeMirrorSegment(seg string) string {
-	return sanitizeMirrorName(seg)
-}
-
-// writeGitignoreLocked writes the root .gitignore matching the current mode:
-// with ReadableNames, git only sees the .gitsync/ mirror; without it, the
-// whole home is committed except history snapshots (and images when excluded).
+// writeGitignoreLocked writes the root .gitignore: the whole home is
+// committed except history snapshots, git.json (it holds the remote
+// credentials) and, when excluded, images. Note files carry their titles as
+// names, so the committed tree reads like the vault itself.
 // Caller must hold gs.mu.
 func (gs *GitSync) writeGitignoreLocked() error {
-	var lines []string
-	if gs.cfg.ReadableNames {
-		// Only the readable mirror is visible to git. vaults/, journal/ and
-		// the root-level vault note files (internal <id>.md layout) are
-		// hidden; .gitsync/ carries the human-readable names.
-		lines = []string{
-			"/vaults/", "/vaults/**",
-			"/journal/", "/journal/**",
-			"/.history/", "/.history/**",
-			"/vaults.json", "/collections.json", "/metadata.json", "/git.json",
-			"/*.md",
-		}
-		if !gs.cfg.IncludeImages {
-			lines = append(lines,
-				"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
-		}
-	} else {
-		// git.json holds the remote credentials: never commit it.
-		lines = append(lines, "*/.history/", ".history/", "/git.json")
-		if !gs.cfg.IncludeImages {
-			lines = append(lines,
-				"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
-		}
+	lines := []string{"*/.history/", ".history/", "/git.json"}
+	if !gs.cfg.IncludeImages {
+		lines = append(lines,
+			"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")
 	}
 	content := strings.Join(lines, "\n") + "\n"
 	if cur, err := os.ReadFile(filepath.Join(gs.root, ".gitignore")); err != nil || string(cur) != content {
@@ -505,12 +322,8 @@ func (gs *GitSync) commitLocked(msg string) error {
 		return err
 	}
 	// Keep .gitignore current (repos initialized by older builds lack the
-	// git.json rule) and rebuild the readable mirror before staging so the
-	// committed tree always reflects the current vault contents.
+	// git.json rule).
 	if err := gs.writeGitignoreLocked(); err != nil {
-		return err
-	}
-	if err := gs.writeMirrorLocked(); err != nil {
 		return err
 	}
 	wt, err := gs.repo.Worktree()

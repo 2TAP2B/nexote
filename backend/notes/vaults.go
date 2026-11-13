@@ -29,16 +29,25 @@ const VaultTypeCollections = "collections"
 type VaultRegistry struct {
 	root string
 	mu   sync.Mutex
-	// gitSync is shared with every store this registry hands out, so
-	// per-request Store() instances all trigger debounced auto-commits.
+	// gitSync is attached to every store this registry hands out so
+	// mutations trigger debounced auto-commits.
 	gitSync *GitSync
+	// stores holds one Store per vault directory. Requests must share it:
+	// its writeMu is what serializes concurrent mutations of a vault, and
+	// its id->path index spares every request a tree walk. Keyed by path, so
+	// a renamed vault gets a fresh store; Rename/Delete drop the old one.
+	stores map[string]*Store
 }
 
-// SetGitSync attaches the git auto-commit hook for all future stores.
+// SetGitSync attaches the git auto-commit hook to every vault store, current
+// and future.
 func (r *VaultRegistry) SetGitSync(gs *GitSync) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.gitSync = gs
+	for _, s := range r.stores {
+		s.SetGitSync(gs)
+	}
 }
 
 // NewVaultRegistry creates a registry rooted at the given directory. The
@@ -225,6 +234,7 @@ func (r *VaultRegistry) Rename(id, newName string) (VaultMeta, error) {
 	if err := os.Rename(old.Path, newPath); err != nil {
 		return VaultMeta{}, fmt.Errorf("rename vault dir: %w", err)
 	}
+	delete(r.stores, old.Path)
 
 	vaults[idx].Name = newName
 	vaults[idx].Path = newPath
@@ -265,6 +275,7 @@ func (r *VaultRegistry) Delete(id string) error {
 	if err := os.RemoveAll(vaults[idx].Path); err != nil {
 		return fmt.Errorf("delete vault dir: %w", err)
 	}
+	delete(r.stores, vaults[idx].Path)
 
 	vaults = append(vaults[:idx], vaults[idx+1:]...)
 	return r.write(vaults)
@@ -286,11 +297,16 @@ func (r *VaultRegistry) Get(id string) (VaultMeta, error) {
 	return VaultMeta{}, ErrNotFound
 }
 
-// Store returns a notes.Store for the given vault ID.
+// Store returns the shared notes.Store for the given vault ID.
 func (r *VaultRegistry) Store(id string) (*Store, error) {
 	vault, err := r.Get(id)
 	if err != nil {
 		return nil, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if s, ok := r.stores[vault.Path]; ok {
+		return s, nil
 	}
 	store, err := NewStore(vault.Path)
 	if err != nil {
@@ -299,6 +315,10 @@ func (r *VaultRegistry) Store(id string) (*Store, error) {
 	if r.gitSync != nil {
 		store.SetGitSync(r.gitSync)
 	}
+	if r.stores == nil {
+		r.stores = make(map[string]*Store)
+	}
+	r.stores[vault.Path] = store
 	return store, nil
 }
 
@@ -343,9 +363,13 @@ func (r *VaultRegistry) MoveNote(srcVaultId, noteId, dstVaultId string, dstPath 
 	}
 	newDoc.Body = migrated
 
-	if err := dstStore.write(newDoc); err != nil {
+	dstStore.writeMu.Lock()
+	err = dstStore.write(newDoc)
+	dstStore.writeMu.Unlock()
+	if err != nil {
 		return Document{}, err
 	}
+	dstStore.afterWrite()
 
 	if err := srcStore.Delete(noteId); err != nil {
 		return Document{}, err

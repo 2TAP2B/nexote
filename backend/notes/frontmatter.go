@@ -10,9 +10,9 @@
 //	---
 //	<markdown body>
 //
-// The id is the filename (without .md); the path is the folder the file lives
-// in, relative to the store root. This keeps notes organized in a tree while
-// the id remains the stable handle for API operations.
+// The id is the note's stable handle for API operations; the file is named
+// after the title (see filenames.go) and the path is the folder it lives in,
+// relative to the store root.
 package notes
 
 import (

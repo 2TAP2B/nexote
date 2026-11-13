@@ -667,30 +667,6 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                           </select>
                         </label>
 
-                        {/* Readable file names in git */}
-                        <label className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                          <span className="flex flex-col">
-                            <span className="text-sm text-foreground">Readable file names in git</span>
-                            <span className="text-xs text-muted-foreground">
-                              Commit a mirror with real vault/folder/note names instead of internal ids
-                            </span>
-                          </span>
-                          <input
-                            type="checkbox"
-                            checked={gitDraft.readableNames ?? false}
-                            onChange={async (e) => {
-                              const next = { ...gitDraft, readableNames: e.target.checked };
-                              setGitDraft(next);
-                              try {
-                                await saveGitConfig(next);
-                              } catch (err) {
-                                setGitMsg(err instanceof Error ? err.message : "Save failed");
-                              }
-                            }}
-                            className="h-4 w-4"
-                          />
-                        </label>
-
                         {/* Actions */}
                         <div className="flex flex-wrap gap-2">
                           <button

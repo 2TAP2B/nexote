@@ -1102,17 +1102,6 @@ function SyncPage({
                 <option value={10}>10 min</option>
               </select>
             </div>
-            <Divider />
-            <ToggleRow
-              label="Readable file names"
-              desc="Commit real vault/folder/note names instead of internal ids"
-              checked={draft.readableNames ?? false}
-              onChange={async (v) => {
-                const next = { ...draft, readableNames: v };
-                setDraft(next);
-                await persist(next);
-              }}
-            />
           </Group>
 
           <Group label="Actions">

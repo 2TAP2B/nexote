@@ -155,8 +155,6 @@ export type GitConfig = {
   /** Credentials stored in git.json (0600) so background sync can auth. */
   username?: string;
   password?: string;
-  /** Commit a readable .gitsync/ mirror (real vault/folder/note names). */
-  readableNames?: boolean;
 };
 
 export type GitStatusInfo = {
