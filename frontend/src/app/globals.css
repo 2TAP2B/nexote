@@ -482,7 +482,8 @@ body {
 }
 .milkdown .ProseMirror {
   width: 100%;
-  max-width: 960px;
+  /* Narrow "readable line length" column; unset = wide editor. */
+  max-width: var(--editor-max-width, 960px);
   margin: 0 auto;
   padding: 64px 64px 120px;
   font-size: var(--editor-font-size, 16px);

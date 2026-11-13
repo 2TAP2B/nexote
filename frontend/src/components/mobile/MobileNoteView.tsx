@@ -79,7 +79,7 @@ export default function MobileNoteView({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [bodyKey, setBodyKey] = useState(0);
-  const [rawMode, setRawMode] = useState(false);
+  const [rawMode, setRawMode] = useState(() => settings.defaultRawMode);
   const loadedKeyRef = useRef<string | null>(null);
   const skipNextChange = useRef(false);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);

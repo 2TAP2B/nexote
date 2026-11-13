@@ -29,6 +29,13 @@ export type AppSettings = {
   startVaultId: string; // "" = last active vault
   // Editor
   editorFontFamily: string; // "" = default theme font
+  // New note title in its own heading (## title). Off shows a plain
+  // paragraph first, like classic Obsidian.
+  headingOnNewNote: boolean;
+  // Rendered line width: false = wide column, true = narrow readable column.
+  readableLineLength: boolean;
+  // Raw-markdown textarea is the default editor surface.
+  defaultRawMode: boolean;
   // Features — section visibility
   showTagsSection: boolean;
   showTasksSection: boolean;
@@ -46,6 +53,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openDashboardOnStart: false,
   startVaultId: "",
   editorFontFamily: "",
+  headingOnNewNote: true,
+  readableLineLength: false,
+  defaultRawMode: false,
   showTagsSection: true,
   showTasksSection: true,
   showTagsOnPalette: true,
@@ -909,6 +919,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const note = await api.create(vaultId, {
           title,
           path: targetPath,
+          // With the heading toggle off the note starts as a plain blank
+          // paragraph (classic Obsidian look) — no `## title` seed.
+          body: settings.headingOnNewNote ? undefined : "\n",
         });
         await refresh();
         setNotesById((prev) => ({ ...prev, [note.id]: note }));
@@ -925,7 +938,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, vaults, switchVault, refresh, settings.defaultTitle, settings.titleTemplate, activeId, notesById],
+    [activeVaultId, vaults, switchVault, refresh, settings.defaultTitle, settings.titleTemplate, settings.headingOnNewNote, activeId, notesById],
   );
 
   const copyNote = useCallback(

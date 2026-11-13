@@ -61,7 +61,7 @@ export default function EditorPane({
   const [titleDraft, setTitleDraft] = useState("");
   const [bodyKey, setBodyKey] = useState(0);
   const [overflowMenu, setOverflowMenu] = useState<{ x: number; y: number } | null>(null);
-  const [rawMode, setRawMode] = useState(false);
+  const [rawMode, setRawMode] = useState(() => settings.defaultRawMode);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const skipNextChange = useRef(false);
@@ -96,8 +96,9 @@ export default function EditorPane({
     const bodyChanged = activeNote.body !== prevBodyRef.current;
     prevBodyRef.current = activeNote.body;
 
-    // Each note opens in the rendered view; the raw-mode toggle is per-note.
-    if (!sameNote) setRawMode(false);
+    // Respect the "raw markdown by default" preference on each new note; the
+    // in-editor toggle is still per-note while it stays open.
+    if (!sameNote) setRawMode(settings.defaultRawMode);
 
     // If this update came from our own save, don't remount the editor or
     // overwrite local body state — the user may have continued typing while
@@ -126,7 +127,7 @@ export default function EditorPane({
       setBodyKey((k) => k + 1);
     }
     return () => window.clearTimeout(releaseSkip);
-  }, [activeNote]);
+  }, [activeNote, settings.defaultRawMode]);
 
   const handleEditorChange = useCallback((markdown: string) => {
     if (skipNextChange.current) {
@@ -538,6 +539,7 @@ export default function EditorPane({
             {
               "--editor-font-size": `${settings.editorFontSize}px`,
               "--editor-font-family": editorFontStack(settings.editorFontFamily) || undefined,
+              "--editor-max-width": settings.readableLineLength ? "750px" : undefined,
             } as React.CSSProperties
           }
         >

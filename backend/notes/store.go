@@ -286,6 +286,10 @@ func (s *Store) Copy(id string) (Document, error) {
 type CreateInput struct {
 	Title string `json:"title"`
 	Path  string `json:"path"`
+	// Body seeds the note content. Empty = the default title heading
+	// ("## <title>"); the frontend's headingOnNewNote=off passes "\n" so the
+	// note starts as a plain blank paragraph (classic Obsidian look).
+	Body string `json:"body,omitempty"`
 }
 
 // Create writes a new note file with a fresh id and empty body, returning the
@@ -301,6 +305,10 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 	}
 	notePath := sanitizePath(in.Path)
 	now := time.Now().UTC()
+	body := fmt.Sprintf("## %s\n\n", title)
+	if in.Body != "" {
+		body = in.Body
+	}
 	doc := Document{
 		Meta: Meta{
 			ID:        NewID(),
@@ -309,7 +317,7 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 			CreatedAt: now,
 			UpdatedAt: now,
 		},
-		Body: fmt.Sprintf("## %s\n\n", title),
+		Body: body,
 	}
 	if err := s.write(doc); err != nil {
 		return Document{}, err

@@ -231,18 +231,11 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
                   type="button"
                   data-settings-cat={cat.id}
                   onClick={() => setActiveCategory(cat.id)}
-                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
-                  style={
+                  className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
                     active
-                      ? { background: "var(--primary)", color: "var(--primary-foreground)" }
-                      : { color: "var(--foreground)" }
-                  }
-                  onMouseEnter={(e) => {
-                    if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active) e.currentTarget.style.background = "transparent";
-                  }}
+                      ? "bg-primary/15 font-medium text-primary"
+                      : "text-foreground hover:bg-muted"
+                  }`}
                 >
                   <span className="shrink-0">{cat.icon}</span>
                   <span className="truncate">{cat.label}</span>
@@ -418,224 +411,84 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
               </div>
             )}
 
-            {activeCategory === "editor" && (
-              <div className="flex flex-col gap-3 p-4">
-                <SectionHeader icon={<PenLine className="h-4 w-4" />} title="Editor" />
-
-                {/* Autosave */}
-                <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="flex flex-col">
-                    <span className="text-sm text-foreground">Autosave</span>
-                    <span className="text-xs text-muted-foreground">
-                      Automatically save while typing
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.autosave}
-                    onChange={(e) => updateSettings({ autosave: e.target.checked })}
-                    className="h-4 w-4 accent-[var(--primary)]"
-                  />
-                </label>
-
-                {/* New-note title template */}
-                <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">New-note title template</span>
-                  <span className="text-xs text-muted-foreground">
-                    Used when creating a new note. Supports date/time tokens
-                    that are replaced with the current value.
-                  </span>
-                  <input
-                    value={settings.titleTemplate}
-                    onChange={(e) => updateSettings({ titleTemplate: e.target.value })}
-                    placeholder="DAY DD-MM-YYYY HH:mm"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                  <div className="mt-1 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
-                    {[
-                      ["DAY", "Weekday (Monday)"],
-                      ["DDD", "Mon"],
-                      ["DD", "Day (12)"],
-                      ["MM", "Month (08)"],
-                      ["MMM", "Aug"],
-                      ["YYYY", "Year (2025)"],
-                      ["YY", "Year (25)"],
-                      ["HH", "Hour 24h (14)"],
-                      ["mm", "Min (30)"],
-                    ].map(([token, desc]) => (
-                      <span
-                        key={token}
-                        className="rounded border border-border px-1 py-0.5"
-                        title={desc}
-                      >
-                        {token} <span className="text-muted-foreground/60">{desc}</span>
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-1.5 text-xs">
-                    <span className="text-muted-foreground">Preview: </span>
-                    <span className="font-medium text-foreground">
-                      {formatTitle(settings.titleTemplate) || "Untitled"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Editor font size */}
-                <div className="rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-foreground">Editor font size</span>
-                    <span className="text-xs text-muted-foreground">
-                      {settings.editorFontSize}px
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={12}
-                    max={24}
-                    step={1}
-                    value={settings.editorFontSize}
-                    onChange={(e) =>
-                      updateSettings({ editorFontSize: Number(e.target.value) })
-                    }
-                    className="mt-2 w-full accent-[var(--primary)]"
-                  />
-                </div>
-
-                {/* Editor font family */}
-                <label className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="flex flex-col">
-                    <span className="text-sm text-foreground">Editor font family</span>
-                    <span className="text-xs text-muted-foreground">Typeface used in the note editor</span>
-                  </span>
-                  <select
-                    value={settings.editorFontFamily}
-                    onChange={(e) => updateSettings({ editorFontFamily: e.target.value })}
-                    className="shrink-0 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground"
-                  >
-                    {EDITOR_FONTS.map((f) => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* Default note title */}
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">Default note title</span>
-                  <span className="text-xs text-muted-foreground">
-                    Fallback title for new notes when the template is empty
-                  </span>
-                  <input
-                    value={settings.defaultTitle}
-                    onChange={(e) => updateSettings({ defaultTitle: e.target.value })}
-                    placeholder="Untitled"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                </label>
-              </div>
-            )}
+            {activeCategory === "editor" && <EditorSection />}
 
             {activeCategory === "features" && <FeaturesSection />}
 
             {activeCategory === "ai" && (
-              <div className="flex flex-col gap-3 p-4">
+              <div className="flex flex-col gap-4 p-4">
                 <SectionHeader icon={<Zap className="h-4 w-4" />} title="AI" />
 
-                <div className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-                  Connect any OpenAI-compatible API (OpenAI, OpenRouter, Ollama,
-                  LM Studio…) to power the editor AI button. When no base URL is
-                  set the AI button is hidden.
+                <div className="text-xs text-muted-foreground">
+                  Connect any OpenAI-compatible API (OpenAI, OpenRouter, Ollama, LM Studio…) to power the editor AI button. When no base URL is set the AI button is hidden.
                 </div>
 
-                {/* Base URL */}
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">API base URL</span>
-                  <span className="text-xs text-muted-foreground">
-                    e.g. https://api.openai.com/v1 or http://localhost:11434/v1
-                  </span>
-                  <input
-                    value={settings.aiBaseUrl}
-                    onChange={(e) => updateSettings({ aiBaseUrl: e.target.value })}
-                    placeholder="https://api.openai.com/v1"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                </label>
-
-                {/* API key */}
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">API key</span>
-                  <span className="text-xs text-muted-foreground">
-                    Optional for local servers like Ollama
-                  </span>
-                  <input
-                    type="password"
-                    value={settings.aiApiKey}
-                    onChange={(e) => updateSettings({ aiApiKey: e.target.value })}
-                    placeholder="sk-…"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                </label>
-
-                {/* Model */}
-                <label className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-                  <span className="text-sm text-foreground">Model</span>
-                  <span className="text-xs text-muted-foreground">
-                    e.g. gpt-4o-mini, claude-sonnet-4, llama3.2
-                  </span>
-                  <input
-                    value={settings.aiModel}
-                    onChange={(e) => updateSettings({ aiModel: e.target.value })}
-                    placeholder="gpt-4o-mini"
-                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
-                  />
-                </label>
-
-                {/* Test connection */}
-                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleTestAI()}
-                    disabled={aiTestState === "testing" || !settings.aiBaseUrl.trim()}
-                    className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    {aiTestState === "testing" ? "Testing…" : "Test connection"}
-                  </button>
-                  {aiTestMessage && (
-                    <span
-                      className={`text-xs ${
-                        aiTestState === "ok" ? "text-green-500" : "text-red-500"
-                      }`}
-                    >
-                      {aiTestMessage}
+                <SettingGroup title="Connection">
+                  <div className="flex flex-col gap-2 px-3 py-3 transition-colors hover:bg-muted/40">
+                    <span className="text-sm text-foreground">API base URL</span>
+                    <span className="text-xs text-muted-foreground">e.g. https://api.openai.com/v1 or http://localhost:11434/v1</span>
+                    <input
+                      value={settings.aiBaseUrl}
+                      onChange={(e) => updateSettings({ aiBaseUrl: e.target.value })}
+                      placeholder="https://api.openai.com/v1"
+                      className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                    />
+                  </div>
+                  <SettingRow label="API key" desc="Optional for local servers like Ollama">
+                    <SettingText
+                      type="password"
+                      value={settings.aiApiKey}
+                      onChange={(v) => updateSettings({ aiApiKey: v })}
+                      placeholder="sk-…"
+                    />
+                  </SettingRow>
+                  <div className="flex flex-col gap-2 px-3 py-3 transition-colors hover:bg-muted/40">
+                    <span className="text-sm text-foreground">Model</span>
+                    <span className="text-xs text-muted-foreground">e.g. gpt-4o-mini, claude-sonnet-4, llama3.2</span>
+                    <input
+                      value={settings.aiModel}
+                      onChange={(e) => updateSettings({ aiModel: e.target.value })}
+                      placeholder="gpt-4o-mini"
+                      className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-4 px-3 py-2.5 transition-colors hover:bg-muted/40">
+                    <span className="text-sm text-muted-foreground">
+                      {aiTestState === "ok" ? "Connection works" : "Verify the endpoint without leaving settings"}
                     </span>
-                  )}
-                </div>
+                    <span className="flex items-center gap-2">
+                      {aiTestMessage && (
+                        <span className={`text-xs ${aiTestState === "ok" ? "text-green-500" : "text-red-500"}`}>
+                          {aiTestMessage}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void handleTestAI()}
+                        disabled={aiTestState === "testing" || !settings.aiBaseUrl.trim()}
+                        className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        {aiTestState === "testing" ? "Testing…" : "Test connection"}
+                      </button>
+                    </span>
+                  </div>
+                </SettingGroup>
               </div>
             )}
 
             {activeCategory === "metadata" && <MetadataSection />}
 
             {activeCategory === "shortcuts" && (
-              <div className="flex flex-col gap-3 p-4">
+              <div className="flex flex-col gap-4 p-4">
                 <SectionHeader icon={<Keyboard className="h-4 w-4" />} title="Shortcuts" />
-                <ul className="flex flex-col gap-1">
+                <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-muted/30">
                   {SHORTCUTS.map((s) => (
-                    <li
-                      key={s.keys}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
-                    >
+                    <div key={s.keys} className="flex items-center justify-between gap-2 px-3 py-2 transition-colors hover:bg-muted/40">
                       <span className="text-sm text-foreground">{s.desc}</span>
-                      <kbd
-                        className="shrink-0 rounded px-1.5 py-0.5 text-xs"
-                        style={{
-                          border: "1px solid var(--border)",
-                          color: "var(--muted-foreground)",
-                        }}
-                      >
-                        {s.keys}
-                      </kbd>
-                    </li>
+                      <kbd className="shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{s.keys}</kbd>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </div>
             )}
 
@@ -993,54 +846,268 @@ function SectionHeader({
   title: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="mb-1 mt-1 flex items-center gap-2 px-1">
       {icon}
       <h2 className="text-sm font-medium text-foreground">{title}</h2>
     </div>
   );
 }
 
+/* Obsidian-style option rows: a single bordered card, plain rows inside —
+ * no box around each option. */
+function SettingGroup({
+  icon,
+  title,
+  children,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col">
+      <div className="mb-1.5 flex items-center gap-2 px-1">
+        {icon}
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
+      </div>
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-muted/30">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SettingRow({
+  label,
+  desc,
+  children,
+}: {
+  label: string;
+  desc?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-3 py-2.5 transition-colors hover:bg-muted/40">
+      <span className="flex min-w-0 flex-col">
+        <span className="text-sm text-foreground">{label}</span>
+        {desc && <span className="text-xs text-muted-foreground">{desc}</span>}
+      </span>
+      <span className="flex shrink-0 items-center gap-2">{children}</span>
+    </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="relative h-5 w-9 shrink-0 rounded-full transition-colors"
+      style={{ background: checked ? "var(--primary)" : "color-mix(in oklab, var(--muted-foreground) 35%, transparent)" }}
+    >
+      <span
+        className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all"
+        style={{ left: checked ? 18 : 2 }}
+      />
+    </button>
+  );
+}
+
+function SettingText({
+  value,
+  onChange,
+  onBlurSave,
+  placeholder,
+  type = "text",
+  wide,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onBlurSave?: () => void;
+  placeholder?: string;
+  type?: string;
+  wide?: boolean;
+}) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlurSave}
+      placeholder={placeholder}
+      className={
+        wide
+          ? "w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+          : "w-56 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+      }
+    />
+  );
+}
+
+function SettingSelect({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+    >
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>{o.label}</option>
+      ))}
+    </select>
+  );
+}
+
 function GeneralSection() {
   const { vaults, settings, updateSettings } = useNotes();
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-4 p-4">
       <SectionHeader icon={<Home className="h-4 w-4" />} title="General" />
-
-      {/* Start-up dashboard */}
-      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-        <span className="flex flex-col">
-          <span className="text-sm text-foreground">Open dashboard at start</span>
-          <span className="text-xs text-muted-foreground">
-            Start on the dashboard instead of restoring the last open notes
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={settings.openDashboardOnStart}
-          onChange={(e) => updateSettings({ openDashboardOnStart: e.target.checked })}
-          className="h-4 w-4 accent-[var(--primary)]"
-        />
-      </label>
-
-      {/* Start-up vault */}
-      <label className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-        <span className="flex flex-col">
-          <span className="text-sm text-foreground">Start-up vault</span>
-          <span className="text-xs text-muted-foreground">
-            Pick a vault to always start in
-          </span>
-        </span>
-        <select
-          value={settings.startVaultId}
-          onChange={(e) => updateSettings({ startVaultId: e.target.value })}
-          className="shrink-0 rounded border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+      <SettingGroup title="Start-up">
+        <SettingRow
+          label="Open dashboard at start"
+          desc="Start on the dashboard instead of restoring the last open notes"
         >
-          <option value="">Last active</option>
-          {vaults.filter((v) => !isCollectionsVault(v)).map((v) => (
-            <option key={v.id} value={v.id}>{v.name}</option>
-          ))}
-        </select>
-      </label>
+          <ToggleSwitch
+            checked={settings.openDashboardOnStart}
+            onChange={(v) => updateSettings({ openDashboardOnStart: v })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Start-up vault"
+          desc="Pick a vault to always start in"
+        >
+          <SettingSelect
+            value={settings.startVaultId}
+            onChange={(v) => updateSettings({ startVaultId: v })}
+            options={[
+              { value: "", label: "Last active" },
+              ...vaults.filter((v) => !isCollectionsVault(v)).map((v) => ({ value: v.id, label: v.name })),
+            ]}
+          />
+        </SettingRow>
+      </SettingGroup>
+    </div>
+  );
+}
+
+function EditorSection() {
+  const { settings, updateSettings } = useNotes();
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <SectionHeader icon={<PenLine className="h-4 w-4" />} title="Editor" />
+
+      <SettingGroup title="Display">
+        <SettingRow label="Editor font size" desc={`${settings.editorFontSize}px`}>
+          <input
+            type="range"
+            min={12}
+            max={24}
+            step={1}
+            value={settings.editorFontSize}
+            onChange={(e) => updateSettings({ editorFontSize: Number(e.target.value) })}
+            className="w-40 accent-[var(--primary)]"
+          />
+        </SettingRow>
+        <SettingRow label="Editor font family" desc="Typeface used in the note editor">
+          <SettingSelect
+            value={settings.editorFontFamily}
+            onChange={(v) => updateSettings({ editorFontFamily: v })}
+            options={EDITOR_FONTS.map((f) => ({ value: f.value, label: f.label }))}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Readable line length"
+          desc="Narrow the text column on wide screens (Obsidian: off keeps it wide)"
+        >
+          <ToggleSwitch
+            checked={settings.readableLineLength}
+            onChange={(v) => updateSettings({ readableLineLength: v })}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="Saving">
+        <SettingRow label="Autosave" desc="Automatically save while typing">
+          <ToggleSwitch
+            checked={settings.autosave}
+            onChange={(v) => updateSettings({ autosave: v })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Raw markdown by default"
+          desc="Open notes in the plain markdown textarea instead of the rich editor"
+        >
+          <ToggleSwitch
+            checked={settings.defaultRawMode}
+            onChange={(v) => updateSettings({ defaultRawMode: v })}
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="New notes">
+        <SettingRow
+          label="Title heading on new notes"
+          desc="Off: new notes start as a plain paragraph (classic Obsidian look)"
+        >
+          <ToggleSwitch
+            checked={settings.headingOnNewNote}
+            onChange={(v) => updateSettings({ headingOnNewNote: v })}
+          />
+        </SettingRow>
+        <SettingRow label="Default note title" desc="Fallback title when the template is empty">
+          <SettingText
+            value={settings.defaultTitle}
+            onChange={(v) => updateSettings({ defaultTitle: v })}
+            placeholder="Untitled"
+          />
+        </SettingRow>
+      </SettingGroup>
+
+      <SettingGroup title="New-note title template">
+        <div className="flex flex-col gap-1.5 px-3 py-3 transition-colors hover:bg-muted/40">
+          <span className="text-xs text-muted-foreground">
+            Used when creating a new note. Supports date/time tokens that are replaced with the current value.
+          </span>
+          <input
+            value={settings.titleTemplate}
+            onChange={(e) => updateSettings({ titleTemplate: e.target.value })}
+            placeholder="DAY DD-MM-YYYY HH:mm"
+            className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-primary/40"
+          />
+          <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+            {[
+              ["DAY", "Weekday (Monday)"],
+              ["DDD", "Mon"],
+              ["DD", "Day (12)"],
+              ["MM", "Month (08)"],
+              ["MMM", "Aug"],
+              ["YYYY", "Year (2025)"],
+              ["YY", "Year (25)"],
+              ["HH", "Hour 24h (14)"],
+              ["mm", "Min (30)"],
+            ].map(([token, desc]) => (
+              <span key={token} className="rounded border border-border px-1 py-0.5" title={desc}>
+                {token} <span className="text-muted-foreground/60">{desc}</span>
+              </span>
+            ))}
+          </div>
+          <div className="text-xs">
+            <span className="text-muted-foreground">Preview: </span>
+            <span className="font-medium text-foreground">{formatTitle(settings.titleTemplate) || "Untitled"}</span>
+          </div>
+        </div>
+      </SettingGroup>
     </div>
   );
 }
@@ -1048,54 +1115,37 @@ function GeneralSection() {
 function FeaturesSection() {
   const { settings, updateSettings } = useNotes();
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-4 p-4">
       <SectionHeader icon={<Settings2 className="h-4 w-4" />} title="Features" />
-
-      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-        <span className="flex flex-col">
-          <span className="text-sm text-foreground">Tags sections</span>
-          <span className="text-xs text-muted-foreground">
-            Tags view in the sidebar and on the dashboard
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={settings.showTagsSection}
-          onChange={(e) => updateSettings({ showTagsSection: e.target.checked })}
-          className="h-4 w-4 accent-[var(--primary)]"
-        />
-      </label>
-
-      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-        <span className="flex flex-col">
-          <span className="text-sm text-foreground">Todo sections</span>
-          <span className="text-xs text-muted-foreground">
-            Open-task list on the dashboard
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={settings.showTasksSection}
-          onChange={(e) => updateSettings({ showTasksSection: e.target.checked })}
-          className="h-4 w-4 accent-[var(--primary)]"
-        />
-      </label>
-
-      <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 hover:bg-muted/50">
-        <span className="flex flex-col">
-          <span className="text-sm text-foreground">Tags in command palette</span>
-          <span className="text-xs text-muted-foreground">
-            Type # in the palette to search tags
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={settings.showTagsOnPalette}
-          onChange={(e) => updateSettings({ showTagsOnPalette: e.target.checked })}
-          className="h-4 w-4 accent-[var(--primary)]"
-        />
-      </label>
-
+      <SettingGroup title="Sections">
+        <SettingRow
+          label="Tags sections"
+          desc="Tags view in the sidebar and on the dashboard"
+        >
+          <ToggleSwitch
+            checked={settings.showTagsSection}
+            onChange={(v) => updateSettings({ showTagsSection: v })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Todo sections"
+          desc="Open-task list on the dashboard"
+        >
+          <ToggleSwitch
+            checked={settings.showTasksSection}
+            onChange={(v) => updateSettings({ showTasksSection: v })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Tags in command palette"
+          desc="Type # in the palette to search tags"
+        >
+          <ToggleSwitch
+            checked={settings.showTagsOnPalette}
+            onChange={(v) => updateSettings({ showTagsOnPalette: v })}
+          />
+        </SettingRow>
+      </SettingGroup>
       <div className="text-xs text-muted-foreground/70">
         Note previews and metadata lines in the note list are coming in a later release.
       </div>

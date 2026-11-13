@@ -580,6 +580,20 @@ function EditorPage({
           checked={settings.autosave}
           onChange={(v) => updateSettings({ autosave: v })}
         />
+        <Divider />
+        <ToggleRow
+          label="Title heading on new notes"
+          desc="Off: new notes start as a plain paragraph (Obsidian style)"
+          checked={settings.headingOnNewNote}
+          onChange={(v) => updateSettings({ headingOnNewNote: v })}
+        />
+        <Divider />
+        <ToggleRow
+          label="Raw markdown by default"
+          desc="Open notes in the plain markdown textarea"
+          checked={settings.defaultRawMode}
+          onChange={(v) => updateSettings({ defaultRawMode: v })}
+        />
       </Group>
       <Group label="New-note title template">
         <div className="flex flex-col gap-2 px-3 py-3">
@@ -639,6 +653,13 @@ function EditorPage({
             style={{ accentColor: "var(--mob-accent)" }}
           />
         </div>
+        <Divider />
+        <ToggleRow
+          label="Readable line length"
+          desc="Narrow the text column while the window is wide"
+          checked={settings.readableLineLength}
+          onChange={(v) => updateSettings({ readableLineLength: v })}
+        />
         <Divider />
         <div
           className="flex items-center justify-between gap-3 px-3"

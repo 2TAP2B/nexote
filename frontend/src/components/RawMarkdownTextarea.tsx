@@ -24,7 +24,7 @@ const RawMarkdownTextarea = forwardRef<
       wrap="off"
       className="milkdown-raw-textarea block h-full w-full resize-none bg-transparent outline-none"
       style={{
-        maxWidth: 960,
+        maxWidth: "var(--editor-max-width, 960px)",
         margin: "0 auto",
         padding: "64px 64px 120px",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
