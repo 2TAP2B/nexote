@@ -1,10 +1,10 @@
-# WIP: settings overhaul and feature backlog
+# WIP: settings, quick notes and feature backlog
 
-Working notes, 2026-11-14. The first part records what the settings overhaul
-changed and why; the backlog is what we want to build next, in rough priority
-order. Pick items from the top unless there is a reason not to.
+Working notes, 2026-11-14. The first part records what changed and why; the
+backlog is what we want to build next, in rough priority order. Pick items from
+the top unless there is a reason not to.
 
-## Done: settings overhaul
+## Done
 
 ### Redesign
 
@@ -46,6 +46,34 @@ disappear from storage.
 - Push and Pull are disabled until a remote URL is set.
 - Color scheme names no longer truncate on phones; vault paths wrap after "/".
 
+### Round 2 (same day)
+
+- **Editor wording:** Font size only affects raw markdown (the rendered view
+  keeps the theme's sizes) and now sits under a "Raw markdown" heading; Font
+  only affects the rendered view (raw markdown is always monospace).
+- **Default view fixed:** mobile ignored it on every note switch, and neither
+  platform reacted to a change while a note was open. Notes now open in it, and
+  changing it switches the open note at once (without focusing it, so no
+  keyboard pops up behind the settings). `switchView` in `EditorPane.tsx` /
+  `MobileNoteView.tsx`.
+- **About page:** version from the latest `v*` git tag + commit + build date
+  (`next.config.mjs` → `src/lib/app-info.ts`; Docker builds take
+  `NEXOTE_VERSION`/`NEXOTE_COMMIT` build args, else `package.json`, now synced
+  to 0.0.6), a "Development build" badge when commits follow the tag, links
+  (source, release notes, report a problem), a no-tracking statement, vault
+  folders, and "Copy debug info".
+- **Quick notes (mobile dashboard, swipe left):**
+  - Long-press (or right-click) a memo: Copy / Edit. Edit keeps the memo's time
+    and replaces exactly that entry in the latest version of the note.
+  - `@` suggests notes (prefix matches, then recently edited) and inserts an
+    Obsidian link `[[Title]]`; bubbles show it as a tappable `@Title` chip that
+    opens the note.
+  - Images: image button or paste; uploaded right away into the Notepad note's
+    folder, stored as `![](url)` lines in the memo; removing an unsent image
+    deletes the file again; tap an image to view it full screen.
+  - Full-screen composer for longer memos: Enter adds a line, Post (or
+    Ctrl/⌘+Enter) sends. In the compact bar Enter still sends.
+
 ### Rules for new settings
 
 - Only add an option that visibly changes something, on every platform that
@@ -78,9 +106,11 @@ disappear from storage.
    (`titleTemplate`, codes handled by `formatTitle`). Add a template folder, a
    template for new notes and one for journal notes, reusing the same codes.
 6. **Internal links and backlinks.** Obsidian: `[[wikilinks]]`, "Automatically
-   update internal links" on rename, Backlinks pane. Today `[[…]]` is only
-   stripped for previews (`snippet.go`, `note-utils.ts`). Files are named after
-   their titles now, so the title is a natural link target.
+   update internal links" on rename, Backlinks pane. Quick notes already write
+   `[[Title]]` links and open them from the memo bubbles; the editor still shows
+   them as plain text, and previews strip them (`snippet.go`, `note-utils.ts`).
+   Files are named after their titles now, so the title is a natural link
+   target.
 7. **Editor behavior.** Obsidian Editor › Behavior: spellcheck (+ languages),
    auto-pair brackets, auto-pair markdown syntax, smart lists (continue a list
    on Enter), indent with Tab / tab size, strict line breaks. Today none are
@@ -103,11 +133,22 @@ disappear from storage.
 - Choose which sections the dashboard shows.
 - Appearance: accent color picker, interface font size / zoom.
 - Line numbers in raw markdown mode.
+- Font size for the rendered view too (today it only applies to raw markdown).
+- Quick notes: delete a memo from the long-press menu (only Copy/Edit exist).
 
 ## Open items
 
-- The mobile keyboard caret fix and the new settings were only tested in device
-  emulation, not on a real iPhone/Android.
+- `github.com/2tap2b/nexote` (Source code / Release notes / Report a problem on
+  the About page) currently returns 404 to the public — publish the repo, or
+  point `APP.links` in `frontend/src/lib/app-info.ts` elsewhere.
+- No LICENSE file yet, so the About page shows no license row.
+- Docker images show the right version only when built with `NEXOTE_VERSION`
+  (see AGENTS.md › Commands); otherwise they fall back to `package.json`.
+- `[[Title]]` links resolve by title; with several notes of the same title the
+  quick-notes chip opens the one in the Notepad's vault first.
+- Only tested in device emulation, not on a real iPhone/Android: the mobile
+  keyboard caret fix, the settings, and the quick-notes long press and photo
+  picker.
 - Not exercised yet: the AI "Test" and Discogs "Test" buttons, Push/Pull against
   a real remote (same provider calls as before, new UI wiring).
 - Possibly left over from early smoke tests that wrote to the real vault (not

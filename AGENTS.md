@@ -74,9 +74,10 @@ touches**. Do not re-read the whole repo per session.
 | `src/components/{FileTree,EditorPane,Ribbon,TopBar}.tsx` | Desktop shell panes. |
 | `src/components/{CollectionGallery,VinylGallery,NoteHistoryPanel,AICommandPanel,CommandPalette}.tsx` | Feature panels. |
 | `src/components/settings/*` | Settings pages shared by desktop and mobile: `ui.tsx` (Obsidian-style groups/rows/controls; a platform context only changes sizes), one `*Settings.tsx` per page, `categories.tsx` (nav registry). Shells: `SettingsPanel.tsx` (desktop dialog) and `mobile/MobileSettings.tsx` (list → page). Options live in `AppSettings` (`NotesProvider.tsx`, localStorage). |
-| `src/lib/ai.ts` / `note-utils.ts` / `notepad.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview) + the quick-capture "Notepad" format. |
+| `src/lib/ai.ts` / `note-utils.ts` / `notepad.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview) + the quick-capture "Notepad" format (`- HH:MM text` items under `### YYYY-MM-DD`; links are `[[Title]]`, images are `![](url)` continuation lines; edits replace an entry found by content in the latest body). |
+| `src/lib/app-info.ts` / `clipboard.ts` | About-page metadata (repo links; version/commit/build time inlined by `next.config.mjs` from the latest `v*` git tag, or the `NEXOTE_VERSION`/`NEXOTE_COMMIT` Docker build args) + copy-to-clipboard with a fallback for plain-http origins. |
 | `src/app/page.tsx` · `layout.tsx` | Desktop shell composition. |
-| `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`): 3-pane pager (sidebar · note · right pane = TOC, or `QuickCapturePane` on the dashboard). |
+| `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`): 3-pane pager (sidebar · note · right pane = TOC, or quick notes on the dashboard: `QuickCapturePane` + `MemoBubble` (long-press menu, `@` chips, images) + `MemoComposer` (`@` suggestions, attachments, full screen)). Never focus a field in a pane that's off screen without `preventScroll`: the browser scrolls the pager to it. |
 
 ## Task → open these files
 | You want to… | Open |
@@ -131,6 +132,9 @@ pnpm dev                       # Next on :3000, proxies /api/* -> Go
 
 # run both locally:
 (cd backend && go run .) & (cd frontend && pnpm dev) & wait
+
+# Docker: the build context has no .git, so pass the version for Settings › About
+NEXOTE_VERSION=$(git describe --tags --abbrev=0) NEXOTE_COMMIT=$(git rev-parse --short HEAD) docker compose build
 ```
 Dev proxy: `frontend/next.config.mjs` rewrites `/api/* → NEXOTE_BACKEND_URL ||
 http://localhost:8080`. Prod = reverse proxy in front of both, or the Docker build.
