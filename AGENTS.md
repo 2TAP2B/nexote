@@ -62,7 +62,7 @@ touches**. Do not re-read the whole repo per session.
 | `notes/images.go` | Image upload/list/read/delete + cross-folder & cross-vault migration on note move. Traversal-guarded. |
 | `notes/bookmarks.go` | `idList` (order-preserving ID set) backing `Bookmarks` and `Shortcuts`. |
 | `api/events.go` | SSE hub (`NoteEvent`) — real-time note-change broadcast. |
-| `api/ai.go` | AI proxy: forwards chat/test to an OpenAI-compatible endpoint, relays upstream SSE. |
+| `api/ai.go` | AI proxy: forwards chat/test to an OpenAI-compatible endpoint, relays upstream SSE; `POST /api/ai/transcribe` sends a voice memo to the endpoint's `/v1/audio/transcriptions` (multipart, ≤25 MB, file name keeps the format extension). Tests: `api/ai_test.go`. |
 
 ## File index — frontend (key files)
 | Path | Responsibility |
@@ -75,9 +75,9 @@ touches**. Do not re-read the whole repo per session.
 | `src/components/{CollectionGallery,VinylGallery,NoteHistoryPanel,AICommandPanel,CommandPalette}.tsx` | Feature panels. |
 | `src/components/settings/*` | Settings pages shared by desktop and mobile: `ui.tsx` (Obsidian-style groups/rows/controls; a platform context only changes sizes), one `*Settings.tsx` per page, `categories.tsx` (nav registry). Shells: `SettingsPanel.tsx` (desktop dialog) and `mobile/MobileSettings.tsx` (list → page). Options live in `AppSettings` (`NotesProvider.tsx`, localStorage). |
 | `src/lib/ai.ts` / `note-utils.ts` / `notepad.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview) + the quick-capture "Notepad" format (`- HH:MM text` items under `### YYYY-MM-DD`; links are `[[Title]]`, images are `![](url)` continuation lines; edits replace an entry found by content in the latest body). |
-| `src/lib/app-info.ts` / `clipboard.ts` | About-page metadata (repo links; version/commit/build time inlined by `next.config.mjs` from the latest `v*` git tag, or the `NEXOTE_VERSION`/`NEXOTE_COMMIT` Docker build args) + copy-to-clipboard with a fallback for plain-http origins. |
+| `src/lib/app-info.ts` / `clipboard.ts` / `notebooks.ts` | About-page metadata (repo links; version/commit/build time inlined by `next.config.mjs` from the latest `v*` git tag, or the `NEXOTE_VERSION`/`NEXOTE_COMMIT` Docker build args) + copy-to-clipboard with a fallback for plain-http origins + vault/folder choices ("notebooks") for quick notes' "Make note". |
 | `src/app/page.tsx` · `layout.tsx` | Desktop shell composition. |
-| `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`): 3-pane pager (sidebar · note · right pane = TOC, or quick notes on the dashboard: `QuickCapturePane` + `MemoBubble` (long-press menu, `@` chips, images) + `MemoComposer` (`@` suggestions, attachments, full screen)). Never focus a field in a pane that's off screen without `preventScroll`: the browser scrolls the pager to it. |
+| `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`): 3-pane pager (sidebar · note · right pane = TOC, or quick notes on the dashboard: `QuickCapturePane` + `MemoBubble` (long-press menu: copy, edit, make note; `@` chips, images) + `MemoComposer` (`@` suggestions, attachments, full screen, mic) + `useVoiceRecorder` (MediaRecorder; needs https) + `NotebookPicker` (first-time target for "Make note")). Never focus a field in a pane that's off screen without `preventScroll`: the browser scrolls the pager to it. |
 
 ## Task → open these files
 | You want to… | Open |
@@ -88,7 +88,7 @@ touches**. Do not re-read the whole repo per session.
 | Vault or collection management | `notes/vaults.go`, `notes/collections.go`, `handler.go`, `NotesProvider.tsx` |
 | Note history / restore | `notes/history.go`, `NoteHistoryPanel.tsx` |
 | Image upload / migration | `notes/images.go`, `handler.go` image routes |
-| AI features | `api/ai.go`, `src/lib/ai.ts`, `AICommandPanel.tsx` |
+| AI features | `api/ai.go`, `src/lib/ai.ts`, `AICommandPanel.tsx`; voice memos: `api.transcribeAudio` (`src/lib/api.ts`) + `mobile/useVoiceRecorder.ts`. AI settings are per device (localStorage). |
 | Offline / sync | `offline-db.ts`, `public/sw.js`, `NotesProvider.tsx` queue logic |
 | Mobile UI | `src/app/m/*`, `src/components/mobile/*` |
 | Add or change a setting | `AppSettings` + `DEFAULT_SETTINGS` in `NotesProvider.tsx`, the page in `src/components/settings/`, and the code that reads it (only add options that visibly do something) |

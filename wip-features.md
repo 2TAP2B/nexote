@@ -74,6 +74,21 @@ disappear from storage.
   - Full-screen composer for longer memos: Enter adds a line, Post (or
     Ctrl/⌘+Enter) sends. In the compact bar Enter still sends.
 
+### Round 3: voice memos and "Make note"
+
+- **Voice memos:** the mic sits where the send button is while the composer is
+  empty (and in the full-screen toolbar). Tap ✓ to stop; the backend sends the
+  clip to the AI endpoint's `/v1/audio/transcriptions`
+  (`POST /api/ai/transcribe`) and the transcript lands in the composer to check
+  before posting. Model: Settings › AI › Transcription model (mobile, default
+  `whisper-1`). Max 10 minutes per recording; a failed transcription keeps the
+  clip for Retry. The audio itself isn't stored, only the text.
+- **Make note:** long-press a memo › Make note. The first time a bottom sheet
+  asks for the notebook (a vault or one of its folders); the choice is kept and
+  can be changed in Settings › Features › Quick notes (mobile). The memo's first
+  line becomes the title, the note is created, then the memo is removed from
+  the Notepad (moved, not copied); the toast offers "Open".
+
 ### Rules for new settings
 
 - Only add an option that visibly changes something, on every platform that
@@ -134,7 +149,10 @@ disappear from storage.
 - Appearance: accent color picker, interface font size / zoom.
 - Line numbers in raw markdown mode.
 - Font size for the rendered view too (today it only applies to raw markdown).
-- Quick notes: delete a memo from the long-press menu (only Copy/Edit exist).
+- Quick notes: delete a memo from the long-press menu (only Copy/Edit/Make note
+  exist).
+- Quick notes: keep the audio of a voice memo as an attachment next to the
+  transcript (needs non-image uploads in the backend).
 
 ## Open items
 
@@ -147,8 +165,16 @@ disappear from storage.
 - `[[Title]]` links resolve by title; with several notes of the same title the
   quick-notes chip opens the one in the Notepad's vault first.
 - Only tested in device emulation, not on a real iPhone/Android: the mobile
-  keyboard caret fix, the settings, and the quick-notes long press and photo
-  picker.
+  keyboard caret fix, the settings, the quick-notes long press, photo picker
+  and voice recording (tested with a synthetic microphone and a fake
+  transcription endpoint).
+- Voice memos need https: browsers only allow the microphone on secure origins
+  (or localhost); over plain http the mic explains that instead of recording.
+- The transcription endpoint must offer `/v1/audio/transcriptions` (OpenAI,
+  Groq, LocalAI, …). AI settings are per device, so the phone needs its own
+  base URL and key in Settings › AI.
+- "Make note" leaves a memo's images in the Notepad's folder; the new note
+  links to them there (they keep working).
 - Not exercised yet: the AI "Test" and Discogs "Test" buttons, Push/Pull against
   a real remote (same provider calls as before, new UI wiring).
 - Possibly left over from early smoke tests that wrote to the real vault (not
