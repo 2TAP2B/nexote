@@ -72,7 +72,8 @@ touches**. Do not re-read the whole repo per session.
 | `src/lib/offline-db.ts` / `offline-status.tsx` / `ServiceWorkerRegister.tsx` / `public/sw.js` | Offline/PWA layer: IndexedDB queue replayed on reconnect; SW never queues `/api/ai/`. |
 | `src/components/MilkdownEditor.tsx` | The editor (Milkdown Crepe). |
 | `src/components/{FileTree,EditorPane,Ribbon,TopBar}.tsx` | Desktop shell panes. |
-| `src/components/{CollectionGallery,VinylGallery,NoteHistoryPanel,AICommandPanel,SettingsPanel,CommandPalette}.tsx` | Feature panels. |
+| `src/components/{CollectionGallery,VinylGallery,NoteHistoryPanel,AICommandPanel,CommandPalette}.tsx` | Feature panels. |
+| `src/components/settings/*` | Settings pages shared by desktop and mobile: `ui.tsx` (Obsidian-style groups/rows/controls; a platform context only changes sizes), one `*Settings.tsx` per page, `categories.tsx` (nav registry). Shells: `SettingsPanel.tsx` (desktop dialog) and `mobile/MobileSettings.tsx` (list → page). Options live in `AppSettings` (`NotesProvider.tsx`, localStorage). |
 | `src/lib/ai.ts` / `note-utils.ts` / `notepad.ts` | AI client (streams via `/api/ai/chat`) + note helpers (title heading, `makeSnippet` preview) + the quick-capture "Notepad" format. |
 | `src/app/page.tsx` · `layout.tsx` | Desktop shell composition. |
 | `src/app/m/*` + `src/components/mobile/*` | Separate mobile app (`/m`): 3-pane pager (sidebar · note · right pane = TOC, or `QuickCapturePane` on the dashboard). |
@@ -89,6 +90,7 @@ touches**. Do not re-read the whole repo per session.
 | AI features | `api/ai.go`, `src/lib/ai.ts`, `AICommandPanel.tsx` |
 | Offline / sync | `offline-db.ts`, `public/sw.js`, `NotesProvider.tsx` queue logic |
 | Mobile UI | `src/app/m/*`, `src/components/mobile/*` |
+| Add or change a setting | `AppSettings` + `DEFAULT_SETTINGS` in `NotesProvider.tsx`, the page in `src/components/settings/`, and the code that reads it (only add options that visibly do something) |
 | Real-time updates | `api/events.go`, SSE handling in `NotesProvider.tsx` |
 
 ## Do-not-break invariants

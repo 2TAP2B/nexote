@@ -786,42 +786,24 @@ body {
   background: var(--mob-bg);
 }
 
-/* Mobile settings panel — full-screen modal with a horizontal scrollable
- * category strip instead of the desktop left-sidebar. The Shortcuts
- * category is hidden on touch devices. */
-.mob-shell-root .nexote-settings-dialog {
-  width: 100% !important;
-  max-width: 100% !important;
-  height: 100dvh !important;
-  border-radius: 0 !important;
-  border: none !important;
+/* Mobile settings: sub-pages slide in from the right. */
+@keyframes nx-settings-page-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
-.mob-shell-root .nexote-settings-body {
-  flex-direction: column;
+.nx-settings-page-in {
+  animation: nx-settings-page-in 180ms ease-out;
 }
-.mob-shell-root .nexote-settings-nav {
-  flex-direction: row;
-  width: 100% !important;
-  overflow-x: auto;
-  border-right: none !important;
-  border-bottom: 1px solid var(--border);
-  gap: 0.25rem;
-  padding: 0.5rem;
-  flex-shrink: 0;
-}
-.mob-shell-root .nexote-settings-nav button {
-  white-space: nowrap;
-  flex-shrink: 0;
-  min-height: 40px;
-}
-/* Hide the Shortcuts category on mobile — touch devices don't use keyboard
- * shortcuts. */
-.mob-shell-root .nexote-settings-nav button[data-settings-cat="shortcuts"] {
-  display: none;
-}
-.mob-shell-root .nexote-settings-content {
-  flex: 1;
-  min-height: 0;
+@media (prefers-reduced-motion: reduce) {
+  .nx-settings-page-in {
+    animation: none;
+  }
 }
 
 /* Mobile pager — a "triple width canvas": the sidebar pane (left), the

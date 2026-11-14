@@ -17,8 +17,8 @@ import { localDateKey } from "@/lib/note-utils";
 type Draft = { title: string; body: string };
 
 export type AppSettings = {
-  autosave: boolean;
-  defaultTitle: string;
+  // New-note title; date/time codes are filled in by formatTitle. Empty
+  // means "Untitled".
   titleTemplate: string;
   editorFontSize: number;
   aiBaseUrl: string;
@@ -43,8 +43,6 @@ export type AppSettings = {
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  autosave: true,
-  defaultTitle: "Untitled",
   titleTemplate: "DAY DD-MM-YYYY HH:mm",
   editorFontSize: 16,
   aiBaseUrl: "",
@@ -334,8 +332,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     try {
       const stored = localStorage.getItem("nexote:settings");
       if (stored) {
-        const parsed = JSON.parse(stored) as Partial<AppSettings>;
-        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+        const parsed = JSON.parse(stored) as Record<string, unknown>;
+        // Keep known keys only, so options that were removed (autosave,
+        // defaultTitle) don't linger in storage.
+        const known = Object.fromEntries(
+          Object.entries(parsed).filter(([key]) => key in DEFAULT_SETTINGS),
+        ) as Partial<AppSettings>;
+        setSettings({ ...DEFAULT_SETTINGS, ...known });
       }
     } catch {
       // ignore malformed settings
@@ -899,9 +902,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
               activeVaultId
             : activeVaultId;
         const title =
-          input?.title ??
-          formatTitle(settings.titleTemplate) ??
-          settings.defaultTitle;
+          input?.title ?? (formatTitle(settings.titleTemplate).trim() || "Untitled");
         // When no explicit path is given, create the note in the same folder
         // as the currently active note. Journal notes are skipped: they live
         // in a separate store (one note per day) and create targets the
@@ -938,7 +939,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         setCreating(false);
       }
     },
-    [activeVaultId, vaults, switchVault, refresh, settings.defaultTitle, settings.titleTemplate, settings.headingOnNewNote, activeId, notesById],
+    [activeVaultId, vaults, switchVault, refresh, settings.titleTemplate, settings.headingOnNewNote, activeId, notesById],
   );
 
   const copyNote = useCallback(

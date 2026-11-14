@@ -189,7 +189,6 @@ export default function MobileNoteView({
   useEffect(() => {
     if (!activeId || loadedKeyRef.current !== activeId) return;
     if (skipNextChange.current) return;
-    if (!settings.autosave) return;
 
     const t = setTimeout(() => {
       ownSaveCountRef.current++;
@@ -197,7 +196,7 @@ export default function MobileNoteView({
       void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);
-  }, [activeId, title, body, save, settings.autosave]);
+  }, [activeId, title, body, save]);
 
   // Switch to the raw markdown textarea, caret at the end.
   const toggleToRaw = () => {

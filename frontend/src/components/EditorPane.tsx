@@ -171,7 +171,6 @@ export default function EditorPane({
   useEffect(() => {
     if (!activeId || loadedKey !== activeId) return;
     if (skipNextChange.current) return;
-    if (!settings.autosave) return;
 
     const t = setTimeout(() => {
       ownSaveCountRef.current++;
@@ -179,7 +178,7 @@ export default function EditorPane({
       void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);
-  }, [activeId, loadedKey, title, body, save, settings.autosave]);
+  }, [activeId, loadedKey, title, body, save]);
 
   const startEditingTitle = () => {
     setTitleDraft(title);
