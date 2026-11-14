@@ -1,10 +1,15 @@
 "use client";
 
+import { listNotebooks, notebookKey } from "@/lib/notebooks";
 import { useNotes } from "@/lib/notes-context";
-import { SettingGroup, SettingsPage, ToggleSetting } from "./ui";
+import { DropdownSetting, SettingGroup, SettingsPage, ToggleSetting, useIsMobileSettings } from "./ui";
 
 export function FeatureSettings() {
-  const { settings, updateSettings } = useNotes();
+  const { settings, updateSettings, vaults, allVaultData } = useNotes();
+  // Quick notes only exist in the mobile app.
+  const mobile = useIsMobileSettings();
+  const notebooks = listNotebooks(vaults, allVaultData);
+  const memoNotebook = notebooks.find((n) => n.vaultId === settings.memoNoteVault && n.folder === settings.memoNoteFolder);
   return (
     <SettingsPage title="Features">
       <SettingGroup heading="Sidebar and dashboard">
@@ -29,6 +34,23 @@ export function FeatureSettings() {
           onChange={(v) => updateSettings({ showTagsOnPalette: v })}
         />
       </SettingGroup>
+      {mobile && (
+        <SettingGroup heading="Quick notes">
+          <DropdownSetting
+            name="Notebook for memo notes"
+            description="Where “Make note” (long-press a memo) saves the memo."
+            value={memoNotebook ? notebookKey(memoNotebook) : ""}
+            options={[
+              { value: "", label: "Ask the first time" },
+              ...notebooks.map((n) => ({ value: notebookKey(n), label: n.label })),
+            ]}
+            onChange={(key) => {
+              const n = notebooks.find((x) => notebookKey(x) === key);
+              updateSettings({ memoNoteVault: n?.vaultId ?? "", memoNoteFolder: n?.folder ?? "" });
+            }}
+          />
+        </SettingGroup>
+      )}
     </SettingsPage>
   );
 }

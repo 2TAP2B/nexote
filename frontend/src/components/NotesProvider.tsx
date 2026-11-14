@@ -24,6 +24,8 @@ export type AppSettings = {
   aiBaseUrl: string;
   aiApiKey: string;
   aiModel: string;
+  // Speech-to-text model for quick-notes voice memos (/v1/audio/transcriptions).
+  aiTranscribeModel: string;
   // General — start-up behaviour
   openDashboardOnStart: boolean;
   startVaultId: string; // "" = last active vault
@@ -40,6 +42,9 @@ export type AppSettings = {
   showTagsSection: boolean;
   showTasksSection: boolean;
   showTagsOnPalette: boolean;
+  // Quick notes › "Make note": where the note goes ("" vault = ask first).
+  memoNoteVault: string;
+  memoNoteFolder: string;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -48,6 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiBaseUrl: "",
   aiApiKey: "",
   aiModel: "",
+  aiTranscribeModel: "whisper-1",
   openDashboardOnStart: false,
   startVaultId: "",
   editorFontFamily: "",
@@ -57,6 +63,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showTagsSection: true,
   showTasksSection: true,
   showTagsOnPalette: true,
+  memoNoteVault: "",
+  memoNoteFolder: "",
 };
 
 type NotesContextValue = {

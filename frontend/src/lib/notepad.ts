@@ -49,13 +49,59 @@ export function replaceNotepadEntry(
   target: Pick<NotepadEntry, "day" | "time" | "text">,
   text: string,
 ): string | null {
-  const entry = parseNotepad(body).find(
-    (e) => e.day === target.day && e.time === target.time && e.text === target.text,
-  );
+  const entry = findNotepadEntry(parseNotepad(body), target);
   if (!entry) return null;
   const lines = body.split("\n");
   lines.splice(entry.start, entry.end - entry.start, ...formatNotepadItem(entry.time, text).split("\n"));
   return lines.join("\n");
+}
+
+// Takes one entry out (looked up like replaceNotepadEntry), with its day
+// heading when it was that day's last entry; null when it no longer exists.
+export function removeNotepadEntry(body: string, target: Pick<NotepadEntry, "day" | "time" | "text">): string | null {
+  const entries = parseNotepad(body);
+  const entry = findNotepadEntry(entries, target);
+  if (!entry) return null;
+  const lines = body.split("\n");
+  let start = entry.start;
+  if (entry.day && entries.filter((e) => e.day === entry.day).length === 1) {
+    for (let i = entry.start - 1; i >= 0; i--) {
+      if (/^###\s+/.test(lines[i])) {
+        start = i;
+        break;
+      }
+    }
+  }
+  lines.splice(start, entry.end - start);
+  // Don't leave a double blank line where the entry was.
+  while (start > 0 && start < lines.length && !lines[start - 1].trim() && !lines[start].trim()) lines.splice(start, 1);
+  return lines.join("\n").replace(/\n+$/, "\n");
+}
+
+function findNotepadEntry(entries: NotepadEntry[], target: Pick<NotepadEntry, "day" | "time" | "text">) {
+  return entries.find((e) => e.day === target.day && e.time === target.time && e.text === target.text);
+}
+
+/**
+ * A note made from a memo: the first text line, links reduced to their text,
+ * becomes the title. With a title heading the heading replaces that line,
+ * unless the line says more (links, cut off), then it stays below.
+ */
+export function memoToNote(entry: NotepadEntry, titleHeading: boolean): { title: string; body: string } {
+  const lines = entry.text.split("\n");
+  const firstIndex = lines.findIndex((l) => l.trim() && !IMAGE_LINE.test(l.trim()));
+  const first = firstIndex >= 0 ? lines[firstIndex].trim() : "";
+  let title = first.replace(MENTION_RE, (_m, target: string, label?: string) => (label ?? target).trim()).trim();
+  if (title.length > 80) {
+    const cut = title.slice(0, 80);
+    const space = cut.lastIndexOf(" ");
+    title = (space > 40 ? cut.slice(0, space) : cut).trim();
+  }
+  if (!title) title = `Memo ${entry.day} ${entry.time}`.trim();
+  if (!titleHeading) return { title, body: `${entry.text}\n` };
+  const rest = title === first ? lines.filter((_, i) => i !== firstIndex) : lines;
+  const restText = rest.join("\n").trim();
+  return { title, body: `## ${title}\n\n${restText ? `${restText}\n` : ""}` };
 }
 
 // Reads the entries back. Accepts "*" bullets and blank lines between items

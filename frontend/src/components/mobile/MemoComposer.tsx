@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Check, FileText, ImagePlus, Loader2, Maximize2, Minimize2, Pencil, X } from "lucide-react";
+import { ArrowUp, Check, FileText, ImagePlus, Loader2, Maximize2, Mic, Minimize2, Pencil, Trash2, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import type { NotepadEntry } from "@/lib/notepad";
@@ -21,12 +21,20 @@ export type Attachment = {
 const MENTION_QUERY = /(?:^|\s)@([^\s@[\]]*)$/;
 const COMPACT_MAX_HEIGHT = 160;
 
+export type VoiceState = "idle" | "recording" | "transcribing";
+
+const formatElapsed = (ms: number) => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
 /**
  * The quick-capture composer: a chat-style bar (Enter posts) that can expand
  * to full screen for longer memos (Enter adds a line; Ctrl/⌘+Enter posts).
  * "@" suggests notes to link ([[Title]]); the image button or pasting attaches
- * images. The textarea keeps its place in the tree in both layouts, so
- * switching doesn't drop focus (the phone keyboard stays up).
+ * images; the mic records a voice memo that is transcribed into the text. The
+ * textarea keeps its place in the tree in both layouts, so switching doesn't
+ * drop focus (the phone keyboard stays up).
  */
 export function MemoComposer({
   value,
@@ -44,6 +52,7 @@ export function MemoComposer({
   onSend,
   suggest,
   keyboardOpen,
+  voice,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -60,6 +69,13 @@ export function MemoComposer({
   onSend: () => void;
   suggest: (query: string) => NoteRef[];
   keyboardOpen: boolean;
+  voice: {
+    state: VoiceState;
+    elapsedMs: number;
+    onStart: () => void;
+    onStop: () => void;
+    onCancel: () => void;
+  };
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
@@ -141,6 +157,74 @@ export function MemoComposer({
       <ImagePlus size={20} />
     </button>
   );
+  // Recording needs a real tap (onClick): browsers only grant the microphone
+  // from a user gesture.
+  const micButton = (
+    <button
+      type="button"
+      aria-label="Record a voice memo"
+      onClick={voice.onStart}
+      className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
+      style={
+        fullscreen
+          ? { background: "var(--mob-surface)", color: "var(--mob-text)" }
+          : { background: "var(--mob-accent)", color: "#fff" }
+      }
+    >
+      <Mic size={20} />
+    </button>
+  );
+  const recordingVoice = voice.state === "recording";
+  const voiceControls = (
+    <>
+      <button
+        type="button"
+        aria-label={recordingVoice ? "Discard recording" : "Cancel transcription"}
+        {...tap(voice.onCancel)}
+        className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full"
+        style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+      >
+        {recordingVoice ? <Trash2 size={18} /> : <X size={18} />}
+      </button>
+      <div
+        role="status"
+        className="flex h-[42px] min-w-0 flex-1 items-center gap-2.5 rounded-2xl border px-3.5"
+        style={{ background: "var(--mob-card)", borderColor: "var(--mob-surface)" }}
+      >
+        {recordingVoice ? (
+          <>
+            <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
+            <span className="text-[15px] tabular-nums" style={{ color: "var(--mob-text)" }}>
+              {formatElapsed(voice.elapsedMs)}
+            </span>
+            <span className="truncate text-sm" style={{ color: "var(--mob-muted)" }}>
+              Recording…
+            </span>
+          </>
+        ) : (
+          <>
+            <Loader2 size={16} className="shrink-0 animate-spin" style={{ color: "var(--mob-muted)" }} />
+            <span className="truncate text-sm" style={{ color: "var(--mob-muted)" }}>
+              Transcribing…
+            </span>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        aria-label="Stop and transcribe"
+        {...tap(voice.onStop)}
+        disabled={!recordingVoice}
+        className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
+        style={{ background: "var(--mob-accent)", color: "#fff" }}
+      >
+        <Check size={20} />
+      </button>
+    </>
+  );
+  // The compact bar offers the mic where the send button goes while there is
+  // nothing to send, like voice messages in chat apps.
+  const showMic = !editing && !value.trim() && attachments.length === 0;
   const attachmentStrip = attachments.length > 0 && (
     <div className={`flex gap-2 overflow-x-auto pb-1 ${fullscreen ? "px-4 pt-2" : "mb-2"}`}>
       {attachments.map((a) => (
@@ -299,7 +383,7 @@ export function MemoComposer({
 
       {!fullscreen && attachmentStrip}
 
-      <div className={fullscreen ? "flex min-h-0 flex-1 flex-col" : "flex items-end gap-2"}>
+      <div className={fullscreen ? "flex min-h-0 flex-1 flex-col" : "relative flex items-end gap-2"}>
         {!fullscreen && imageButton}
         <div className={fullscreen ? "relative min-h-0 flex-1" : "relative min-w-0 flex-1"}>
           <textarea
@@ -368,17 +452,25 @@ export function MemoComposer({
             </button>
           )}
         </div>
-        {!fullscreen && (
-          <button
-            type="button"
-            aria-label={sendLabel}
-            {...tap(send)}
-            disabled={sendDisabled}
-            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
-            style={{ background: "var(--mob-accent)", color: "#fff" }}
-          >
-            {sendIcon}
-          </button>
+        {!fullscreen &&
+          (showMic ? (
+            micButton
+          ) : (
+            <button
+              type="button"
+              aria-label={sendLabel}
+              {...tap(send)}
+              disabled={sendDisabled}
+              className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
+              style={{ background: "var(--mob-accent)", color: "#fff" }}
+            >
+              {sendIcon}
+            </button>
+          ))}
+        {!fullscreen && voice.state !== "idle" && (
+          <div className="absolute inset-0 z-10 flex items-end gap-2" style={{ background: "var(--mob-bg)" }}>
+            {voiceControls}
+          </div>
         )}
       </div>
 
@@ -391,10 +483,17 @@ export function MemoComposer({
             paddingBottom: keyboardOpen ? 8 : "calc(env(safe-area-inset-bottom, 0px) + 10px)",
           }}
         >
-          {imageButton}
-          <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
-            @ links a note
-          </span>
+          {voice.state === "idle" ? (
+            <>
+              {imageButton}
+              {micButton}
+              <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
+                @ links a note
+              </span>
+            </>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-2">{voiceControls}</div>
+          )}
         </div>
       )}
     </div>

@@ -13,11 +13,14 @@ import {
   SettingsPage,
   StatusText,
   TextSetting,
+  useIsMobileSettings,
   type Status,
 } from "./ui";
 
 export function AISettings() {
   const { settings, updateSettings } = useNotes();
+  // Voice memos only exist in the mobile app (quick notes).
+  const mobile = useIsMobileSettings();
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
 
@@ -87,6 +90,22 @@ export function AISettings() {
           </Button>
         </SettingItem>
       </SettingGroup>
+
+      {mobile && (
+        <SettingGroup
+          heading="Voice memos"
+          description="Quick notes turn recorded speech into text with this endpoint. It needs to support /v1/audio/transcriptions, as OpenAI, Groq and LocalAI do."
+        >
+          <TextSetting
+            name="Transcription model"
+            description="For example whisper-1 (OpenAI) or whisper-large-v3 (Groq)."
+            technical
+            value={settings.aiTranscribeModel}
+            onChange={(v) => update({ aiTranscribeModel: v })}
+            placeholder="whisper-1"
+          />
+        </SettingGroup>
+      )}
     </SettingsPage>
   );
 }

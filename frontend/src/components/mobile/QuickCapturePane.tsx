@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Pencil, X } from "lucide-react";
+import { Copy, FilePlus, Pencil, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -12,24 +12,34 @@ import { localDateKey } from "@/lib/note-utils";
 import {
   appendNotepadEntry,
   joinMemo,
+  memoToNote,
   NOTEPAD_TITLE,
   parseNotepad,
+  removeNotepadEntry,
   replaceNotepadEntry,
   splitMemo,
   type NotepadEntry,
 } from "@/lib/notepad";
+import type { Notebook } from "@/lib/notebooks";
 import { useNotes } from "@/lib/notes-context";
 import { MemoBubble, type NoteRef } from "./MemoBubble";
 import { MemoComposer, type Attachment } from "./MemoComposer";
+import { NotebookPicker } from "./NotebookPicker";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
+import { useVoiceRecorder, VoiceError, type VoiceClip } from "./useVoiceRecorder";
 
 // Quick capture: a chat-style pad in the dashboard's right pane (swipe left on
 // the dashboard). Enter posts the text into the "Notepad" note — created on the
 // first post or image — without leaving the dashboard. "@" links a note, the
-// image button (or pasting) attaches images, and the expand button writes in
-// full screen. Long-press a memo to copy or edit it.
+// image button (or pasting) attaches images, the mic records a voice memo that
+// the AI endpoint transcribes into the text, and the expand button writes in
+// full screen. Long-press a memo to copy or edit it, or to make it a note of
+// its own.
 
 type Target = { vaultId: string; id: string };
+type Toast = { text: string; action?: { label: string; run: () => void } };
+
+const MAX_RECORDING_MS = 10 * 60_000;
 
 const errorText = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
 
@@ -37,8 +47,18 @@ const errorText = (err: unknown, fallback: string) => (err instanceof Error && e
 const imageRel = (url: string) => url.slice(url.indexOf("/images/") + "/images/".length);
 
 export default function QuickCapturePane({ focused, onBack }: { focused: boolean; onBack: () => void }) {
-  const { vaults, activeVault, allVaultData, journalNotes, refresh, refreshNoteBody, openNoteInVault, openTab } =
-    useNotes();
+  const {
+    vaults,
+    activeVault,
+    allVaultData,
+    journalNotes,
+    refresh,
+    refreshNoteBody,
+    openNoteInVault,
+    openTab,
+    settings,
+    updateSettings,
+  } = useNotes();
   const vv = useVisualViewport();
   const [body, setBody] = useState("");
   const [input, setInput] = useState("");
@@ -47,7 +67,14 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   const [editing, setEditing] = useState<NotepadEntry | null>(null);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  // The memo waiting for the first-time notebook choice.
+  const [picking, setPicking] = useState<NotepadEntry | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
+  // A recording whose transcription failed, kept for "Retry".
+  const [failedClip, setFailedClip] = useState<VoiceClip | null>(null);
+  const transcribeAbort = useRef<AbortController | null>(null);
+  const recorder = useVoiceRecorder({ maxMs: MAX_RECORDING_MS, onLimit: () => void stopVoice() });
   const [menu, setMenu] = useState<{ entry: NotepadEntry; x: number; y: number } | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -65,6 +92,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   useEffect(() => {
     focusedRef.current = focused;
   }, [focused]);
+  useEffect(() => () => transcribeAbort.current?.abort(), []);
 
   const notepad = useMemo(() => {
     for (const v of vaults) {
@@ -178,10 +206,10 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     return creatingRef.current;
   };
 
-  const showToast = (message: string) => {
-    setToast(message);
+  const showToast = (text: string, action?: Toast["action"]) => {
+    setToast({ text, action });
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 1600);
+    toastTimer.current = window.setTimeout(() => setToast(null), action ? 5000 : 1600);
   };
 
   // Drops an attachment's preview; a fresh upload that is never posted is
@@ -324,6 +352,122 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     void (note.vaultId ? openNoteInVault(note.vaultId, note.id) : openTab(note.id));
   };
 
+  // Voice memos: record, then the AI endpoint transcribes the clip and the
+  // text lands in the composer to check before posting.
+  const transcribe = async (clip: VoiceClip) => {
+    setTranscribing(true);
+    setError(null);
+    setFailedClip(null);
+    const abort = new AbortController();
+    transcribeAbort.current = abort;
+    try {
+      const text = (
+        await api.transcribeAudio(
+          {
+            baseUrl: settings.aiBaseUrl,
+            apiKey: settings.aiApiKey,
+            model: settings.aiTranscribeModel.trim() || "whisper-1",
+          },
+          clip.blob,
+          clip.fileName,
+          abort.signal,
+        )
+      ).trim();
+      if (!text) {
+        setError("No speech was recognized.");
+        return;
+      }
+      setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")} ${text}` : text));
+      if (focusedRef.current) inputRef.current?.focus({ preventScroll: true });
+    } catch (e) {
+      if (abort.signal.aborted) return;
+      setFailedClip(clip);
+      setError(errorText(e, "Transcription failed"));
+    } finally {
+      if (transcribeAbort.current === abort) transcribeAbort.current = null;
+      setTranscribing(false);
+    }
+  };
+
+  const startVoice = async () => {
+    setError(null);
+    setFailedClip(null);
+    if (!settings.aiBaseUrl.trim()) {
+      setError("Voice memos are transcribed by your AI endpoint: set it up in Settings › AI on this device.");
+      return;
+    }
+    try {
+      await recorder.start();
+    } catch (e) {
+      setError(e instanceof VoiceError ? e.message : "Couldn't start recording.");
+    }
+  };
+
+  const stopVoice = async () => {
+    const clip = await recorder.stop();
+    if (clip) await transcribe(clip);
+    else setError("Nothing was recorded.");
+  };
+
+  const cancelVoice = () => {
+    recorder.cancel();
+    transcribeAbort.current?.abort();
+    setTranscribing(false);
+  };
+
+  const voiceState = recorder.recording ? "recording" : transcribing ? "transcribing" : "idle";
+
+  // "Make note": the memo becomes a note in the default notebook (asked for
+  // the first time), then leaves the notepad — moved, not copied.
+  const makeNote = (entry: NotepadEntry) => {
+    const vault = vaults.find((v) => v.id === settings.memoNoteVault && !isCollectionsVault(v));
+    if (vault) void moveToNote(entry, { vaultId: vault.id, folder: settings.memoNoteFolder });
+    else setPicking(entry);
+  };
+
+  const moveToNote = async (entry: NotepadEntry, notebook: Pick<Notebook, "vaultId" | "folder">) => {
+    setError(null);
+    if (editing?.day === entry.day && editing.start === entry.start) cancelEdit();
+    const draft = memoToNote(entry, settings.headingOnNewNote);
+    let created;
+    try {
+      created = await api.create(notebook.vaultId, {
+        title: draft.title,
+        path: notebook.folder || undefined,
+        body: draft.body,
+      });
+    } catch (e) {
+      setError(errorText(e, "Couldn't create the note"));
+      return;
+    }
+    const noteId = created.id;
+    const open = {
+      label: "Open",
+      run: () => {
+        onBack();
+        void openNoteInVault(notebook.vaultId, noteId);
+      },
+    };
+    void refresh();
+    // Only now take the memo out, from the notepad's latest version.
+    try {
+      const target = targetRef.current;
+      if (!target) throw new Error("The notepad note is gone");
+      const next = removeNotepadEntry((await api.get(target.vaultId, target.id)).body, entry);
+      if (next === null) {
+        showToast(`Saved as “${created.title}” — the memo changed elsewhere, so it stays`, open);
+        return;
+      }
+      setBody(next);
+      await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: next });
+      void refreshNoteBody(target.id);
+      showToast(`Moved to “${created.title}”`, open);
+    } catch (e) {
+      showToast(`Saved as “${created.title}”`, open);
+      setError(errorText(e, "Couldn't remove the memo from the notepad"));
+    }
+  };
+
   return (
     <section
       aria-label="Quick notes"
@@ -419,15 +563,53 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
         {toast && (
           <div
             role="status"
-            className="pointer-events-none absolute left-1/2 top-20 z-30 -translate-x-1/2 rounded-full bg-black/75 px-3 py-1.5 text-xs font-medium text-white"
+            className={
+              "absolute left-1/2 top-20 z-30 flex max-w-[90%] -translate-x-1/2 items-center gap-3 rounded-full bg-black/80 px-3.5 py-1.5 text-xs font-medium text-white" +
+              (toast.action ? "" : " pointer-events-none")
+            }
           >
-            {toast}
+            <span className="truncate">{toast.text}</span>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.action?.run();
+                  setToast(null);
+                }}
+                className="shrink-0 font-semibold underline-offset-2 active:underline"
+              >
+                {toast.action.label}
+              </button>
+            )}
           </div>
         )}
 
         {error && (
-          <div className="px-3 pb-1 text-xs" style={{ color: "#f87171" }}>
-            {error}
+          <div className="flex items-start gap-3 px-3 pb-1 text-xs" style={{ color: "#f87171" }}>
+            <span className="min-w-0 flex-1">{error}</span>
+            {failedClip && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void transcribe(failedClip)}
+                  className="shrink-0 font-semibold"
+                  style={{ color: "var(--mob-accent)" }}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFailedClip(null);
+                    setError(null);
+                  }}
+                  className="shrink-0"
+                  style={{ color: "var(--mob-muted)" }}
+                >
+                  Discard
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -447,6 +629,13 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           onSend={() => void post()}
           suggest={suggest}
           keyboardOpen={vv.isKeyboardOpen}
+          voice={{
+            state: voiceState,
+            elapsedMs: recorder.elapsedMs,
+            onStart: () => void startVoice(),
+            onStop: () => void stopVoice(),
+            onCancel: cancelVoice,
+          }}
         />
       </div>
 
@@ -464,10 +653,22 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
               },
             },
             { label: "Edit", icon: <Pencil size={15} />, onClick: () => startEdit(menu.entry) },
+            { label: "Make note", icon: <FilePlus size={15} />, onClick: () => makeNote(menu.entry) },
           ]}
         />
       )}
       {viewer && <ImageViewer url={viewer} onClose={() => setViewer(null)} />}
+      {picking && (
+        <NotebookPicker
+          onClose={() => setPicking(null)}
+          onPick={(notebook) => {
+            updateSettings({ memoNoteVault: notebook.vaultId, memoNoteFolder: notebook.folder });
+            const entry = picking;
+            setPicking(null);
+            void moveToNote(entry, notebook);
+          }}
+        />
+      )}
     </section>
   );
 }
