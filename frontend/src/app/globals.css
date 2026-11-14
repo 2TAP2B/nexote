@@ -769,9 +769,10 @@ body {
 /* Fullscreen editor: the .ProseMirror padding is reduced on mobile so the
  * text sits close to the title and fills the screen. Extra top padding
  * accounts for the fixed top bar (sidebar toggle + overflow) that floats
- * over the editor. */
+ * over the editor. Readable line length (--editor-max-width) only narrows
+ * it on tablets; phones are narrower than the column anyway. */
 .mob-shell-root .milkdown .ProseMirror {
-  max-width: 100%;
+  max-width: var(--editor-max-width, 100%);
   padding: 70px 20px 120px;
 }
 /* Collection items show their cover/fields header above the editor — undo

@@ -317,6 +317,8 @@ export default function MobileNoteView({
           {
             "--editor-font-size": `${settings.editorFontSize}px`,
             "--editor-font-family": editorFontStack(settings.editorFontFamily) || undefined,
+            // Readable line length (tablets; a phone is narrower anyway).
+            "--editor-max-width": settings.readableLineLength ? "750px" : undefined,
             // With the keyboard open, end the scroll box above the format bar
             // floating over the keyboard (48px tall, 16px above it, plus the
             // safe area). Ending at the keyboard instead let ProseMirror
