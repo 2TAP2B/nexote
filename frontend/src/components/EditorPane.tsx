@@ -96,8 +96,8 @@ export default function EditorPane({
     const bodyChanged = activeNote.body !== prevBodyRef.current;
     prevBodyRef.current = activeNote.body;
 
-    // Respect the "raw markdown by default" preference on each new note; the
-    // in-editor toggle is still per-note while it stays open.
+    // Every note opens in Settings › Editor › Default view; the toolbar button
+    // switches only the open note.
     if (!sameNote) setRawMode(settings.defaultRawMode);
 
     // If this update came from our own save, don't remount the editor or
@@ -127,7 +127,7 @@ export default function EditorPane({
       setBodyKey((k) => k + 1);
     }
     return () => window.clearTimeout(releaseSkip);
-  }, [activeNote, settings.defaultRawMode]);
+  }, [activeNote]);
 
   const handleEditorChange = useCallback((markdown: string) => {
     if (skipNextChange.current) {
@@ -265,30 +265,29 @@ export default function EditorPane({
     }
   };
 
-  if (isDashboardActive || !activeNote) {
-    return <WelcomeDashboard />;
-  }
-
-  // Switch to the raw markdown textarea, caret at the end.
-  const toggleToRaw = () => {
-    setRawMode(true);
-    // The TOC mirrors the editor's headings; with the editor unmounted it has
-    // no live source, so drop the stale outline.
-    window.dispatchEvent(new CustomEvent("nexote:toc-clear"));
-    requestAnimationFrame(() => {
-      const el = rawTextareaRef.current;
-      if (!el) return;
-      el.focus();
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    });
-  };
-
-  // Flush the raw edits to the server, then remount the rendered editor so it
-  // shows exactly what was typed (the remount reads activeNote.body, which is
-  // updated by the save). skipNextChange swallows the remount's markdown
-  // emission, like an initial mount.
-  const toggleToRendered = async () => {
+  // Switch between the rendered editor and the raw markdown textarea. Leaving
+  // raw mode flushes the raw edits to the server first, then remounts the
+  // rendered editor so it shows exactly what was typed (the remount reads
+  // activeNote.body, which the save updates); skipNextChange swallows the
+  // remount's markdown emission, like an initial mount. `focus` puts the caret
+  // at the end of the new view: wanted for the toolbar button, not when the
+  // switch comes from the settings dialog.
+  const switchView = async (raw: boolean, focus: boolean) => {
+    if (raw) {
+      setRawMode(true);
+      // The TOC mirrors the editor's headings; with the editor unmounted it
+      // has no live source, so drop the stale outline.
+      window.dispatchEvent(new CustomEvent("nexote:toc-clear"));
+      if (!focus) return;
+      requestAnimationFrame(() => {
+        const el = rawTextareaRef.current;
+        if (!el) return;
+        el.focus();
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      });
+      return;
+    }
     if (!activeId) return;
     ownSaveCountRef.current++;
     prevBodyRef.current = body;
@@ -299,10 +298,25 @@ export default function EditorPane({
     window.setTimeout(() => {
       skipNextChange.current = false;
     }, 300);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => editorRef.current?.focusEnd());
-    });
+    if (focus) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => editorRef.current?.focusEnd());
+      });
+    }
   };
+
+  // Changing the Default view setting switches the open note right away (so
+  // the change is visible); notes opened later start in it anyway.
+  const appliedDefaultRef = useRef(settings.defaultRawMode);
+  useEffect(() => {
+    if (appliedDefaultRef.current === settings.defaultRawMode) return;
+    appliedDefaultRef.current = settings.defaultRawMode;
+    if (activeNote && rawMode !== settings.defaultRawMode) void switchView(settings.defaultRawMode, false);
+  }, [settings.defaultRawMode]);
+
+  if (isDashboardActive || !activeNote) {
+    return <WelcomeDashboard />;
+  }
 
   // Cycle to the previous / next open tab.
   const goPrevTab = () => {
@@ -439,7 +453,7 @@ export default function EditorPane({
             type="button"
             aria-label={rawMode ? "Rendered view" : "Raw markdown"}
             title={rawMode ? "Rendered view" : "Raw markdown"}
-            onClick={() => (rawMode ? void toggleToRendered() : toggleToRaw())}
+            onClick={() => void switchView(!rawMode, true)}
             className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
           >
             {rawMode ? <BookOpen size={15} /> : <Braces size={15} />}

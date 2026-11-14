@@ -32,18 +32,9 @@ export function EditorSettings() {
   return (
     <SettingsPage title="Editor">
       <SettingGroup heading="Display">
-        <SliderSetting
-          name="Font size"
-          description="Size of the note text."
-          value={settings.editorFontSize}
-          min={12}
-          max={24}
-          format={(v) => `${v}px`}
-          onChange={(v) => updateSettings({ editorFontSize: v })}
-        />
         <DropdownSetting
           name="Font"
-          description="Typeface of the note text."
+          description="Typeface of the rendered view. Raw markdown always uses a monospace font."
           value={font}
           options={EDITOR_FONTS.map(({ value, label }) => ({ value, label }))}
           onChange={(v) => updateSettings({ editorFontFamily: v })}
@@ -61,13 +52,25 @@ export function EditorSettings() {
       <SettingGroup heading="Editing">
         <DropdownSetting
           name="Default view"
-          description="How notes open. The Raw markdown button in the toolbar still switches a single note."
+          description="How notes open, including the one that is open now. The Raw markdown button in the toolbar switches a single note."
           value={settings.defaultRawMode ? "raw" : "rendered"}
           options={[
             { value: "rendered", label: "Rendered view" },
             { value: "raw", label: "Raw markdown" },
           ]}
           onChange={(v) => updateSettings({ defaultRawMode: v === "raw" })}
+        />
+      </SettingGroup>
+
+      <SettingGroup heading="Raw markdown">
+        <SliderSetting
+          name="Font size"
+          description="Only for notes shown as raw markdown. The rendered view keeps the theme's text sizes."
+          value={settings.editorFontSize}
+          min={12}
+          max={24}
+          format={(v) => `${v}px`}
+          onChange={(v) => updateSettings({ editorFontSize: v })}
         />
       </SettingGroup>
 

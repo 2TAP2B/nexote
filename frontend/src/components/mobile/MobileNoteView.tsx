@@ -103,8 +103,9 @@ export default function MobileNoteView({
     const bodyChanged = activeNote.body !== prevBodyRef.current;
     prevBodyRef.current = activeNote.body;
 
-    // Each note opens in the rendered view; the raw-mode toggle is per-note.
-    if (!sameNote) setRawMode(false);
+    // Every note opens in Settings › Editor › Default view; the toolbar button
+    // switches only the open note.
+    if (!sameNote) setRawMode(settings.defaultRawMode);
 
     // If this update came from our own save, don't remount the editor or
     // overwrite local body state — the user may have continued typing while
@@ -198,26 +199,29 @@ export default function MobileNoteView({
     return () => clearTimeout(t);
   }, [activeId, title, body, save]);
 
-  // Switch to the raw markdown textarea, caret at the end.
-  const toggleToRaw = () => {
-    setRawMode(true);
-    // The TOC mirrors the editor's headings; with the editor unmounted it has
-    // no live source, so drop the stale outline.
-    window.dispatchEvent(new CustomEvent("nexote:toc-clear"));
-    requestAnimationFrame(() => {
-      const el = rawTextareaRef.current;
-      if (!el) return;
-      el.focus();
-      const len = el.value.length;
-      el.setSelectionRange(len, len);
-    });
-  };
-
-  // Flush the raw edits to the server, then remount the rendered editor so it
-  // shows exactly what was typed (the remount reads activeNote.body, which is
-  // updated by the save). skipNextChange swallows the remount's markdown
-  // emission, like an initial mount.
-  const toggleToRendered = async () => {
+  // Switch between the rendered editor and the raw markdown textarea. Leaving
+  // raw mode flushes the raw edits to the server first, then remounts the
+  // rendered editor so it shows exactly what was typed (the remount reads
+  // activeNote.body, which the save updates); skipNextChange swallows the
+  // remount's markdown emission, like an initial mount. `focus` puts the caret
+  // at the end of the new view: wanted for the toolbar button, not when the
+  // switch comes from the settings screen (it would pop up the keyboard).
+  const switchView = async (raw: boolean, focus: boolean) => {
+    if (raw) {
+      setRawMode(true);
+      // The TOC mirrors the editor's headings; with the editor unmounted it
+      // has no live source, so drop the stale outline.
+      window.dispatchEvent(new CustomEvent("nexote:toc-clear"));
+      if (!focus) return;
+      requestAnimationFrame(() => {
+        const el = rawTextareaRef.current;
+        if (!el) return;
+        el.focus();
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      });
+      return;
+    }
     if (!activeId) return;
     ownSaveCountRef.current++;
     prevBodyRef.current = body;
@@ -228,10 +232,22 @@ export default function MobileNoteView({
     window.setTimeout(() => {
       skipNextChange.current = false;
     }, 300);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => editorRef.current?.focusEnd());
-    });
+    if (focus) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => editorRef.current?.focusEnd());
+      });
+    }
   };
+
+  // Changing the Default view setting switches the open note right away (so
+  // the change is visible). This also covers start-up: settings load from
+  // storage after the first render.
+  const appliedDefaultRef = useRef(settings.defaultRawMode);
+  useEffect(() => {
+    if (appliedDefaultRef.current === settings.defaultRawMode) return;
+    appliedDefaultRef.current = settings.defaultRawMode;
+    if (activeNote && rawMode !== settings.defaultRawMode) void switchView(settings.defaultRawMode, false);
+  }, [settings.defaultRawMode]);
 
   // Dashboard: render the mobile welcome screen only when the dashboard tab is
   // the active tab. While a note tab is active but its body hasn't loaded yet
@@ -372,7 +388,7 @@ export default function MobileNoteView({
       >
         <CircleButton
           ariaLabel={rawMode ? "Rendered view" : "Raw markdown"}
-          onClick={() => (rawMode ? void toggleToRendered() : toggleToRaw())}
+          onClick={() => void switchView(!rawMode, true)}
         >
           {rawMode ? <BookOpen size={20} /> : <Braces size={20} />}
         </CircleButton>
