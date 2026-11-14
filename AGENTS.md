@@ -136,5 +136,7 @@ Dev proxy: `frontend/next.config.mjs` rewrites `/api/* → NEXOTE_BACKEND_URL ||
 http://localhost:8080`. Prod = reverse proxy in front of both, or the Docker build.
 
 ## Roadmap
-Feature plan (tags, previews, multi-select, search filters, properties, dual-pane,
-calendar, settings toggles) lives at `.opencode/plans/notebook-navigator-features.md`.
+Current backlog (trash, new-note location, templates, wikilinks, editor
+behavior, …) and the settings rules: `wip-features.md`. Older feature plan
+(tags, previews, multi-select, search filters, properties, dual-pane, calendar,
+settings toggles): `.opencode/plans/notebook-navigator-features.md`.
