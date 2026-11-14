@@ -130,6 +130,7 @@ func (h *Handler) Routes() http.Handler {
 	// AI proxy routes (vault-independent, forward to OpenAI-compatible APIs)
 	mux.HandleFunc("POST /api/ai/chat", h.aiChat)
 	mux.HandleFunc("POST /api/ai/test", h.aiTest)
+	mux.HandleFunc("POST /api/ai/transcribe", h.aiTranscribe)
 
 	// Git sync routes (vault-independent, operate on $NEXOTE_HOME root)
 	mux.HandleFunc("GET /api/search", h.searchGlobal)

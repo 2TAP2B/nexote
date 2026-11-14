@@ -11,7 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -207,4 +210,111 @@ func (h *Handler) aiTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// maxAudioBytes caps a voice memo upload: OpenAI's transcription API takes up
+// to 25 MB per file.
+const maxAudioBytes = 25 << 20
+
+var quoteEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+
+// aiTranscribe turns a recorded voice memo into text through the configured
+// OpenAI-compatible speech-to-text endpoint (POST /v1/audio/transcriptions,
+// served by OpenAI, Groq, LocalAI, speaches, …). Multipart fields: file,
+// baseUrl, apiKey, model. Responds {"text": "..."}.
+func (h *Handler) aiTranscribe(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAudioBytes+(1<<20))
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid upload: %w", err))
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+	base := normalizeAIBaseURL(r.FormValue("baseUrl"))
+	model := strings.TrimSpace(r.FormValue("model"))
+	if base == "" || model == "" {
+		writeError(w, http.StatusBadRequest, errors.New("baseUrl and model are required"))
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("missing file: %w", err))
+		return
+	}
+	defer file.Close()
+
+	// Re-encode for the upstream API. Keep the file name: OpenAI infers the
+	// audio format from its extension.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("model", model); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	part, err := mw.CreatePart(textproto.MIMEHeader{
+		"Content-Disposition": {fmt.Sprintf(`form-data; name="file"; filename="%s"`, quoteEscaper.Replace(filepath.Base(header.Filename)))},
+		"Content-Type":        {contentType},
+	})
+	if err == nil {
+		_, err = io.Copy(part, file)
+	}
+	if err == nil {
+		err = mw.Close()
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/v1/audio/transcriptions", &body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if key := r.FormValue("apiKey"); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("transcription request: %w", err))
+		return
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("transcription failed (%s): %s", resp.Status, upstreamErrorMessage(raw)))
+		return
+	}
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		writeError(w, http.StatusBadGateway, errors.New("transcription failed: unexpected response from the AI endpoint"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"text": strings.TrimSpace(out.Text)})
+}
+
+// upstreamErrorMessage extracts {"error":{"message":…}} (OpenAI style) from
+// an upstream error body, else returns the body itself, shortened.
+func upstreamErrorMessage(raw []byte) string {
+	var parsed struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(raw, &parsed) == nil && parsed.Error.Message != "" {
+		return parsed.Error.Message
+	}
+	msg := strings.TrimSpace(string(raw))
+	if len(msg) > 300 {
+		msg = msg[:300] + "…"
+	}
+	return msg
 }

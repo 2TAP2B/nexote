@@ -457,6 +457,37 @@ export const api = {
       method: "POST",
       body: JSON.stringify(config),
     }),
+  // Speech-to-text for voice memos: the backend forwards the clip to the
+  // endpoint's /v1/audio/transcriptions. The file name's extension tells the
+  // API the audio format.
+  transcribeAudio: async (
+    config: { baseUrl: string; apiKey: string; model: string },
+    audio: Blob,
+    fileName: string,
+    signal?: AbortSignal,
+  ) => {
+    const form = new FormData();
+    form.append("file", audio, fileName);
+    form.append("baseUrl", config.baseUrl);
+    form.append("apiKey", config.apiKey);
+    form.append("model", config.model);
+    const res = await fetch("/api/ai/transcribe", { method: "POST", body: form, signal });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        const body: unknown = await res.json();
+        if (body && typeof body === "object" && "error" in body && typeof body.error === "string") {
+          message = body.error;
+        }
+      } catch {
+        // ignore json parse errors
+      }
+      throw new ApiError(res.status, message);
+    }
+    const data: unknown = await res.json();
+    if (data && typeof data === "object" && "text" in data && typeof data.text === "string") return data.text;
+    throw new ApiError(502, "Unexpected response from the transcription endpoint");
+  },
 
   // --- Git sync (vault-independent, operates on $NEXOTE_HOME root) ---
   gitGetConfig: () =>
