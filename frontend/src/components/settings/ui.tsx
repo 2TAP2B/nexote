@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -192,6 +192,40 @@ export function SettingItem({
       {info}
       {children !== undefined && <div className="flex shrink-0 items-center gap-2">{children}</div>}
     </div>
+  );
+}
+
+/** A row that opens an external page in a new tab. */
+export function LinkItem({
+  icon,
+  name,
+  description,
+  href,
+}: {
+  icon: ReactNode;
+  name: ReactNode;
+  description?: ReactNode;
+  href: string;
+}) {
+  const mobile = useIsMobileSettings();
+  const text = useTextClasses();
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={cx(
+        "flex min-h-[52px] items-center px-4 py-3 outline-none transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 active:bg-muted",
+        mobile ? "gap-3" : "gap-4",
+      )}
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">{icon}</span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={text.name}>{name}</span>
+        {description && <span className={text.desc}>{description}</span>}
+      </span>
+      <ExternalLink aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+    </a>
   );
 }
 

@@ -25,6 +25,11 @@ COPY frontend/ ./
 # server re-evaluates it at runtime and we set the same value in the runtime
 # image, so both processes agree on http://127.0.0.1:8080.
 ENV NEXOTE_BACKEND_URL=http://127.0.0.1:8080
+# Version and commit for Settings › About. The build context has no .git, so
+# they come in as build args (docker-compose.yml passes them through);
+# without them next.config.mjs falls back to package.json.
+ARG NEXOTE_VERSION=""
+ARG NEXOTE_COMMIT=""
 RUN pnpm build
 
 # ---------- Stage 3: minimal runtime image with both services ----------

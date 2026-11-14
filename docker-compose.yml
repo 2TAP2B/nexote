@@ -1,6 +1,12 @@
 services:
   nexote:
-    build: .
+    build:
+      context: .
+      # Version shown in Settings › About (the build context has no .git):
+      #   NEXOTE_VERSION=$(git describe --tags --abbrev=0) NEXOTE_COMMIT=$(git rev-parse --short HEAD) docker compose build
+      args:
+        NEXOTE_VERSION: ${NEXOTE_VERSION:-}
+        NEXOTE_COMMIT: ${NEXOTE_COMMIT:-}
     image: nexote:latest
     container_name: nexote
     ports:
