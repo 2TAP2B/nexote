@@ -11,9 +11,11 @@ import { cacheImage } from "@/lib/image-cache";
 import { localDateKey } from "@/lib/note-utils";
 import {
   appendNotepadEntry,
+  findNotepad,
   joinMemo,
   memoToNote,
   NOTEPAD_TITLE,
+  notepadLocation,
   parseNotepad,
   removeNotepadEntry,
   replaceNotepadEntry,
@@ -46,9 +48,6 @@ const errorText = (err: unknown, fallback: string) => (err instanceof Error && e
 // "/api/vaults/<vault>/images/<rel>" → "<rel>" (what the delete route takes).
 const imageRel = (url: string) => url.slice(url.indexOf("/images/") + "/images/".length);
 
-// The personal store that holds the Notepad (pseudo vault id).
-const HOME_VAULT = "home";
-
 export default function QuickCapturePane({ focused, onBack }: { focused: boolean; onBack: () => void }) {
   const {
     vaults,
@@ -66,7 +65,14 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   const [body, setBody] = useState("");
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreenState] = useState(false);
+  // "Exit full screen" acts on pointerdown; the tap's click then lands on
+  // the close button that sits at the same spot underneath. Ignore it.
+  const fullscreenClosedAt = useRef(0);
+  const setFullscreen = (next: boolean) => {
+    if (!next) fullscreenClosedAt.current = Date.now();
+    setFullscreenState(next);
+  };
   const [editing, setEditing] = useState<NotepadEntry | null>(null);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,20 +103,26 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   }, [focused]);
   useEffect(() => () => transcribeAbort.current?.abort(), []);
 
-  // The Notepad lives in the user's personal "home" store (the same in every
-  // space). Found and (re)loaded whenever the pane is shown, so edits made
-  // elsewhere appear. Creating it on the first post only sets targetRef:
-  // reloading then would race the post and show the empty new note.
+  // The Notepad lives where Settings › Features says: the personal "home"
+  // store (default, the same in every space) or a chosen notebook. Found and
+  // (re)loaded whenever the pane is shown, so edits made elsewhere appear.
+  // Creating it on the first post only sets targetRef: reloading then would
+  // race the post and show the empty new note.
+  const { vaultId: locVault, folder: locFolder } = notepadLocation(settings);
+  // A new location means another note: forget the old one and its memos.
+  useEffect(() => {
+    targetRef.current = null;
+    setBody("");
+  }, [locVault, locFolder]);
   useEffect(() => {
     if (!focused) return;
     let cancelled = false;
     void (async () => {
       try {
-        const res = await api.list(HOME_VAULT);
-        const hit = (res.notes ?? []).find((n) => n.title === NOTEPAD_TITLE);
-        if (cancelled || !hit) return;
-        targetRef.current = { vaultId: HOME_VAULT, id: hit.id };
-        const note = await api.get(HOME_VAULT, hit.id);
+        const id = await findNotepad({ vaultId: locVault, folder: locFolder });
+        if (cancelled || !id) return;
+        targetRef.current = { vaultId: locVault, id };
+        const note = await api.get(locVault, id);
         if (!cancelled) setBody(note.body);
       } catch {
         // Offline or not created yet: the pane keeps what it shows.
@@ -119,7 +131,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     return () => {
       cancelled = true;
     };
-  }, [focused]);
+  }, [focused, locVault, locFolder]);
 
   useEffect(() => {
     if (!focused) setMenu(null);
@@ -185,8 +197,8 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   const ensureTarget = (): Promise<Target> => {
     if (targetRef.current) return Promise.resolve(targetRef.current);
     creatingRef.current ??= (async () => {
-      const created = await api.create(HOME_VAULT, { title: NOTEPAD_TITLE });
-      targetRef.current = { vaultId: HOME_VAULT, id: created.id };
+      const created = await api.create(locVault, { title: NOTEPAD_TITLE, path: locFolder || undefined });
+      targetRef.current = { vaultId: locVault, id: created.id };
       return targetRef.current;
     })().finally(() => {
       creatingRef.current = null;
@@ -487,7 +499,10 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           <button
             type="button"
             aria-label="Close quick notes"
-            onClick={onBack}
+            onClick={() => {
+              if (Date.now() - fullscreenClosedAt.current < 600) return;
+              onBack();
+            }}
             className="flex items-center justify-center rounded-full transition-transform active:scale-95"
             style={{ width: 40, height: 40, background: "var(--mob-surface)", color: "var(--mob-text)" }}
           >

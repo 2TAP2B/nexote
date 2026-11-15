@@ -12,6 +12,7 @@ import {
   Hash,
   Library,
   ListTodo,
+  Settings,
   Star,
   X,
 } from "lucide-react";
@@ -230,6 +231,12 @@ export default function MobileSidebar({
               onClick={() => treeControls?.toggleSectionsCollapse()}
             >
               <Expand size={20} />
+            </RibbonBtn>
+            <RibbonBtn
+              label="Settings"
+              onClick={() => window.dispatchEvent(new CustomEvent("nexote:open-settings"))}
+            >
+              <Settings size={20} />
             </RibbonBtn>
           </div>
         )}

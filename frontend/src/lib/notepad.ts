@@ -1,3 +1,4 @@
+import { api } from "./api";
 import { localDateKey } from "./note-utils";
 
 // The "Notepad" note quick capture posts into: entries are "- HH:MM text" list
@@ -8,6 +9,23 @@ import { localDateKey } from "./note-utils";
 // image lines ("![](url)") inside the entry.
 
 export const NOTEPAD_TITLE = "Notepad";
+
+/** The personal store (pseudo vault id): only its owner sees it, in no tree. */
+export const HOME_VAULT = "home";
+
+export type NotepadLocation = { vaultId: string; folder: string };
+
+/** Where the Notepad lives per Settings › Features ("" vault = personal store). */
+export function notepadLocation(s: { notepadVault: string; notepadFolder: string }): NotepadLocation {
+  return s.notepadVault ? { vaultId: s.notepadVault, folder: s.notepadFolder } : { vaultId: HOME_VAULT, folder: "" };
+}
+
+/** The Notepad's id at a location (same folder first, then anywhere there), or null. */
+export async function findNotepad(loc: NotepadLocation): Promise<string | null> {
+  const res = await api.list(loc.vaultId);
+  const candidates = (res.notes ?? []).filter((n) => n.title === NOTEPAD_TITLE && !n.collection);
+  return (candidates.find((n) => (n.path ?? "") === loc.folder) ?? candidates[0])?.id ?? null;
+}
 
 export type NotepadEntry = {
   day: string;

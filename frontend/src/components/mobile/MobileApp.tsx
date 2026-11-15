@@ -8,7 +8,8 @@ import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
 import DeleteConfirm from "@/components/DeleteConfirm";
 import FileTree, { type TreeControls } from "@/components/FileTree";
-import { MoveToDialog } from "@/components/FileTree";
+import { NotebookSheet } from "@/components/mobile/NotebookPicker";
+import { notebookKey } from "@/lib/notebooks";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import type { SidebarView } from "@/components/Ribbon";
 import MobileSpacesPane from "@/components/spaces/MobileSpacesPane";
@@ -50,6 +51,8 @@ export default function MobileApp() {
     notesById,
     listCollections,
     activeSpaceId,
+    noteVaultMap,
+    allVaultData,
   } = useNotes();
   const { canEditSpace } = useCanEdit();
 
@@ -234,7 +237,7 @@ export default function MobileApp() {
     };
   }, []);
 
-  // Execute a move chosen in the MoveToDialog. Within the active vault uses
+  // Execute a move chosen in the "Move to…" sheet. Within the active vault uses
   // moveNote (path change); to another vault (any space) uses moveNoteToVault.
   const performMoveTo = useCallback(
     async (dstVaultId: string, dstPath: string) => {
@@ -250,6 +253,16 @@ export default function MobileApp() {
     },
     [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
   );
+
+  // The note's current notebook, marked in the sheet.
+  const moveFrom = moveTo ? noteVaultMap[moveTo] : undefined;
+  const moveSelected =
+    moveTo && moveFrom
+      ? notebookKey({
+          vaultId: moveFrom,
+          folder: allVaultData[moveFrom]?.notes.find((n) => n.id === moveTo)?.path ?? "",
+        })
+      : undefined;
 
   // Swipe to pan between the spaces / sidebar / editor / contents panes —
   // from the pill or anywhere in the editor pane.
@@ -413,12 +426,15 @@ export default function MobileApp() {
         />
       )}
 
-      <MoveToDialog
-        open={moveTo !== null}
-        activeVaultId={activeVault?.id ?? ""}
-        onClose={() => setMoveTo(null)}
-        onMove={performMoveTo}
-      />
+      {moveTo !== null && (
+        <NotebookSheet
+          title="Move to…"
+          description="Pick a vault or folder. Moving it into another space takes it out of this one."
+          selected={moveSelected}
+          onPick={(n) => void performMoveTo(n.vaultId, n.folder)}
+          onClose={() => setMoveTo(null)}
+        />
+      )}
 
       <DeleteConfirm
         open={pendingDelete !== null}

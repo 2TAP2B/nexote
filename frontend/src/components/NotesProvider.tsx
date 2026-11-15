@@ -13,6 +13,7 @@ import {
 import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { offlinePrecache } from "@/lib/offline-db";
 import { localDateKey } from "@/lib/note-utils";
+import { NOTEPAD_TITLE } from "@/lib/notepad";
 
 type Draft = { title: string; body: string };
 
@@ -45,6 +46,12 @@ export type AppSettings = {
   // Quick notes › "Make note": where the note goes ("" vault = ask first).
   memoNoteVault: string;
   memoNoteFolder: string;
+  // Quick notes › where the "Notepad" note lives: "" = the personal store
+  // (only you, never in a tree), else a vault (+ folder) of any space.
+  notepadVault: string;
+  notepadFolder: string;
+  // Whether the Notepad shows in the note tree when it lives in a vault.
+  notepadInTree: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -65,6 +72,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showTagsOnPalette: true,
   memoNoteVault: "",
   memoNoteFolder: "",
+  notepadVault: "",
+  notepadFolder: "",
+  notepadInTree: true,
 };
 
 type NotesContextValue = {
@@ -1922,6 +1932,31 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     void refreshGitStatus();
   }, [refreshGitConfig, refreshGitStatus]);
 
+  // Settings › Features can keep the quick-capture Notepad out of the tree
+  // (when it lives in a vault). Everything listing notes reads these.
+  const hideNotepad = !settings.notepadInTree && settings.notepadVault !== "";
+  const isNotepad = useCallback(
+    (vaultId: string, n: NoteMeta) =>
+      vaultId === settings.notepadVault &&
+      n.title === NOTEPAD_TITLE &&
+      !n.collection &&
+      (n.path ?? "") === settings.notepadFolder,
+    [settings.notepadVault, settings.notepadFolder],
+  );
+  const shownVaultData = useMemo(() => {
+    if (!hideNotepad) return allVaultData;
+    const data = allVaultData[settings.notepadVault];
+    if (!data) return allVaultData;
+    return {
+      ...allVaultData,
+      [settings.notepadVault]: { ...data, notes: data.notes.filter((n) => !isNotepad(settings.notepadVault, n)) },
+    };
+  }, [allVaultData, hideNotepad, isNotepad, settings.notepadVault]);
+  const shownNotes = useMemo(
+    () => (hideNotepad && activeVaultId ? notes.filter((n) => !isNotepad(activeVaultId, n)) : notes),
+    [notes, hideNotepad, isNotepad, activeVaultId],
+  );
+
   const value = useMemo<NotesContextValue>(
     () => ({
       vaults,
@@ -1942,7 +1977,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       deleteSpace,
       leaveSpace,
       listCollections,
-      notes,
+      notes: shownNotes,
       folders,
       bookmarks,
       shortcuts,
@@ -1976,7 +2011,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setDraft,
       refresh,
       refreshNoteBody,
-      allVaultData,
+      allVaultData: shownVaultData,
       journalNotes,
       tagsByVault,
       refreshTags,
@@ -2021,7 +2056,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       deleteSpace,
       leaveSpace,
       listCollections,
-      notes,
+      shownNotes,
       folders,
       bookmarks,
       shortcuts,
@@ -2055,7 +2090,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setDraft,
       refresh,
       refreshNoteBody,
-      allVaultData,
+      shownVaultData,
       journalNotes,
       tagsByVault,
       refreshTags,

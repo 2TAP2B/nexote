@@ -36,6 +36,8 @@ const PERSONAL_SETTINGS = [
   "startVaultId",
   "memoNoteVault",
   "memoNoteFolder",
+  "notepadVault",
+  "notepadFolder",
 ];
 
 const isAuthUser = (v: unknown): v is AuthUser =>
