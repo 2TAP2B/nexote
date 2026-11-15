@@ -28,13 +28,13 @@ async function canLeaveSpace(space: SpaceInfo): Promise<boolean> {
 }
 
 /**
- * Top of the desktop ribbon: the active space's avatar. Clicking it opens a
- * panel beside the ribbon to switch spaces, create one, or open a space's
- * settings (⋯ or right-click).
+ * Bottom of the desktop ribbon, right above the account: the active space's
+ * avatar. Clicking it opens a panel beside the ribbon (growing upward) to
+ * switch spaces, create one, or open a space's settings (⋯ or right-click).
  */
 export function SpaceSwitcher() {
   const { spaces, activeSpace, switchSpace } = useNotes();
-  const [panel, setPanel] = useState<{ top: number; left: number } | null>(null);
+  const [panel, setPanel] = useState<{ bottom: number; left: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [settingsFor, setSettingsFor] = useState<{ id: string; section?: SpaceSettingsSection } | null>(null);
@@ -68,7 +68,7 @@ export function SpaceSwitcher() {
       return;
     }
     const r = buttonRef.current?.getBoundingClientRect();
-    if (r) setPanel({ top: r.top, left: r.right + 8 });
+    if (r) setPanel({ bottom: window.innerHeight - r.bottom, left: r.right + 8 });
   };
 
   const openSpaceMenu = async (space: SpaceInfo, x: number, y: number) => {
@@ -90,6 +90,8 @@ export function SpaceSwitcher() {
 
   return (
     <>
+      {/* Separates the space and account from the views above. */}
+      <span aria-hidden className="mb-1 h-px w-6" style={{ background: "var(--border)" }} />
       <button
         ref={buttonRef}
         type="button"
@@ -98,7 +100,7 @@ export function SpaceSwitcher() {
         aria-expanded={panel !== null}
         title={activeSpace ? `${activeSpace.name}\n${spaceSummary(activeSpace)}` : "Spaces"}
         onClick={toggle}
-        className={"relative mb-1 flex h-9 w-9 items-center justify-center rounded-lg transition-colors " + HOVER}
+        className={"relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors " + HOVER}
       >
         {activeSpace && <SpaceAvatar space={activeSpace} size={26} />}
         {CornerIcon && (
@@ -111,8 +113,6 @@ export function SpaceSwitcher() {
           </span>
         )}
       </button>
-      {/* Separates the space from the views below it. */}
-      <span aria-hidden className="mb-1 h-px w-6" style={{ background: "var(--border)" }} />
 
       {panel &&
         createPortal(
@@ -121,7 +121,7 @@ export function SpaceSwitcher() {
             role="dialog"
             aria-label="Spaces"
             className="fixed z-50 w-72 overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-xl"
-            style={{ top: panel.top, left: panel.left }}
+            style={{ bottom: panel.bottom, left: panel.left }}
           >
             <div className="px-3 pb-1.5 pt-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Spaces

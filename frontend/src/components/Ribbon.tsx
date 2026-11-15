@@ -64,7 +64,6 @@ export default function Ribbon({
       className="flex h-full w-10 shrink-0 flex-col items-center pt-1"
       style={{ background: "var(--icon-rail)", borderRight: "1px solid var(--border)" }}
     >
-      <SpaceSwitcher />
       {icons.map((it) => {
         const active = activeView === it.view;
         return (
@@ -106,6 +105,7 @@ export default function Ribbon({
       <div className="flex-1" />
 
       <div className="flex flex-col items-center pb-2 gap-0.5">
+        <SpaceSwitcher />
         <AccountButton />
         <button
           type="button"
