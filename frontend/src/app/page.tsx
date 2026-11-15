@@ -28,7 +28,6 @@ import Ribbon, { type SidebarView } from "@/components/Ribbon";
 import SettingsPanel from "@/components/SettingsPanel";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
-import SpacesRail from "@/components/spaces/SpacesRail";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { api } from "@/lib/api";
@@ -232,13 +231,9 @@ function AppShell() {
   }, [sidebarWidth]);
 
   return (
-    <div className="flex w-full bg-background viewport-full">
+    <>
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
-      {/* Space switcher: full height at the far left (desktop only). */}
-      <div className="hidden md:flex shrink-0">
-        <SpacesRail />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex w-full flex-col bg-background viewport-full">
         {/* Full-width top bar (desktop) — includes collapse toggle at far left */}
         <div
           className="hidden md:flex shrink-0"
@@ -444,7 +439,7 @@ function AppShell() {
           }}
         />
       </div>
-    </div>
+    </>
   );
 }
 
