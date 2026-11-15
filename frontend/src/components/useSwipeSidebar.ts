@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { haptic, isHapticClick } from "@/lib/haptics";
+
 // "spaces" is the space switcher left of the note tree. "toc" is the
 // right-hand pane: the table of contents for a note, quick capture on the
 // dashboard.
@@ -240,13 +242,14 @@ export function useSwipeSidebar({ focus, onFocus, swipeFromContent = false }: Sw
           active.blur();
         }
         h.onFocus(PANES[next]);
+        haptic();
       }
     };
 
     // Swallows the click that would otherwise fire on the pill/tap right after
     // a swipe gesture (which would immediately re-toggle the pane).
     const onCaptureClick = (e: Event) => {
-      if (Date.now() - lastSwipe < 400) {
+      if (Date.now() - lastSwipe < 400 && !isHapticClick(e)) {
         e.preventDefault();
         e.stopPropagation();
       }
