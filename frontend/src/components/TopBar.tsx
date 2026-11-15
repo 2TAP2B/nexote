@@ -4,6 +4,7 @@ import { ChevronDown, LayoutDashboard, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type TopBarProps = {
   onOpenPalette: () => void;
@@ -21,6 +22,7 @@ function replaceOrAddTitleHeading(body: string, title: string): string {
 export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) {
   const { openTabs, activeId, notesById, openTab, closeTab, create, creating, save } =
     useNotes();
+  const { canEditSpace, canEditNote } = useCanEdit();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(
     null,
@@ -86,7 +88,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                   closeTab(id);
                 }
               }}
-              onDoubleClick={() => !isDashboard && startRename(id, title)}
+              onDoubleClick={() => !isDashboard && canEditNote(id) && startRename(id, title)}
               className="group flex shrink-0 cursor-pointer items-center"
               style={{
                 width: isDashboard ? 44 : 168,
@@ -198,15 +200,17 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
               }}
               className="min-w-[180px] overflow-hidden py-1 shadow-lg"
             >
-              <MenuItem
-                label="Create new note"
-                shortcut="Ctrl+Shift+N"
-                disabled={creating}
-                onClick={() => {
-                  setMenuOpen(false);
-                  void create();
-                }}
-              />
+              {canEditSpace && (
+                <MenuItem
+                  label="Create new note"
+                  shortcut="Ctrl+Shift+N"
+                  disabled={creating}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void create();
+                  }}
+                />
+              )}
               <MenuItem
                 label="Go to note…"
                 shortcut="Ctrl+P"

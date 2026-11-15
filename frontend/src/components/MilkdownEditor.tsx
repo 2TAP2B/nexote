@@ -443,6 +443,8 @@ type MilkdownEditorProps = {
   noteId: string;
   mobile?: boolean;
   onAskAI?: () => void;
+  // Viewers of a shared space: the note renders but can't be edited.
+  readOnly?: boolean;
 };
 
 const AI_SYSTEM_PROMPT = `You are a writing assistant embedded in a markdown editor.
@@ -607,12 +609,19 @@ function pinScroll(view: EditorView): () => void {
 
 // Inner editor lives inside MilkdownProvider so it can use the editor hooks.
 const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
-  function MilkdownEditor({ defaultValue, onChange, aiConfig, vaultId, noteId, mobile, onAskAI }, ref) {
+  function MilkdownEditor({ defaultValue, onChange, aiConfig, vaultId, noteId, mobile, onAskAI, readOnly = false }, ref) {
     const crepeRef = useRef<Crepe | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
     const onAskAIRef = useRef(onAskAI);
     onAskAIRef.current = onAskAI;
+    // Read at build time so a role change toggles the view instead of
+    // rebuilding the editor (the effect below applies later changes).
+    const readOnlyRef = useRef(readOnly);
+    readOnlyRef.current = readOnly;
+    useEffect(() => {
+      crepeRef.current?.setReadonly(readOnly);
+    }, [readOnly]);
 
     const aiBeforeRef = useRef("");
     const [aiReview, setAiReview] = useState<{
@@ -954,6 +963,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         featureConfigs,
         features,
       });
+      if (readOnlyRef.current) crepe.setReadonly(true);
 
       // Block-to-block arrow navigation: when ArrowUp is pressed at the
       // start of a block, jump to the start of the previous block. When

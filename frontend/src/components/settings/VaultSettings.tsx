@@ -19,9 +19,11 @@ import {
 } from "./ui";
 
 export function VaultSettings() {
-  const { vaults, createVault } = useNotes();
+  const { vaults, createVault, activeSpace } = useNotes();
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState("Database");
+  const canEdit = activeSpace?.role !== "viewer";
+  const regular = vaults.filter((v) => !isCollectionsVault(v));
 
   const create = async () => {
     const name = newName.trim();
@@ -33,15 +35,20 @@ export function VaultSettings() {
 
   return (
     <SettingsPage title="Vaults">
-      <SettingGroup heading="Your vaults" description="Each vault is its own folder of notes. Click a vault to switch to it.">
-        {vaults
-          .filter((v) => !isCollectionsVault(v))
-          .map((vault) => (
-            <VaultRow key={vault.id} vault={vault} />
-          ))}
+      <SettingGroup
+        heading={activeSpace ? `Vaults in “${activeSpace.name}”` : "Your vaults"}
+        description={
+          canEdit
+            ? "Each vault is its own folder of notes. Click a vault to switch to it. Other spaces have their own vaults."
+            : "You can view this space's vaults; only its editors and owners change them."
+        }
+      >
+        {regular.map((vault) => (
+          <VaultRow key={vault.id} vault={vault} onlyVault={regular.length === 1} />
+        ))}
       </SettingGroup>
 
-      <SettingGroup heading="New vault">
+      {canEdit && <SettingGroup heading="New vault">
         <SettingRow>
           <IconPicker value={newIcon} onChange={setNewIcon} label="Icon for the new vault" />
           <TextInput
@@ -56,15 +63,18 @@ export function VaultSettings() {
             Create
           </Button>
         </SettingRow>
-      </SettingGroup>
+      </SettingGroup>}
 
       <CollectionVisibility />
     </SettingsPage>
   );
 }
 
-function VaultRow({ vault }: { vault: VaultMeta }) {
+function VaultRow({ vault, onlyVault }: { vault: VaultMeta; onlyVault: boolean }) {
   const { activeVault, switchVault, renameVault, deleteVault, setVaultIcon } = useNotes();
+  // Editors rename and restyle vaults; deleting one (and its notes) is the owners' call.
+  const canEdit = vault.role !== "viewer";
+  const canDelete = vault.role === "owner" && !onlyVault;
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
   // Escape cancels the rename; the blur that follows must not save it.
@@ -86,11 +96,13 @@ function VaultRow({ vault }: { vault: VaultMeta }) {
   return (
     <SettingItem
       leading={
-        <IconPicker
-          value={vault.icon ?? "Database"}
-          onChange={(icon) => void setVaultIcon(vault.id, icon)}
-          label={`Icon for ${vault.name}`}
-        />
+        canEdit ? (
+          <IconPicker
+            value={vault.icon ?? "Database"}
+            onChange={(icon) => void setVaultIcon(vault.id, icon)}
+            label={`Icon for ${vault.name}`}
+          />
+        ) : undefined
       }
       name={
         renaming ? (
@@ -112,12 +124,12 @@ function VaultRow({ vault }: { vault: VaultMeta }) {
       description={active && !renaming ? "Active vault" : undefined}
       onClick={renaming || active ? undefined : () => switchVault(vault.id)}
     >
-      {!renaming && (
+      {canEdit && !renaming && (
         <IconButton label={`Rename ${vault.name}`} onClick={startRename}>
           <Pencil size={15} />
         </IconButton>
       )}
-      {vault.name !== "Default" && !renaming && (
+      {canDelete && !renaming && (
         <IconButton
           label={`Delete ${vault.name}`}
           danger
@@ -133,23 +145,26 @@ function VaultRow({ vault }: { vault: VaultMeta }) {
 }
 
 function CollectionVisibility() {
+  const { listCollections, activeSpaceId } = useNotes();
   const [collections, setCollections] = useState<CollectionMeta[] | null>(null);
 
   const reload = () =>
-    api
-      .listCollections()
-      .then((res) => setCollections(res.collections ?? []))
+    listCollections()
+      .then(setCollections)
       .catch(() => setCollections((c) => c ?? []));
 
+  // Collections belong to the active space: reload when it changes.
   useEffect(() => {
     void reload();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSpaceId]);
 
   const setVisible = (col: CollectionMeta, visible: boolean) => {
+    if (!activeSpaceId) return;
     // Flip right away; the reload settles it (and undoes a failed change).
     setCollections((cs) => cs?.map((c) => (c.id === col.id ? { ...c, hidden: !visible } : c)) ?? cs);
     void api
-      .setCollectionHidden(col.id, !visible)
+      .setCollectionHidden(activeSpaceId, col.id, !visible)
       .catch(() => {})
       .finally(() => void reload());
   };

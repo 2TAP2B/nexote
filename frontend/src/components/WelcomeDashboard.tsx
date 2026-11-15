@@ -22,6 +22,7 @@ import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { getIcon } from "@/lib/icons";
 import { useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 import CollectionFormDialog from "./CollectionFormDialog";
 import CollectionGallery from "./CollectionGallery";
 import JournalCalendar from "./JournalCalendar";
@@ -95,7 +96,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
     refreshTags,
     toggleTaskItem,
     settings,
+    listCollections,
+    activeSpaceId,
   } = useNotes();
+  // Viewers of a shared space can't add notes or collections.
+  const { canEditSpace } = useCanEdit();
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -104,8 +109,11 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
 
   useEffect(() => {
     setNow(new Date());
-    void api.listCollections().then((res) => setCollections(res.collections ?? []));
   }, []);
+
+  useEffect(() => {
+    void listCollections().then(setCollections);
+  }, [listCollections, activeSpaceId]);
 
   useEffect(() => {
     if (vaults.length === 0) return;
@@ -158,19 +166,19 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
     else void openNoteInVault(task.vaultId, task.noteId);
   };
 
+  // Tags of the active space's vaults (other spaces' tags stay loaded).
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const tags of Object.values(tagsByVault)) {
-      for (const t of tags) counts.set(t.name, (counts.get(t.name) ?? 0) + t.count);
+    for (const v of vaults) {
+      for (const t of tagsByVault[v.id] ?? []) counts.set(t.name, (counts.get(t.name) ?? 0) + t.count);
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => ({ name, count }));
-  }, [tagsByVault]);
+  }, [tagsByVault, vaults]);
 
   const pinned = collections.filter((c) => c.pinned && !c.hidden);
-  const reloadCollections = () =>
-    void api.listCollections().then((res) => setCollections(res.collections ?? []));
+  const reloadCollections = () => void listCollections().then(setCollections);
 
   const [recentsExpanded, toggleRecentsExpanded] = useSectionState("recents-expanded", false);
   const [shortcutsOpen, toggleShortcuts] = useSectionState("shortcuts", true);
@@ -211,10 +219,14 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             <span className="flex-1">Search notes, run commands…</span>
             <Kbd>Ctrl P</Kbd>
           </button>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <QuickAction icon={<FilePlus className="h-4 w-4" />} label="New note" hint="Ctrl Shift N" onClick={() => void create()} />
+          <div className={canEditSpace ? "grid grid-cols-1 gap-3 sm:grid-cols-3" : "grid grid-cols-1 gap-3"}>
+            {canEditSpace && (
+              <QuickAction icon={<FilePlus className="h-4 w-4" />} label="New note" hint="Ctrl Shift N" onClick={() => void create()} />
+            )}
             <QuickAction icon={<CalendarDays className="h-4 w-4" />} label="Today's journal" hint="Ctrl D" onClick={() => void openDaily()} />
-            <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={() => setFormOpen(true)} />
+            {canEditSpace && (
+              <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={() => setFormOpen(true)} />
+            )}
           </div>
         </header>
 
@@ -274,16 +286,18 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                     </button>
                   );
                 })}
-                <button
-                  type="button"
-                  onClick={() => setFormOpen(true)}
-                  className="flex items-center gap-3 rounded-xl border border-dashed border-border p-3 text-left text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-border">
-                    <FolderPlus className="h-4 w-4" />
-                  </span>
-                  <span className="text-sm font-medium">New collection</span>
-                </button>
+                {canEditSpace && (
+                  <button
+                    type="button"
+                    onClick={() => setFormOpen(true)}
+                    className="flex items-center gap-3 rounded-xl border border-dashed border-border p-3 text-left text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-border">
+                      <FolderPlus className="h-4 w-4" />
+                    </span>
+                    <span className="text-sm font-medium">New collection</span>
+                  </button>
+                )}
               </div>
             </section>
           </div>

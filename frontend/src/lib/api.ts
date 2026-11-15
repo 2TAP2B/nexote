@@ -1,6 +1,8 @@
 // API client for the Nexote Go backend. All note/bookmark/folder routes are
-// scoped under a vault ID. During development the requests are proxied to
-// http://localhost:8080 via next.config.mjs rewrites.
+// scoped under a vault ID; vaults belong to spaces. Every route except
+// /api/auth/* needs a login session (an HttpOnly cookie). During development
+// the requests are proxied to http://localhost:8080 via next.config.mjs
+// rewrites.
 
 export type NoteMeta = {
   id: string;
@@ -90,12 +92,104 @@ export type ListResult = {
   folders: FolderMeta[];
 };
 
+// A member's role in a space: owners manage members and delete vaults,
+// editors change content, viewers only read.
+export type SpaceRole = "owner" | "editor" | "viewer";
+
 export type VaultMeta = {
   id: string;
   name: string;
   icon?: string;
-  path: string;
   type?: string;
+  spaceId: string;
+  /** The logged-in user's role in the vault's space. */
+  role: SpaceRole;
+  /** Folder on the server; only sent to admins. */
+  path?: string;
+};
+
+/** A space as the logged-in user sees it. Private = only its owner. */
+export type SpaceInfo = {
+  id: string;
+  name: string;
+  icon?: string;
+  role: SpaceRole;
+  memberCount: number;
+  createdAt: string;
+};
+
+export type SpaceMember = {
+  userId: string;
+  username: string;
+  displayName: string;
+  role: SpaceRole;
+  addedAt: string;
+};
+
+export type UserRole = "admin" | "member";
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+};
+
+export type AuthStatus = {
+  /** No account exists yet: show first-time setup (creates the admin). */
+  setupRequired: boolean;
+  user: AuthUser | null;
+  /** NEXOTE_PUBLIC_URL's origin; passkeys only work when opened there. */
+  origin: string;
+};
+
+/** Server half of a passkey prompt: pass `options` to lib/webauthn. */
+export type CeremonyStart = { ceremonyId: string; options: unknown };
+
+/** Browser's answer to a passkey prompt (credential as JSON). */
+export type CeremonyFinish = { ceremonyId: string; credential: unknown; name?: string };
+
+export type PasskeyInfo = {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt?: string;
+};
+
+/** Another account, as listed to pick space members. */
+export type DirectoryUser = { id: string; username: string; displayName: string };
+
+export type AdminUser = AuthUser & {
+  disabled: boolean;
+  createdAt: string;
+  lastSeenAt?: string;
+  /** Number of registered passkeys. */
+  passkeys: number;
+};
+
+export type AdminInvite = {
+  id: string;
+  kind: "signup" | "recovery";
+  role?: UserRole;
+  /** Recovery: display name of the account getting a passkey. */
+  user?: string;
+  createdBy?: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt?: string;
+  usedBy?: string;
+  status: "pending" | "used" | "expired";
+};
+
+/** What an invite or recovery link does, shown before redeeming it. */
+export type InviteInfo = {
+  kind: "signup" | "recovery";
+  role?: UserRole;
+  invitedBy?: string;
+  expiresAt: string;
+  /** Recovery links: the account getting a new passkey. */
+  username?: string;
+  displayName?: string;
 };
 
 // The auto-created system vault that holds collection folders. Hidden from
@@ -196,24 +290,42 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired on window when a request comes back 401 (session gone): the app
+ *  returns to the login screen. */
+export const AUTH_REQUIRED_EVENT = "nexote:auth-required";
+
+// Turns a failed response into an ApiError carrying the server's message,
+// and announces lost sessions (except from the login routes themselves).
+async function failure(res: Response, path: string): Promise<ApiError> {
+  let message = res.statusText;
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === "object" && "error" in body && typeof body.error === "string") {
+      message = body.error;
+    }
+  } catch {
+    // ignore json parse errors
+  }
+  if (res.status === 401 && !path.startsWith("/api/auth/") && typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+  }
+  return new ApiError(res.status, message);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body?.error) message = body.error;
-    } catch {
-      // ignore json parse errors
-    }
-    throw new ApiError(res.status, message);
-  }
+  if (!res.ok) throw await failure(res, path);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+const json = (method: string, body?: unknown): RequestInit => ({
+  method,
+  ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+});
 
 const vaultBase = (vaultId: string) => `/api/vaults/${vaultId}`;
 
@@ -221,10 +333,10 @@ export const api = {
   // --- Vaults ---
   listVaults: () =>
     request<{ vaults: VaultMeta[] }>("/api/vaults"),
-  createVault: (name: string, icon?: string) =>
+  createVault: (name: string, spaceId: string, icon?: string) =>
     request<VaultMeta>("/api/vaults", {
       method: "POST",
-      body: JSON.stringify({ name, icon }),
+      body: JSON.stringify({ name, icon, spaceId }),
     }),
   renameVault: (id: string, name: string) =>
     request<VaultMeta>(`/api/vaults/${id}`, {
@@ -239,45 +351,50 @@ export const api = {
   deleteVault: (id: string) =>
     request<void>(`/api/vaults/${id}`, { method: "DELETE" }),
 
-  // --- Collections ---
-  listCollections: () =>
-    request<{ collections: CollectionMeta[] }>("/api/collections"),
-  createCollection: (input: {
-    name: string;
-    icon?: string;
-    fields: CollectionField[];
-  }) =>
-    request<CollectionMeta>("/api/collections", {
+  // --- Collections (one set per space) ---
+  listCollections: (spaceId: string) =>
+    request<{ collections: CollectionMeta[] }>(`/api/collections?${new URLSearchParams({ space: spaceId })}`),
+  createCollection: (
+    spaceId: string,
+    input: {
+      name: string;
+      icon?: string;
+      fields: CollectionField[];
+    },
+  ) =>
+    request<CollectionMeta>(`/api/collections?${new URLSearchParams({ space: spaceId })}`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
   updateCollection: (
+    spaceId: string,
     id: string,
     input: { name?: string; icon?: string; fields?: CollectionField[] },
   ) =>
-    request<CollectionMeta>(`/api/collections/${id}`, {
+    request<CollectionMeta>(`/api/collections/${id}?${new URLSearchParams({ space: spaceId })}`, {
       method: "PUT",
       body: JSON.stringify(input),
     }),
-  setCollectionPinned: (id: string, pinned: boolean) =>
-    request<CollectionMeta>(`/api/collections/${id}/pin`, {
+  setCollectionPinned: (spaceId: string, id: string, pinned: boolean) =>
+    request<CollectionMeta>(`/api/collections/${id}/pin?${new URLSearchParams({ space: spaceId })}`, {
       method: "PATCH",
       body: JSON.stringify({ pinned }),
     }),
-  setCollectionHidden: (id: string, hidden: boolean) =>
-    request<CollectionMeta>(`/api/collections/${id}/hidden`, {
+  setCollectionHidden: (spaceId: string, id: string, hidden: boolean) =>
+    request<CollectionMeta>(`/api/collections/${id}/hidden?${new URLSearchParams({ space: spaceId })}`, {
       method: "PATCH",
       body: JSON.stringify({ hidden }),
     }),
-  deleteCollection: (id: string) =>
-    request<void>(`/api/collections/${id}`, { method: "DELETE" }),
+  deleteCollection: (spaceId: string, id: string) =>
+    request<void>(`/api/collections/${id}?${new URLSearchParams({ space: spaceId })}`, { method: "DELETE" }),
 
   // --- Notes (vault-scoped) ---
   list: (vaultId: string) =>
     request<ListResult>(`${vaultBase(vaultId)}/notes`),
-  // Search: global over all vaults + journal (title & content; ranked).
-  search: (q: string) => {
-    const qs = new URLSearchParams({ q }).toString();
+  // Search: over the user's vaults (one space when spaceId is given) + their
+  // journal (title & content; ranked).
+  search: (q: string, spaceId?: string) => {
+    const qs = new URLSearchParams({ q, ...(spaceId ? { space: spaceId } : {}) }).toString();
     return request<{ results: SearchHit[] }>(`/api/search?${qs}`);
   },
   get: (vaultId: string, id: string) =>
@@ -413,9 +530,9 @@ export const api = {
       method: "DELETE",
     }),
 
-  // --- Tasks (vault-independent, scans all vaults) ---
-  listTasks: () =>
-    request<{ tasks: TaskItem[] }>("/api/tasks"),
+  // --- Tasks (vault-independent: the user's vaults, one space when given, + journal) ---
+  listTasks: (spaceId?: string) =>
+    request<{ tasks: TaskItem[] }>(`/api/tasks${spaceId ? `?${new URLSearchParams({ space: spaceId })}` : ""}`),
   toggleTask: (vaultId: string, noteId: string, line: number, checked: boolean) =>
     request<Note>("/api/tasks", {
       method: "PUT",
@@ -428,20 +545,12 @@ export const api = {
     // header is sent (request() forces application/json).
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`${vaultBase(vaultId)}/notes/${noteId}/images`, {
+    const path = `${vaultBase(vaultId)}/notes/${noteId}/images`;
+    const res = await fetch(path, {
       method: "POST",
       body: form,
     });
-    if (!res.ok) {
-      let message = res.statusText;
-      try {
-        const body = (await res.json()) as { error?: string };
-        if (body?.error) message = body.error;
-      } catch {
-        // ignore json parse errors
-      }
-      throw new ApiError(res.status, message);
-    }
+    if (!res.ok) throw await failure(res, path);
     return (await res.json()) as ImageMeta;
   },
   listImages: (vaultId: string) =>
@@ -472,18 +581,7 @@ export const api = {
     form.append("apiKey", config.apiKey);
     form.append("model", config.model);
     const res = await fetch("/api/ai/transcribe", { method: "POST", body: form, signal });
-    if (!res.ok) {
-      let message = res.statusText;
-      try {
-        const body: unknown = await res.json();
-        if (body && typeof body === "object" && "error" in body && typeof body.error === "string") {
-          message = body.error;
-        }
-      } catch {
-        // ignore json parse errors
-      }
-      throw new ApiError(res.status, message);
-    }
+    if (!res.ok) throw await failure(res, "/api/ai/transcribe");
     const data: unknown = await res.json();
     if (data && typeof data === "object" && "text" in data && typeof data.text === "string") return data.text;
     throw new ApiError(502, "Unexpected response from the transcription endpoint");
@@ -539,6 +637,63 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  // --- Accounts: passkey login, setup, invites (see lib/webauthn.ts) ---
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  setupBegin: (input: { setupCode: string; username: string; displayName: string }) =>
+    request<CeremonyStart>("/api/auth/setup/begin", json("POST", input)),
+  setupFinish: (input: CeremonyFinish) =>
+    request<{ user: AuthUser }>("/api/auth/setup/finish", json("POST", input)),
+  loginBegin: () => request<CeremonyStart>("/api/auth/login/begin", json("POST", {})),
+  loginFinish: (input: CeremonyFinish) =>
+    request<{ user: AuthUser }>("/api/auth/login/finish", json("POST", input)),
+  logout: () => request<void>("/api/auth/logout", json("POST")),
+  inviteInfo: (token: string) => request<InviteInfo>(`/api/auth/invites/${encodeURIComponent(token)}`),
+  /** Signup links need username + displayName; recovery links nothing. */
+  inviteBegin: (token: string, input: { username?: string; displayName?: string }) =>
+    request<CeremonyStart>(`/api/auth/invites/${encodeURIComponent(token)}/begin`, json("POST", input)),
+  inviteFinish: (token: string, input: CeremonyFinish) =>
+    request<{ user: AuthUser }>(`/api/auth/invites/${encodeURIComponent(token)}/finish`, json("POST", input)),
+
+  // --- The logged-in account ---
+  me: () => request<{ user: AuthUser; passkeys: PasskeyInfo[] }>("/api/me"),
+  updateMe: (input: { displayName: string }) => request<{ user: AuthUser }>("/api/me", json("PATCH", input)),
+  addPasskeyBegin: () => request<CeremonyStart>("/api/me/passkeys/begin", json("POST", {})),
+  addPasskeyFinish: (input: CeremonyFinish) => request<PasskeyInfo>("/api/me/passkeys/finish", json("POST", input)),
+  renamePasskey: (id: string, name: string) =>
+    request<void>(`/api/me/passkeys/${encodeURIComponent(id)}`, json("PATCH", { name })),
+  removePasskey: (id: string) => request<void>(`/api/me/passkeys/${encodeURIComponent(id)}`, json("DELETE")),
+  /** Active accounts, to add as space members. */
+  listUsers: () => request<{ users: DirectoryUser[] }>("/api/users"),
+
+  // --- Administration (admins only) ---
+  adminListUsers: () => request<{ users: AdminUser[] }>("/api/admin/users"),
+  adminUpdateUser: (id: string, input: { role?: UserRole; disabled?: boolean }) =>
+    request<{ user: AuthUser }>(`/api/admin/users/${id}`, json("PATCH", input)),
+  /** Single-use link (24h) adding a passkey to the account. */
+  adminCreateRecovery: (id: string) =>
+    request<{ url: string; expiresAt: string }>(`/api/admin/users/${id}/recovery`, json("POST", {})),
+  adminListInvites: () => request<{ invites: AdminInvite[] }>("/api/admin/invites"),
+  /** Single-use signup link (7 days); the URL is only returned here. */
+  adminCreateInvite: (role: UserRole) =>
+    request<{ url: string; id: string; expiresAt: string }>("/api/admin/invites", json("POST", { role })),
+  adminDeleteInvite: (id: string) => request<void>(`/api/admin/invites/${id}`, json("DELETE")),
+
+  // --- Spaces and members ---
+  listSpaces: () => request<{ spaces: SpaceInfo[] }>("/api/spaces"),
+  /** Creates a space owned by the user, with a first "Notes" vault. */
+  createSpace: (input: { name: string; icon?: string }) => request<SpaceInfo>("/api/spaces", json("POST", input)),
+  updateSpace: (id: string, input: { name?: string; icon?: string }) =>
+    request<SpaceInfo>(`/api/spaces/${id}`, json("PATCH", input)),
+  /** Deletes the space with all its vaults and notes (owners only). */
+  deleteSpace: (id: string) => request<void>(`/api/spaces/${id}`, json("DELETE")),
+  listMembers: (id: string) => request<{ members: SpaceMember[] }>(`/api/spaces/${id}/members`),
+  /** Adds an existing user or changes their role (owners only). */
+  setMember: (id: string, userId: string, role: SpaceRole) =>
+    request<{ members: SpaceMember[] }>(`/api/spaces/${id}/members/${userId}`, json("PUT", { role })),
+  removeMember: (id: string, userId: string) =>
+    request<void>(`/api/spaces/${id}/members/${userId}`, json("DELETE")),
+  leaveSpace: (id: string) => request<void>(`/api/spaces/${id}/members/me`, json("DELETE")),
 };
 
 export type MetadataConfig = {

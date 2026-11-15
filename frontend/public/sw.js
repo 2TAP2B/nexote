@@ -5,7 +5,9 @@
 // Offline is production-only (the dev server doesn't register the SW, so HMR
 // chunks are never cached).
 
-const CACHE = "nexote-v3";
+// Bumped when cached data changes shape: v4 drops the pre-accounts caches
+// (they held one shared dataset, not one user's).
+const CACHE = "nexote-v4";
 const SHELL = ["/", "/m", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 const DB_NAME = "nexote-offline";
@@ -18,6 +20,10 @@ const IMAGE_PATH = /^\/api\/vaults\/[^/]+\/images\//;
 
 // Mutating HTTP methods that get queued when offline.
 const MUTATION = ["POST", "PUT", "PATCH", "DELETE"];
+
+// Account routes the worker never touches (see the fetch handler). Exact
+// segments: /api/me must not swallow /api/metadata.
+const NO_OFFLINE = /^\/api\/(auth|admin|me|users)(\/|$)/;
 
 // --- IndexedDB helpers (runs in SW scope) ---
 let dbPromise = null;
@@ -169,6 +175,11 @@ async function flushOutbox() {
       };
       if (entry.body) init.body = entry.body;
       const res = await fetch(entry.url, init);
+      if (res.status === 401) {
+        // Session gone: keep this and every later change queued until the
+        // user signs in again (the next flush retries them).
+        break;
+      }
       if (res.status === 409) {
         // Server version is newer — keep it, drop the queued write.
         conflicts.push(entry.url);
@@ -214,6 +225,9 @@ self.addEventListener("fetch", (e) => {
   // Git push/pull/config: replaying later would be wrong and a fake 200
   // would report "Pushed." for a sync that never happened.
   if (url.pathname.startsWith("/api/git/")) return;
+  // Accounts and sessions: never cached (another user's data on a shared
+  // device) and never queued (a replayed login or invite makes no sense).
+  if (NO_OFFLINE.test(url.pathname)) return;
 
   // ---- Mutations ----
   if (MUTATION.includes(req.method)) {

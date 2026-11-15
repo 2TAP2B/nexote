@@ -2,11 +2,13 @@
 
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useTheme } from "next-themes";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { COLOR_SCHEMES, THEME_MODES } from "@/components/settings/AppearanceSettings";
 import {
-  SETTINGS_NAV,
+  requestedCategory,
+  settingsNav,
   type SettingsCategory,
   type SettingsCategoryId,
 } from "@/components/settings/categories";
@@ -19,21 +21,28 @@ type Props = {
   onColorSchemeChange: (scheme: string) => void;
 };
 
-// Touch devices have no keyboard shortcuts.
-const NAV = SETTINGS_NAV.map((group) => ({
-  ...group,
-  categories: group.categories.filter((c) => !c.desktopOnly),
-}));
-const CATEGORIES = NAV.flatMap((group) => group.categories);
-
 /** Mobile settings: a list of categories, each opening the shared section page. */
 export default function MobileSettings({ open, onClose, colorScheme, onColorSchemeChange }: Props) {
   const { theme } = useTheme();
+  const { user } = useAuth();
+  const NAV = useMemo(() => settingsNav(user.role, "mobile"), [user.role]);
+  const CATEGORIES = NAV.flatMap((group) => group.categories);
   const [page, setPage] = useState<SettingsCategoryId | null>(null);
 
   useEffect(() => {
     if (!open) setPage(null);
   }, [open]);
+
+  // `nexote:open-settings` with a category opens straight at that page (the
+  // shell opens the overlay on the same event).
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const id = requestedCategory(e);
+      if (id) setPage(id);
+    };
+    window.addEventListener("nexote:open-settings", onOpen);
+    return () => window.removeEventListener("nexote:open-settings", onOpen);
+  }, []);
 
   if (!open) return null;
 

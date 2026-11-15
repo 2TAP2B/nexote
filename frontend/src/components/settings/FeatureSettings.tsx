@@ -5,10 +5,10 @@ import { useNotes } from "@/lib/notes-context";
 import { DropdownSetting, SettingGroup, SettingsPage, ToggleSetting, useIsMobileSettings } from "./ui";
 
 export function FeatureSettings() {
-  const { settings, updateSettings, vaults, allVaultData } = useNotes();
+  const { settings, updateSettings, allVaults, allVaultData, spaces } = useNotes();
   // Quick notes only exist in the mobile app.
   const mobile = useIsMobileSettings();
-  const notebooks = listNotebooks(vaults, allVaultData);
+  const notebooks = listNotebooks(allVaults, allVaultData, spaces);
   const memoNotebook = notebooks.find((n) => n.vaultId === settings.memoNoteVault && n.folder === settings.memoNoteFolder);
   return (
     <SettingsPage title="Features">

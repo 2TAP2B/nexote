@@ -37,7 +37,8 @@ export default function OfflineStatus() {
         signal: AbortSignal.timeout(4000),
       });
       if (id !== probeRef.current) return;
-      const reachable = res.ok || res.status === 405;
+      // 401 = server up, just signed out (the login screen is showing).
+      const reachable = res.ok || res.status === 405 || res.status === 401;
       setOnline(reachable);
       if (reachable) {
         try { localStorage.setItem("nexote:online", "1"); } catch {}

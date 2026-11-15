@@ -10,11 +10,17 @@ import { useNotes } from "@/lib/notes-context";
 import { Button, cx, LinkItem, SettingGroup, SettingItem, SettingsPage, useIsMobileSettings } from "./ui";
 
 export function AboutSettings() {
-  const { vaults, gitConfig } = useNotes();
+  const { allVaults, spaces, gitConfig } = useNotes();
   const mobile = useIsMobileSettings();
   const [copied, setCopied] = useState(false);
-  // Regular vaults first; the system Collections vault last.
-  const ordered = [...vaults.filter((v) => !isCollectionsVault(v)), ...vaults.filter(isCollectionsVault)];
+  // Folders on the server are only sent to admins (they run the server).
+  // Per space: regular vaults first, the system Collections vault last.
+  const located = allVaults.filter((v): v is typeof v & { path: string } => Boolean(v.path));
+  const ordered = spaces.flatMap((s) => {
+    const inSpace = located.filter((v) => v.spaceId === s.id);
+    return [...inSpace.filter((v) => !isCollectionsVault(v)), ...inSpace.filter(isCollectionsVault)];
+  });
+  const spaceName = (id: string) => (spaces.length > 1 ? spaces.find((s) => s.id === id)?.name : undefined);
   const builtOn = APP.builtAt
     ? new Date(APP.builtAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
     : "";
@@ -29,7 +35,7 @@ export function AboutSettings() {
       `App: ${mobile ? "mobile" : "desktop"}`,
       `Browser: ${navigator.userAgent}`,
       `Window: ${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}x`,
-      `Vaults: ${vaults.filter((v) => !isCollectionsVault(v)).length}`,
+      `Spaces: ${spaces.length}, vaults: ${allVaults.filter((v) => !isCollectionsVault(v)).length}`,
       `Git sync: ${gitConfig?.enabled ? (gitConfig.remote ? "on, with a remote" : "on, local only") : "off"}`,
     ]
       .filter(Boolean)
@@ -97,18 +103,24 @@ export function AboutSettings() {
         />
       </SettingGroup>
 
-      <SettingGroup
-        heading="Where your notes live"
-        description="Every note is a plain Markdown file named after its title, so any editor can open it."
-      >
-        {ordered.map((v) => (
-          <SettingItem
-            key={v.id}
-            name={isCollectionsVault(v) ? "Collections" : v.name}
-            description={<span className="select-all break-words font-mono text-[11px]">{breakAtSlashes(v.path)}</span>}
-          />
-        ))}
-      </SettingGroup>
+      {ordered.length > 0 && (
+        <SettingGroup
+          heading="Where your notes live"
+          description="Every note is a plain Markdown file named after its title, so any editor can open it."
+        >
+          {ordered.map((v) => {
+            const label = isCollectionsVault(v) ? "Collections" : v.name;
+            const space = spaceName(v.spaceId);
+            return (
+              <SettingItem
+                key={v.id}
+                name={space ? `${space} › ${label}` : label}
+                description={<span className="select-all break-words font-mono text-[11px]">{breakAtSlashes(v.path)}</span>}
+              />
+            );
+          })}
+        </SettingGroup>
+      )}
 
       <SettingGroup heading="Support">
         <SettingItem name="Debug info" description="Version, build, browser and device, ready to paste into a bug report.">

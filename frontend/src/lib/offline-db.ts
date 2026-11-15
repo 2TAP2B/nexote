@@ -118,6 +118,25 @@ export async function offlineOutboxRemove(id: number): Promise<void> {
   await withStore("outbox", "readwrite", (s) => s.delete(id));
 }
 
+// --- Sign-out ---
+
+// Empties every store (mirrored notes, lists, the outbox) so nothing of the
+// signed-out account stays on the device. Clearing instead of deleting the
+// database: the service worker keeps its own connection open, which would
+// block deleteDatabase indefinitely.
+// Executor form: Promise.withResolvers needs iOS 17.4+ and isn't polyfilled.
+export async function offlineClearAll(): Promise<void> {
+  const db = await openDB();
+  const stores = ["notes", "lists", "meta", "outbox"];
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(stores, "readwrite");
+    for (const store of stores) tx.objectStore(store).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 // --- Precache ---
 
 // Store the full dataset so the service worker can serve it offline before a

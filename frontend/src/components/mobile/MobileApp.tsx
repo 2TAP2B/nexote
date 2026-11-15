@@ -11,6 +11,8 @@ import FileTree, { type TreeControls } from "@/components/FileTree";
 import { MoveToDialog } from "@/components/FileTree";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import type { SidebarView } from "@/components/Ribbon";
+import MobileSpacesPane from "@/components/spaces/MobileSpacesPane";
+import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar, type PagerFocus } from "@/components/useSwipeSidebar";
 import QuickCapturePane from "./QuickCapturePane";
 import { api } from "@/lib/api";
@@ -41,25 +43,26 @@ export default function MobileApp() {
     moveNote,
     moveNoteToVault,
     switchVault,
-    allVaultData,
-    vaults,
     openNoteInVault,
     isJournalNote,
     refreshNoteBody,
     save,
     notesById,
+    listCollections,
+    activeSpaceId,
   } = useNotes();
+  const { canEditSpace } = useCanEdit();
 
   // --- Screen / overlay state ---
   const { theme, setTheme } = useTheme();
   const [pagerFocus, setPagerFocus] = useState<PagerFocus>("editor");
-  // Restore the focused pane after mount (sidebar/toc were open before the
-  // reload). Effect-based, not a localStorage useState initializer: the
+  // Restore the focused pane after mount (spaces/sidebar/toc were open before
+  // the reload). Effect-based, not a localStorage useState initializer: the
   // server prerender can't read localStorage, and a client-only initializer
   // causes a hydration attribute mismatch React then refuses to patch.
   useEffect(() => {
     const saved = localStorage.getItem("nexote:pager-focus");
-    if (saved === "sidebar" || saved === "toc") setPagerFocus(saved);
+    if (saved === "spaces" || saved === "sidebar" || saved === "toc") setPagerFocus(saved);
   }, []);
   useEffect(() => {
     localStorage.setItem("nexote:pager-focus", pagerFocus);
@@ -157,25 +160,32 @@ export default function MobileApp() {
   // NotesProvider). The browser history stack lets back/forward navigate
   // between notes naturally; the final back exits the app.
 
+  // Viewers can't add notes to the active space.
   const handleNewNote = useCallback(() => {
-    void create();
-  }, [create]);
+    if (canEditSpace) void create();
+  }, [create, canEditSpace]);
 
   // Close the sidebar and tab switcher when the active note changes (e.g. the
   // user tapped a note in the tree). Hidden on the load-time restore: the
   // tab restore assigns an active id right after mount (null → restored id),
   // which must not force the editor pane (it would beat the persisted
   // pagerFocus). Only changes after the first assignment close the sidebar.
+  // Switching spaces also swaps the active tab; the user stays on the pane
+  // they switched from (the spaces pane sends them to the tree).
   const prevActiveIdRef = useRef<string | null | undefined>(undefined);
+  const prevSpaceIdRef = useRef(activeSpaceId);
   useEffect(() => {
+    const spaceChanged = prevSpaceIdRef.current !== activeSpaceId;
+    prevSpaceIdRef.current = activeSpaceId;
     if (prevActiveIdRef.current === undefined) {
       prevActiveIdRef.current = activeId ?? null;
       return;
     }
     if (prevActiveIdRef.current === activeId) return;
     prevActiveIdRef.current = activeId ?? null;
+    if (spaceChanged) return;
     setPagerFocus("editor");
-  }, [activeId]);
+  }, [activeId, activeSpaceId]);
 
   // The shared CommandPalette dispatches nexote:select-view and
   // nexote:select-tag events for its "Go to …" / "Toggle sidebar" commands.
@@ -199,8 +209,8 @@ export default function MobileApp() {
     const onOpenCollection = (e: Event) => {
       const folder = (e as CustomEvent).detail as string;
       if (!folder) return;
-      void api.listCollections().then((res) => {
-        const col = (res.collections ?? []).find((c) => c.name === folder);
+      void listCollections().then((cols) => {
+        const col = cols.find((c) => c.name === folder);
         if (col) {
           setGalleryCollection(col);
           setPagerFocus("editor");
@@ -225,7 +235,7 @@ export default function MobileApp() {
   }, []);
 
   // Execute a move chosen in the MoveToDialog. Within the active vault uses
-  // moveNote (path change); to another vault uses moveNoteToVault.
+  // moveNote (path change); to another vault (any space) uses moveNoteToVault.
   const performMoveTo = useCallback(
     async (dstVaultId: string, dstPath: string) => {
       const id = moveTo;
@@ -235,14 +245,14 @@ export default function MobileApp() {
         await moveNote(id, dstPath);
       } else {
         if (activeVault?.id) switchVault(activeVault.id);
-        await moveNoteToVault(id, dstVaultId);
+        await moveNoteToVault(id, dstVaultId, dstPath);
       }
     },
     [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
   );
 
-  // Swipe to pan between the sidebar / editor / contents panes — from the
-  // pill or anywhere in the editor pane.
+  // Swipe to pan between the spaces / sidebar / editor / contents panes —
+  // from the pill or anywhere in the editor pane.
   useSwipeSidebar({ focus: pagerFocus, onFocus: setPagerFocus, swipeFromContent: true });
 
   // Keep the body background in sync with the mobile shell (so the safe-area
@@ -270,13 +280,16 @@ export default function MobileApp() {
         } as React.CSSProperties
       }
     >
-      {/* Pager — a "triple width canvas". The sidebar pane (left), the note
-          view (center) and the right pane each take a full viewport; the
-          track is 300vw and pans in/out so no pane ever shrinks. The right
-          pane is the table of contents for a note and quick capture on the
-          dashboard (swipe left there to jot something down). */}
+      {/* Pager — a "quadruple width canvas". The spaces pane, the sidebar
+          pane (note tree), the note view and the right pane each take a full
+          viewport; the track is 400vw and pans in/out so no pane ever
+          shrinks. From the tree, one more swipe right shows the spaces. The
+          right pane is the table of contents for a note and quick capture on
+          the dashboard (swipe left there to jot something down). */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div className="mob-pager flex h-full w-[300%]">
+        <div className="mob-pager flex h-full w-[400%]">
+          <MobileSpacesPane onShowTree={() => setPagerFocus("sidebar")} />
+
           <MobileSidebar
             onClose={() => setPagerFocus("editor")}
             onControlsReady={setTreeControls}
@@ -287,7 +300,7 @@ export default function MobileApp() {
             onSelectTagConsumed={() => setSelectedTag(null)}
           />
 
-          <main className="relative flex h-full w-1/3 shrink-0 flex-col overflow-hidden">
+          <main className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden">
           <MobileNoteView
             activeNote={activeNote}
             isDashboard={activeId === DASHBOARD_ID}
@@ -306,8 +319,8 @@ export default function MobileApp() {
               setSidebarView("collections");
               const col = activeNote?.collection;
               if (!col) return;
-              void api.listCollections().then((res) => {
-                const found = (res.collections ?? []).find((c) => c.id === col);
+              void listCollections().then((cols) => {
+                const found = cols.find((c) => c.id === col);
                 if (found) setGalleryCollection(found);
               });
             }}
@@ -402,8 +415,6 @@ export default function MobileApp() {
 
       <MoveToDialog
         open={moveTo !== null}
-        vaults={vaults}
-        allVaultData={allVaultData}
         activeVaultId={activeVault?.id ?? ""}
         onClose={() => setMoveTo(null)}
         onMove={performMoveTo}

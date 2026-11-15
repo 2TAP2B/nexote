@@ -6,6 +6,7 @@ type RawMarkdownTextareaProps = {
   value: string;
   onChange: (value: string) => void;
   fontSize: number;
+  readOnly?: boolean;
 };
 
 // Raw markdown editor: a plain monospace textarea that replaces the rendered
@@ -14,12 +15,13 @@ type RawMarkdownTextareaProps = {
 const RawMarkdownTextarea = forwardRef<
   HTMLTextAreaElement,
   RawMarkdownTextareaProps
->(function RawMarkdownTextarea({ value, onChange, fontSize }, ref) {
+>(function RawMarkdownTextarea({ value, onChange, fontSize, readOnly }, ref) {
   return (
     <textarea
       ref={ref}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      readOnly={readOnly}
       spellCheck={false}
       wrap="off"
       className="milkdown-raw-textarea block h-full w-full resize-none bg-transparent outline-none"

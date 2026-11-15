@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { api, isCollectionsVault, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { offlinePrecache } from "@/lib/offline-db";
 import { localDateKey } from "@/lib/note-utils";
 
@@ -68,7 +68,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 type NotesContextValue = {
-  // Vaults
+  // Vaults of the active space (the tree, settings and palette work on these).
   vaults: VaultMeta[];
   activeVault: VaultMeta | null;
   switchVault: (id: string) => void;
@@ -76,6 +76,24 @@ type NotesContextValue = {
   renameVault: (id: string, name: string) => Promise<void>;
   deleteVault: (id: string) => Promise<void>;
   setVaultIcon: (id: string, icon: string) => Promise<void>;
+
+  // Spaces. allVaults: every vault the user can open, across all spaces.
+  allVaults: VaultMeta[];
+  spaces: SpaceInfo[];
+  activeSpace: SpaceInfo | null;
+  activeSpaceId: string | null;
+  // Switches the workspace: the space's vaults and its own tab strip.
+  switchSpace: (id: string) => void;
+  // Reloads spaces + vaults (membership or vaults changed elsewhere).
+  refreshSpaces: () => Promise<void>;
+  // These reject with the server's message (callers show it inline).
+  createSpace: (name: string, icon?: string) => Promise<SpaceInfo>;
+  updateSpace: (id: string, patch: { name?: string; icon?: string }) => Promise<SpaceInfo>;
+  deleteSpace: (id: string) => Promise<void>;
+  leaveSpace: (id: string) => Promise<void>;
+  // The active space's collection definitions. Always reads the space that
+  // is active when called, so listeners registered earlier stay correct.
+  listCollections: () => Promise<CollectionMeta[]>;
 
   notes: NoteMeta[];
   folders: FolderMeta[];
@@ -174,6 +192,24 @@ function readStoredTabs(): string[] | null {
   }
 }
 
+// Each space keeps its own tab strip and last vault, restored on switching.
+const spaceTabsKey = (spaceId: string) => `nexote:space-tabs:${spaceId}`;
+const spaceVaultKey = (spaceId: string) => `nexote:space-vault:${spaceId}`;
+
+// A space's stashed tab strip (dashboard first), or null when none is saved.
+function readSpaceTabs(spaceId: string): { openTabs: string[]; activeId: string | null } | null {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(spaceTabsKey(spaceId)) ?? "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    const raw: unknown[] = "openTabs" in parsed && Array.isArray(parsed.openTabs) ? parsed.openTabs : [];
+    const ids = raw.filter((t): t is string => typeof t === "string");
+    const activeId = "activeId" in parsed && typeof parsed.activeId === "string" ? parsed.activeId : null;
+    return { openTabs: ids.includes(DASHBOARD_ID) ? ids : [DASHBOARD_ID, ...ids], activeId };
+  } catch {
+    return null;
+  }
+}
+
 const NotesContext = createContext<NotesContextValue | null>(null);
 
 export function useNotes() {
@@ -262,23 +298,36 @@ function replaceNoteUrl(id: string, vaultId: string | null, isJournal: boolean) 
 }
 
 export function NotesProvider({ children }: { children: React.ReactNode }) {
-  const [vaults, setVaults] = useState<VaultMeta[]>([]);
+  // Every vault the user can open, across all their spaces. The UI works on
+  // the active space's vaults (`vaults`); data stays loaded for all of them
+  // so links and tabs into another space still resolve.
+  const [allVaults, setAllVaults] = useState<VaultMeta[]>([]);
+  const [spaces, setSpaces] = useState<SpaceInfo[]>([]);
+  const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
+  const vaults = useMemo(
+    () => allVaults.filter((v) => v.spaceId === activeSpaceId),
+    [allVaults, activeSpaceId],
+  );
+  const activeSpace = useMemo(
+    () => spaces.find((s) => s.id === activeSpaceId) ?? null,
+    [spaces, activeSpaceId],
+  );
   const [activeVaultId, setActiveVaultId] = useState<string | null>(null);
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [folders, setFolders] = useState<FolderMeta[]>([]);
-  // Bookmark/shortcut sets are aggregated across all vaults so the Recent,
-  // Shortcuts, and Bookmarks sections work as one list for every vault.
-  // Per-vault lists are kept so toggles write to the correct vault's store.
+  // Bookmark/shortcut sets are aggregated across the active space's vaults so
+  // the Recent, Shortcuts, and Bookmarks sections work as one list. Per-vault
+  // lists (every vault) are kept so toggles write to the correct vault's store.
   const [marksByVault, setMarksByVault] = useState<
     Record<string, { bookmarks: string[]; shortcuts: string[] }>
   >({});
   const bookmarks = useMemo(
-    () => new Set(Object.values(marksByVault).flatMap((m) => m.bookmarks)),
-    [marksByVault],
+    () => new Set(vaults.flatMap((v) => marksByVault[v.id]?.bookmarks ?? [])),
+    [marksByVault, vaults],
   );
   const shortcuts = useMemo(
-    () => new Set(Object.values(marksByVault).flatMap((m) => m.shortcuts)),
-    [marksByVault],
+    () => new Set(vaults.flatMap((v) => marksByVault[v.id]?.shortcuts ?? [])),
+    [marksByVault, vaults],
   );
   const [openTabs, setOpenTabs] = useState<string[]>([DASHBOARD_ID]);
   const [activeId, setActiveId] = useState<string | null>(DASHBOARD_ID);
@@ -312,6 +361,26 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     activeVaultIdRef.current = activeVaultId;
   }, [activeVaultId]);
+
+  const allVaultsRef = useRef<VaultMeta[]>(allVaults);
+  const activeSpaceIdRef = useRef<string | null>(activeSpaceId);
+  const openTabsRef = useRef<string[]>(openTabs);
+  // Assigned once the functions exist (mount-once effects call them).
+  const switchSpaceRef = useRef<(id: string) => void>(() => {});
+  const refreshSpacesRef = useRef<() => Promise<void>>(async () => {});
+  const refreshVaultTreeRef = useRef<(vaultId: string) => Promise<void>>(async () => {});
+
+  useEffect(() => {
+    allVaultsRef.current = allVaults;
+  }, [allVaults]);
+
+  useEffect(() => {
+    activeSpaceIdRef.current = activeSpaceId;
+  }, [activeSpaceId]);
+
+  useEffect(() => {
+    openTabsRef.current = openTabs;
+  }, [openTabs]);
 
   // Persist open tabs + active note across refreshes.
   useEffect(() => {
@@ -386,12 +455,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
     return map;
   }, [allVaultData]);
+  const noteVaultMapRef = useRef<Record<string, string>>(noteVaultMap);
+  useEffect(() => {
+    noteVaultMapRef.current = noteVaultMap;
+  }, [noteVaultMap]);
 
   // Load bookmarks+shortcuts for every vault, replacing the merged state.
   const refreshAllMarks = useCallback(async () => {
     const next: Record<string, { bookmarks: string[]; shortcuts: string[] }> = {};
     await Promise.all(
-      vaults.map(async (v) => {
+      allVaults.map(async (v) => {
         try {
           const [bm, sc] = await Promise.all([
             api.listBookmarks(v.id),
@@ -407,7 +480,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }),
     );
     setMarksByVault(next);
-  }, [vaults]);
+  }, [allVaults]);
 
   // Restore the open tabs + active note from localStorage as early as possible,
   // so the note the user had open reappears without waiting on the heavier
@@ -452,13 +525,70 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeVaultId]);
 
-  // Load vault list on mount, then select the last active vault (or first).
+  // Every vault-list change goes through here so mount-once callbacks (via
+  // allVaultsRef) see it immediately, not one render later.
+  const applyVaults = useCallback((list: VaultMeta[]) => {
+    allVaultsRef.current = list;
+    setAllVaults(list);
+  }, []);
+
+  // Fetch notes/folders, then bookmarks/shortcuts, of the given vaults and
+  // merge them into the per-vault state (multi-vault tree, noteVaultMap, the
+  // aggregated Recent/Shortcuts/Bookmarks sections).
+  const loadVaultData = useCallback(async (list: VaultMeta[]) => {
+    const data: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }> = {};
+    await Promise.all(
+      list.map(async (v) => {
+        try {
+          const res = await api.list(v.id);
+          data[v.id] = { notes: res.notes ?? [], folders: res.folders ?? [] };
+        } catch {
+          data[v.id] = { notes: [], folders: [] };
+        }
+      }),
+    );
+    setAllVaultData((prev) => ({ ...prev, ...data }));
+    const marks: Record<string, { bookmarks: string[]; shortcuts: string[] }> = {};
+    await Promise.all(
+      list.map(async (v) => {
+        try {
+          const [bm, sc] = await Promise.all([
+            api.listBookmarks(v.id),
+            api.listShortcuts(v.id),
+          ]);
+          marks[v.id] = {
+            bookmarks: bm.bookmarks ?? [],
+            shortcuts: sc.shortcuts ?? [],
+          };
+        } catch {
+          marks[v.id] = { bookmarks: [], shortcuts: [] };
+        }
+      }),
+    );
+    setMarksByVault((prev) => ({ ...prev, ...marks }));
+  }, []);
+
+  // Load spaces + vaults on mount, then pick the space (the one a deep link
+  // points into, else the last used, else the first) and its vault.
   useEffect(() => {
     (async () => {
       try {
-        const result = await api.listVaults();
-        const list = result.vaults ?? [];
-        setVaults(list);
+        const [spaceRes, vaultRes] = await Promise.all([api.listSpaces(), api.listVaults()]);
+        const spaceList = spaceRes.spaces ?? [];
+        const list = vaultRes.vaults ?? [];
+        setSpaces(spaceList);
+        applyVaults(list);
+        const urlVault = parseNoteUrl(window.location.pathname)?.vaultId;
+        const storedSpace = localStorage.getItem("nexote:active-space");
+        const spaceId =
+          list.find((v) => v.id === urlVault)?.spaceId ??
+          spaceList.find((s) => s.id === storedSpace)?.id ??
+          spaceList[0]?.id ??
+          null;
+        activeSpaceIdRef.current = spaceId;
+        setActiveSpaceId(spaceId);
+        if (spaceId) localStorage.setItem("nexote:active-space", spaceId);
+        const inSpace = list.filter((v) => v.spaceId === spaceId);
         const stored = localStorage.getItem("nexote:active-vault");
         // Never restore the system Collections vault as the active vault —
         // it is hidden from the tree, so a stale stored id would leave the
@@ -466,53 +596,23 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const startVault = settingsRef.current.startVaultId;
         const pick =
           (startVault
-            ? list.find((v) => v.id === startVault && !isCollectionsVault(v))?.id
+            ? inSpace.find((v) => v.id === startVault && !isCollectionsVault(v))?.id
             : undefined) ??
-          list.find((v) => v.id === stored && !isCollectionsVault(v))?.id ??
-          list.find((v) => !isCollectionsVault(v))?.id ??
-          list[0]?.id ??
+          inSpace.find((v) => v.id === stored && !isCollectionsVault(v))?.id ??
+          inSpace.find((v) => !isCollectionsVault(v))?.id ??
+          inSpace[0]?.id ??
           null;
         if (pick) {
           setActiveVaultId(pick);
-          if (!stored) localStorage.setItem("nexote:active-vault", pick);
+          if (!inSpace.some((v) => v.id === stored)) localStorage.setItem("nexote:active-vault", pick);
           // Restore the open tabs + active note body as early as possible, in
           // parallel with the heavier all-vault loads below, so the note the
           // user had open appears without first waiting on every vault's tree.
           void restoreTabs();
         }
-        // Load notes/folders for ALL vaults (for the multi-vault tree view).
-        const data: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }> = {};
-        await Promise.all(
-          list.map(async (v) => {
-            try {
-              const res = await api.list(v.id);
-              data[v.id] = { notes: res.notes ?? [], folders: res.folders ?? [] };
-            } catch {
-              data[v.id] = { notes: [], folders: [] };
-            }
-          }),
-        );
-        setAllVaultData(data);
-        // Load bookmarks/shortcuts for ALL vaults so the Recent/Shortcuts/
-        // Bookmarks sections are one list across every vault.
-        const marks: Record<string, { bookmarks: string[]; shortcuts: string[] }> = {};
-        await Promise.all(
-          list.map(async (v) => {
-            try {
-              const [bm, sc] = await Promise.all([
-                api.listBookmarks(v.id),
-                api.listShortcuts(v.id),
-              ]);
-              marks[v.id] = {
-                bookmarks: bm.bookmarks ?? [],
-                shortcuts: sc.shortcuts ?? [],
-              };
-            } catch {
-              marks[v.id] = { bookmarks: [], shortcuts: [] };
-            }
-          }),
-        );
-        setMarksByVault(marks);
+        // Load notes/folders/marks for ALL vaults (multi-vault tree, links
+        // and tabs into other spaces).
+        await loadVaultData(list);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load vaults");
       }
@@ -586,6 +686,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       if (parsed.kind === "note" && parsed.vaultId && parsed.noteId) {
         const vid = parsed.vaultId;
         const nid = parsed.noteId;
+        // History can lead into another space: switch the workspace too.
+        const vaultSpace = allVaultsRef.current.find((v) => v.id === vid)?.spaceId;
+        if (vaultSpace && vaultSpace !== activeSpaceIdRef.current) switchSpaceRef.current(vaultSpace);
         if (vid !== activeVaultIdRef.current) {
           setActiveVaultId(vid);
         }
@@ -612,14 +715,18 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     const precache = async () => {
       try {
-        if (!vaults.length) return;
+        if (!allVaults.length) return;
         // Build the lists payload: vaults + per-vault note/folder lists +
-        // marks + tags + images + collections + journal list.
+        // marks + tags + each space's collections + journal list.
         const lists: Record<string, unknown> = {
-          "/api/vaults": { vaults },
-          "/api/collections": await api.listCollections(),
+          "/api/vaults": { vaults: allVaults },
         };
-        for (const v of vaults) {
+        for (const s of spaces) {
+          try {
+            lists[`/api/collections?space=${s.id}`] = await api.listCollections(s.id);
+          } catch {}
+        }
+        for (const v of allVaults) {
           try {
             const res = await api.list(v.id);
             lists[`/api/vaults/${v.id}/notes`] = res;
@@ -650,7 +757,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vaults]);
+  }, [allVaults, spaces]);
 
   // Once every vault's membership is known, fetch the bodies of any open tabs
   // that aren't cached yet (the active note was fetched immediately; these are
@@ -685,32 +792,39 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const switchVault = useCallback((id: string) => {
     setActiveVaultId(id);
     localStorage.setItem("nexote:active-vault", id);
+    // Each space remembers its last vault for switching back.
+    const spaceId = allVaultsRef.current.find((v) => v.id === id)?.spaceId;
+    if (spaceId) localStorage.setItem(spaceVaultKey(spaceId), id);
     // Switching vaults only changes the tree's focus vault. Keep the stale
     // notes/folders visible until refresh() completes — blanking here made
     // the tree flicker/disappear on slow backends, so a note clicked in
     // another vault appeared unselected until the second click.
-    // Open tabs and the note-body cache are shared across ALL vaults (one
-    // tab list for every vault), so they stay intact. Bookmarks/shortcuts
-    // are already aggregated.
+    // Open tabs and the note-body cache are shared across the space's
+    // vaults (one tab list per space), so they stay intact. Bookmarks/
+    // shortcuts are already aggregated.
   }, []);
 
   const createVault = useCallback(async (name: string, icon?: string) => {
+    const spaceId = activeSpaceIdRef.current;
+    if (!spaceId) return;
     try {
-      const vault = await api.createVault(name, icon);
-      setVaults((prev) => [...prev, vault]);
+      const vault = await api.createVault(name, spaceId, icon);
+      applyVaults([...allVaultsRef.current, vault]);
+      setAllVaultData((prev) => ({ ...prev, [vault.id]: { notes: [], folders: [] } }));
+      setMarksByVault((prev) => ({ ...prev, [vault.id]: { bookmarks: [], shortcuts: [] } }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create vault");
     }
-  }, []);
+  }, [applyVaults]);
 
   const renameVault = useCallback(async (id: string, name: string) => {
     try {
       const vault = await api.renameVault(id, name);
-      setVaults((prev) => prev.map((v) => (v.id === id ? vault : v)));
+      applyVaults(allVaultsRef.current.map((v) => (v.id === id ? vault : v)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to rename vault");
     }
-  }, []);
+  }, [applyVaults]);
 
   const deleteVault = useCallback(
     async (id: string) => {
@@ -731,27 +845,171 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           delete next[id];
           return next;
         });
-        setVaults((prev) => {
-          const next = prev.filter((v) => v.id !== id);
-          if (activeVaultId === id && next.length > 0) {
-            switchVault(next[0].id);
-          }
-          return next;
-        });
+        const next = allVaultsRef.current.filter((v) => v.id !== id);
+        applyVaults(next);
+        if (activeVaultId === id) {
+          const fallback = next.find(
+            (v) => v.spaceId === activeSpaceIdRef.current && !isCollectionsVault(v),
+          );
+          if (fallback) switchVault(fallback.id);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to delete vault");
       }
     },
-    [activeVaultId, switchVault],
+    [activeVaultId, switchVault, applyVaults],
   );
 
   const setVaultIcon = useCallback(async (id: string, icon: string) => {
     try {
       const vault = await api.setVaultIcon(id, icon);
-      setVaults((prev) => prev.map((v) => (v.id === id ? vault : v)));
+      applyVaults(allVaultsRef.current.map((v) => (v.id === id ? vault : v)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to set vault icon");
     }
+  }, [applyVaults]);
+
+  // --- Spaces ---
+
+  // Switch the whole workspace to another space: its vaults and its own tab
+  // strip. The current strip is stashed for switching back.
+  const switchSpace = useCallback((id: string) => {
+    const current = activeSpaceIdRef.current;
+    if (id === current) return;
+    try {
+      if (current) {
+        localStorage.setItem(
+          spaceTabsKey(current),
+          JSON.stringify({ openTabs: openTabsRef.current, activeId: activeIdRef.current }),
+        );
+      }
+      localStorage.setItem("nexote:active-space", id);
+    } catch {
+      // ignore
+    }
+    const saved = readSpaceTabs(id);
+    const tabs = saved?.openTabs ?? [DASHBOARD_ID];
+    const active = saved?.activeId && tabs.includes(saved.activeId) ? saved.activeId : DASHBOARD_ID;
+    activeSpaceIdRef.current = id;
+    setActiveSpaceId(id);
+    setOpenTabs(tabs);
+    setActiveId(active);
+    const inSpace = allVaultsRef.current.filter((v) => v.spaceId === id && !isCollectionsVault(v));
+    let remembered: string | null = null;
+    try {
+      remembered = localStorage.getItem(spaceVaultKey(id));
+    } catch {
+      // ignore
+    }
+    const vault = inSpace.find((v) => v.id === remembered) ?? inSpace[0];
+    if (vault) {
+      setActiveVaultId(vault.id);
+      try {
+        localStorage.setItem("nexote:active-vault", vault.id);
+      } catch {
+        // ignore
+      }
+    }
+    if (active === DASHBOARD_ID) {
+      replaceNoteUrl(DASHBOARD_ID, null, false);
+      return;
+    }
+    const noteVault = noteVaultMapRef.current[active] ?? null;
+    replaceNoteUrl(active, noteVault, journalIdsRef.current.has(active));
+    if (!notesByIdRef.current[active]) {
+      void (noteVault ? api.get(noteVault, active) : api.journalGet(active))
+        .then((note) => setNotesById((prev) => ({ ...prev, [note.id]: note })))
+        .catch(() => {});
+    }
+  }, []);
+
+  // Reload spaces and vaults: after creating, leaving or deleting a space,
+  // and when the server says membership or vaults changed (SSE). Loads data
+  // for new vaults, drops data of vaults no longer reachable, and leaves a
+  // space that is gone.
+  const refreshSpaces = useCallback(async () => {
+    const [spaceRes, vaultRes] = await Promise.all([api.listSpaces(), api.listVaults()]);
+    const spaceList = spaceRes.spaces ?? [];
+    const list = vaultRes.vaults ?? [];
+    const known = new Set(allVaultsRef.current.map((v) => v.id));
+    const reachable = new Set(list.map((v) => v.id));
+    setSpaces(spaceList);
+    applyVaults(list);
+    const keep = <T,>(prev: Record<string, T>) =>
+      Object.fromEntries(Object.entries(prev).filter(([id]) => reachable.has(id)));
+    setAllVaultData(keep);
+    setMarksByVault(keep);
+    const current = activeSpaceIdRef.current;
+    if (!spaceList.some((s) => s.id === current)) {
+      if (spaceList[0]) switchSpace(spaceList[0].id);
+    } else if (!list.some((v) => v.id === activeVaultIdRef.current)) {
+      const next = list.find((v) => v.spaceId === current && !isCollectionsVault(v));
+      if (next) switchVault(next.id);
+    }
+    const added = list.filter((v) => !known.has(v.id));
+    if (added.length) await loadVaultData(added);
+  }, [applyVaults, loadVaultData, switchSpace, switchVault]);
+
+  const createSpace = useCallback(
+    async (name: string, icon?: string) => {
+      const space = await api.createSpace({ name, icon });
+      await refreshSpaces();
+      switchSpace(space.id);
+      return space;
+    },
+    [refreshSpaces, switchSpace],
+  );
+
+  const updateSpace = useCallback(async (id: string, patch: { name?: string; icon?: string }) => {
+    const space = await api.updateSpace(id, patch);
+    setSpaces((prev) => prev.map((s) => (s.id === id ? space : s)));
+    return space;
+  }, []);
+
+  // After deleting or leaving a space: move off it and forget its tabs.
+  const dropSpace = useCallback(
+    async (id: string) => {
+      if (activeSpaceIdRef.current === id) {
+        const other = spaces.find((s) => s.id !== id);
+        if (other) switchSpace(other.id);
+      }
+      try {
+        localStorage.removeItem(spaceTabsKey(id));
+        localStorage.removeItem(spaceVaultKey(id));
+      } catch {
+        // ignore
+      }
+      await refreshSpaces();
+    },
+    [spaces, switchSpace, refreshSpaces],
+  );
+
+  const deleteSpace = useCallback(
+    async (id: string) => {
+      await api.deleteSpace(id);
+      await dropSpace(id);
+    },
+    [dropSpace],
+  );
+
+  const leaveSpace = useCallback(
+    async (id: string) => {
+      await api.leaveSpace(id);
+      await dropSpace(id);
+    },
+    [dropSpace],
+  );
+
+  useEffect(() => {
+    switchSpaceRef.current = switchSpace;
+    refreshSpacesRef.current = refreshSpaces;
+  }, [switchSpace, refreshSpaces]);
+
+  const listCollections = useCallback(async () => {
+    const spaceId = activeSpaceIdRef.current;
+    if (!spaceId) return [];
+    const res = await api.listCollections(spaceId);
+    return res.collections ?? [];
   }, []);
 
   const refresh = useCallback(async () => {
@@ -858,12 +1116,15 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         openJournalNote(noteId);
         return;
       }
+      // A note in another space switches the workspace first.
+      const vaultSpace = allVaultsRef.current.find((v) => v.id === vaultId)?.spaceId;
+      if (vaultSpace && vaultSpace !== activeSpaceIdRef.current) switchSpace(vaultSpace);
       // Focus the owning vault so the tree/context is consistent, then open the
-      // shared tab. Tabs are cross-vault, so this adds/focuses one global tab.
+      // shared tab. Tabs are cross-vault, so this adds/focuses one space tab.
       if (vaultId !== activeVaultId) switchVault(vaultId);
       await openTab(noteId);
     },
-    [activeVaultId, switchVault, openTab, openJournalNote],
+    [activeVaultId, switchVault, switchSpace, openTab, openJournalNote],
   );
 
   const closeTab = useCallback((id: string) => {
@@ -1213,6 +1474,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
+    // Bulk operations send a burst of tree-change events; refetch once per vault.
+    const treeTimers = new Map<string, number>();
 
     const connect = () => {
       if (closed) return;
@@ -1254,6 +1517,31 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           }
         })();
       });
+      // Another client created, moved, renamed or deleted notes or folders.
+      es.addEventListener("tree-change", (event) => {
+        let vaultId: unknown;
+        try {
+          const data: unknown = JSON.parse(event instanceof MessageEvent ? String(event.data) : "");
+          vaultId = data && typeof data === "object" && "vaultId" in data ? data.vaultId : undefined;
+        } catch {
+          return;
+        }
+        if (typeof vaultId !== "string") return;
+        const id = vaultId;
+        window.clearTimeout(treeTimers.get(id));
+        treeTimers.set(
+          id,
+          window.setTimeout(() => {
+            treeTimers.delete(id);
+            void refreshVaultTreeRef.current(id);
+          }, 300),
+        );
+      });
+      // The user's spaces, a space's members, vaults or collections changed.
+      es.addEventListener("spaces-change", () => {
+        void refreshSpacesRef.current().catch(() => {});
+        window.dispatchEvent(new Event("nexote:refresh-data"));
+      });
       es.onerror = () => {
         es?.close();
         if (retry) clearTimeout(retry);
@@ -1265,6 +1553,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     return () => {
       closed = true;
       if (retry) clearTimeout(retry);
+      for (const t of treeTimers.values()) window.clearTimeout(t);
       es?.close();
     };
   }, []);
@@ -1279,6 +1568,36 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
   }, []);
+
+  // Refetch one vault's tree after it changed elsewhere (SSE "tree-change";
+  // our own changes echo back too, which is harmless).
+  const refreshVaultTree = useCallback(
+    async (vaultId: string) => {
+      if (vaultId === "journal") {
+        await refreshJournal();
+        return;
+      }
+      const vault = allVaultsRef.current.find((v) => v.id === vaultId);
+      if (!vault) return;
+      try {
+        const res = await api.list(vaultId);
+        const data = { notes: res.notes ?? [], folders: res.folders ?? [] };
+        setAllVaultData((prev) => ({ ...prev, [vaultId]: data }));
+        if (vaultId === activeVaultIdRef.current) {
+          setNotes([...data.notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+          setFolders(data.folders);
+        }
+        if (vault.spaceId === activeSpaceIdRef.current) void refreshTags(vaultId);
+      } catch {
+        // Transient; the next change or refresh catches up.
+      }
+    },
+    [refreshJournal, refreshTags],
+  );
+
+  useEffect(() => {
+    refreshVaultTreeRef.current = refreshVaultTree;
+  }, [refreshVaultTree]);
 
   // Refetch a single note's full body and swap it into the cache. Used after
   // restoring a history version so the editor reflects the restored content.
@@ -1317,14 +1636,16 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   // --- Tasks ---
 
+  // Tasks of the active space's vaults plus the personal journal.
   const refreshTasks = useCallback(async () => {
+    if (!activeSpaceId) return;
     try {
-      const res = await api.listTasks();
+      const res = await api.listTasks(activeSpaceId);
       setTasks(res.tasks ?? []);
     } catch {
       // ignore
     }
-  }, []);
+  }, [activeSpaceId]);
 
   const toggleTaskItem = useCallback(async (vaultId: string, noteId: string, line: number, checked: boolean) => {
     const doc = await api.toggleTask(vaultId, noteId, line, checked);
@@ -1610,6 +1931,17 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       renameVault,
       deleteVault,
       setVaultIcon,
+      allVaults,
+      spaces,
+      activeSpace,
+      activeSpaceId,
+      switchSpace,
+      refreshSpaces,
+      createSpace,
+      updateSpace,
+      deleteSpace,
+      leaveSpace,
+      listCollections,
       notes,
       folders,
       bookmarks,
@@ -1678,6 +2010,17 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       renameVault,
       deleteVault,
       setVaultIcon,
+      allVaults,
+      spaces,
+      activeSpace,
+      activeSpaceId,
+      switchSpace,
+      refreshSpaces,
+      createSpace,
+      updateSpace,
+      deleteSpace,
+      leaveSpace,
+      listCollections,
       notes,
       folders,
       bookmarks,

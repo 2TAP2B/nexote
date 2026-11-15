@@ -4,6 +4,7 @@ import { Plus, Search, LayoutDashboard } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type Props = {
   onOpenPalette: () => void;
@@ -12,6 +13,7 @@ type Props = {
 export default function MobileBottomBar({ onOpenPalette }: Props) {
   const { openTabs, activeId, notesById, openTab, create, creating } =
     useNotes();
+  const { canEditSpace } = useCanEdit();
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
 
@@ -119,15 +121,17 @@ export default function MobileBottomBar({ onOpenPalette }: Props) {
 
       {/* Actions */}
       <div className="flex items-center gap-0.5 px-1 shrink-0">
-        <button
-          type="button"
-          aria-label="Create new note"
-          onClick={() => void create()}
-          disabled={creating}
-          className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground"
-        >
-          <Plus size={18} />
-        </button>
+        {canEditSpace && (
+          <button
+            type="button"
+            aria-label="Create new note"
+            onClick={() => void create()}
+            disabled={creating}
+            className="flex h-8 w-8 items-center justify-center text-muted-foreground/70 hover:text-foreground"
+          >
+            <Plus size={18} />
+          </button>
+        )}
         <button
           type="button"
           aria-label="Search notes"

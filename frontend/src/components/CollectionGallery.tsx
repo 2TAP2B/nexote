@@ -38,7 +38,7 @@ export default function CollectionGallery({
   onCollectionChanged,
   embedded = false,
 }: Props) {
-  const { vaults, allVaultData, refresh, activeVault } = useNotes();
+  const { vaults, allVaultData, refresh, activeVault, activeSpaceId, listCollections } = useNotes();
   const [formOpen, setFormOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
@@ -86,8 +86,9 @@ export default function CollectionGallery({
   };
 
   const togglePin = async () => {
+    if (!activeSpaceId) return;
     try {
-      const updated = await api.setCollectionPinned(collection.id, !collection.pinned);
+      const updated = await api.setCollectionPinned(activeSpaceId, collection.id, !collection.pinned);
       onCollectionChanged?.(updated);
     } catch {
       // ignore
@@ -264,8 +265,8 @@ export default function CollectionGallery({
         collection={collection}
         onClose={() => setEditOpen(false)}
         onSaved={() => {
-          void api.listCollections().then((res) => {
-            const updated = (res.collections ?? []).find((c) => c.id === collection.id);
+          void listCollections().then((cols) => {
+            const updated = cols.find((c) => c.id === collection.id);
             if (updated) onCollectionChanged?.(updated);
           });
         }}

@@ -10,6 +10,7 @@ import {
   Copy,
   Edit3,
   Ellipsis,
+  Eye,
   FileText,
   History,
   ListTree,
@@ -35,6 +36,7 @@ import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
 import { useTocHeadings } from "@/components/useTocHeadings";
 import { useTocScrollSpy } from "@/components/useTocScrollSpy";
+import { useCanEdit } from "@/components/useCanEdit";
 
 const MilkdownEditorWrapper = dynamic<
   React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
@@ -53,6 +55,8 @@ export default function EditorPane({
 }) {
   const { activeNote, activeId, activeVault, openTabs, openTab, save, saving, setDraft, isDashboardActive, bookmarks, toggleBookmark, settings, isJournalNote, copyNote, refreshNoteBody } =
     useNotes();
+  const { canEditNote, canEditSpace } = useCanEdit();
+  const readOnly = !canEditNote(activeId);
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -170,7 +174,7 @@ export default function EditorPane({
 
   useEffect(() => {
     if (!activeId || loadedKey !== activeId) return;
-    if (skipNextChange.current) return;
+    if (skipNextChange.current || readOnly) return;
 
     const t = setTimeout(() => {
       ownSaveCountRef.current++;
@@ -178,9 +182,10 @@ export default function EditorPane({
       void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);
-  }, [activeId, loadedKey, title, body, save]);
+  }, [activeId, loadedKey, title, body, save, readOnly]);
 
   const startEditingTitle = () => {
+    if (readOnly) return;
     setTitleDraft(title);
     setEditingTitle(true);
     requestAnimationFrame(() => titleInputRef.current?.focus());
@@ -289,10 +294,13 @@ export default function EditorPane({
       return;
     }
     if (!activeId) return;
-    ownSaveCountRef.current++;
-    prevBodyRef.current = body;
-    skipNextChange.current = true;
-    await save(activeId, { title, body }).catch(() => {});
+    // Read-only notes have nothing to flush; just remount the rendered view.
+    if (!readOnly) {
+      ownSaveCountRef.current++;
+      prevBodyRef.current = body;
+      skipNextChange.current = true;
+      await save(activeId, { title, body }).catch(() => {});
+    }
     setBodyKey((k) => k + 1);
     setRawMode(false);
     window.setTimeout(() => {
@@ -363,7 +371,9 @@ export default function EditorPane({
             </span>
             <div className="flex-1" />
             <span className="text-xs text-muted-foreground/40">
-              {saving ? (
+              {readOnly ? (
+                <ViewOnlyBadge />
+              ) : saving ? (
                 <Loader2 className="inline h-3 w-3 animate-spin" />
               ) : (
                 "Saved"
@@ -411,10 +421,10 @@ export default function EditorPane({
             />
           ) : (
             <span
-              className="truncate text-xs text-muted-foreground/60 cursor-text"
+              className={"truncate text-xs text-muted-foreground/60" + (readOnly ? "" : " cursor-text")}
               style={{ maxWidth: 400 }}
               onClick={startEditingTitle}
-              title="Click to rename"
+              title={readOnly ? undefined : "Click to rename"}
             >
               {activeNote.path ? `${activeNote.path} / ` : ""}{title}
             </span>
@@ -424,7 +434,9 @@ export default function EditorPane({
         {/* Right: save status, bookmark, reading view + 3-dot menu */}
         <div className="flex items-center gap-1">
           <span className="text-xs text-muted-foreground/40">
-            {saving ? (
+            {readOnly ? (
+              <ViewOnlyBadge />
+            ) : saving ? (
               <Loader2 className="inline h-3 w-3 animate-spin" />
             ) : (
               "Saved"
@@ -506,11 +518,14 @@ export default function EditorPane({
               onClick: () => void openTab(activeNote.id),
             },
             { label: "", onClick: () => {}, separator: true },
-            {
-              label: "Make a copy",
-              icon: <Copy className="h-4 w-4" />,
-              onClick: () => void copyNote(activeNote.id),
-            },
+            // A copy lands in the note's own vault, so viewers can't make one.
+            ...(canEditSpace && !readOnly
+              ? [{
+                  label: "Make a copy",
+                  icon: <Copy className="h-4 w-4" />,
+                  onClick: () => void copyNote(activeNote.id),
+                }]
+              : []),
             {
               label: bookmarks.has(activeNote.id) ? "Remove bookmark" : "Add bookmark",
               icon: bookmarks.has(activeNote.id)
@@ -518,7 +533,7 @@ export default function EditorPane({
                 : <Bookmark className="h-4 w-4" />,
               onClick: () => void toggleBookmark(activeNote.id),
             },
-            ...(settings.aiBaseUrl.trim()
+            ...(settings.aiBaseUrl.trim() && !readOnly
               ? [{
                   label: "Ask AI…",
                   icon: <Sparkles className="h-4 w-4" />,
@@ -530,12 +545,16 @@ export default function EditorPane({
                   onClick: () => void handleGenerateTitle(),
                 }]
               : []),
-            { label: "", onClick: () => {}, separator: true },
-            {
-              label: "Rename",
-              icon: <Edit3 className="h-4 w-4" />,
-              onClick: startEditingTitle,
-            },
+            ...(readOnly
+              ? []
+              : [
+                  { label: "", onClick: () => {}, separator: true },
+                  {
+                    label: "Rename",
+                    icon: <Edit3 className="h-4 w-4" />,
+                    onClick: startEditingTitle,
+                  },
+                ]),
           ]}
         />
       )}
@@ -563,6 +582,7 @@ export default function EditorPane({
               value={body}
               onChange={handleEditorChange}
               fontSize={settings.editorFontSize}
+              readOnly={readOnly}
             />
           ) : (
             <MilkdownEditorWrapper
@@ -574,6 +594,7 @@ export default function EditorPane({
               vaultId={isJournalNote(activeNote.id) ? "journal" : activeVault?.id ?? ""}
               noteId={activeNote.id}
               onAskAI={() => setAiPanelOpen(true)}
+              readOnly={readOnly}
             />
           )}
         </div>
@@ -603,7 +624,7 @@ export default function EditorPane({
         )}
       </div>
 
-      {aiPanelOpen && (
+      {aiPanelOpen && !readOnly && (
         <AICommandPanel
           editorRef={editorRef}
           onClose={() => setAiPanelOpen(false)}
@@ -621,5 +642,19 @@ export default function EditorPane({
         }}
       />
     </main>
+  );
+}
+
+// Shown instead of the save status when the note's space is view-only.
+function ViewOnlyBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+      style={{ background: "color-mix(in srgb, var(--muted-foreground) 12%, transparent)" }}
+      title="You can view this space but not change it"
+    >
+      <Eye size={12} />
+      View only
+    </span>
   );
 }

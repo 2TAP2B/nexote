@@ -3,8 +3,8 @@
 import { Disc3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
 import type { CollectionMeta, Note } from "@/lib/api";
+import { useNotes } from "@/lib/notes-context";
 
 type Props = {
   note: Note | null;
@@ -17,11 +17,12 @@ type Props = {
 // renders for type=collection-item notes; the cover and fields live in
 // frontmatter, so the body stays clean and editable.
 export default function CollectionItemHeader({ note, mobile }: Props) {
+  const { listCollections, activeSpaceId } = useNotes();
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
 
   useEffect(() => {
-    void api.listCollections().then((res) => setCollections(res.collections ?? []));
-  }, []);
+    void listCollections().then(setCollections);
+  }, [listCollections, activeSpaceId]);
 
   const isCollectionItem = note?.type === "collection-item";
   const collection = useMemo(

@@ -4,7 +4,7 @@ import { Database } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { getIcon, ICON_OPTIONS } from "@/lib/icons";
+import { getIcon, ICON_OPTIONS, type IconComponent } from "@/lib/icons";
 import { cx, useIsMobileSettings } from "./ui";
 
 const COLS = 8;
@@ -21,17 +21,20 @@ export function IconPicker({
   value,
   onChange,
   label,
+  fallback = Database,
 }: {
   value: string;
   onChange: (icon: string) => void;
   label: string;
+  /** Shown on the button while no icon is set. */
+  fallback?: IconComponent;
 }) {
   const mobile = useIsMobileSettings();
   const cell = mobile ? 40 : 36;
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
-  const Current = getIcon(value, Database);
+  const Current = getIcon(value, fallback);
   const open = pos !== null;
 
   const toggle = () => {

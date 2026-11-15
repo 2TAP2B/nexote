@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { api, type HistoryVersion } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type Props = {
   open: boolean;
@@ -36,6 +37,7 @@ export default function NoteHistoryPanel({
   onRestored,
 }: Props) {
   const { activeVault, isJournalNote } = useNotes();
+  const canRestore = useCanEdit().canEditNote(noteId);
   const [versions, setVersions] = useState<HistoryVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
@@ -158,19 +160,21 @@ export default function NoteHistoryPanel({
                       </p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void restore(v.timestamp)}
-                    disabled={restoring === v.timestamp}
-                    className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                  >
-                    {restoring === v.timestamp ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <RotateCcw className="h-3 w-3" />
-                    )}
-                    Restore
-                  </button>
+                  {canRestore && (
+                    <button
+                      type="button"
+                      onClick={() => void restore(v.timestamp)}
+                      disabled={restoring === v.timestamp}
+                      className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      {restoring === v.timestamp ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3 w-3" />
+                      )}
+                      Restore
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

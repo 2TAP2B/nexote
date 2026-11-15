@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
+import { AuthGate } from "@/components/auth/AuthProvider";
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
@@ -27,6 +28,8 @@ import Ribbon, { type SidebarView } from "@/components/Ribbon";
 import SettingsPanel from "@/components/SettingsPanel";
 import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
+import SpacesRail from "@/components/spaces/SpacesRail";
+import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
@@ -55,15 +58,20 @@ function MobileRedirect() {
 
 export default function Page() {
   return (
-    <NotesProvider>
+    <>
       <MobileRedirect />
-      <AppShell />
-    </NotesProvider>
+      <AuthGate>
+        <NotesProvider>
+          <AppShell />
+        </NotesProvider>
+      </AuthGate>
+    </>
   );
 }
 
 function AppShell() {
-  const { openDaily, openTab, openNoteInVault, activeNote, create } = useNotes();
+  const { openDaily, openTab, openNoteInVault, activeNote, create, listCollections } = useNotes();
+  const { canEditSpace } = useCanEdit();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -102,7 +110,8 @@ function AppShell() {
 
   useSwipeSidebar({
     focus: mobileOpen ? "sidebar" : "editor",
-    onFocus: (pane) => setMobileOpen(pane === "sidebar"),
+    // No spaces pane in this drawer layout: swiping past the tree keeps it open.
+    onFocus: (pane) => setMobileOpen(pane === "sidebar" || pane === "spaces"),
   });
 
   // Listen for the "toggle sidebar" event dispatched by keyboard shortcuts
@@ -131,8 +140,8 @@ function AppShell() {
     const onOpenCollection = (e: Event) => {
       const folder = (e as CustomEvent).detail as string;
       if (!folder) return;
-      void api.listCollections().then((res) => {
-        const col = (res.collections ?? []).find((c) => c.name === folder);
+      void listCollections().then((cols) => {
+        const col = cols.find((c) => c.name === folder);
         if (col) setGalleryCollection(col);
       });
     };
@@ -223,9 +232,13 @@ function AppShell() {
   }, [sidebarWidth]);
 
   return (
-    <>
+    <div className="flex w-full bg-background viewport-full">
       <Shortcuts onOpenPalette={() => setPaletteOpen(true)} />
-      <div className="flex w-full flex-col bg-background viewport-full">
+      {/* Space switcher: full height at the far left (desktop only). */}
+      <div className="hidden md:flex shrink-0">
+        <SpacesRail />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Full-width top bar (desktop) — includes collapse toggle at far left */}
         <div
           className="hidden md:flex shrink-0"
@@ -383,8 +396,8 @@ function AppShell() {
                   setSidebarView("collections");
                   const col = activeNote?.collection;
                   if (col) {
-                    void api.listCollections().then((res) => {
-                      const found = (res.collections ?? []).find((c) => c.id === col);
+                    void listCollections().then((cols) => {
+                      const found = cols.find((c) => c.id === col);
                       if (found) setGalleryCollection(found);
                     });
                   }
@@ -394,17 +407,19 @@ function AppShell() {
           </main>
         </div>
 
-        {/* Floating new-note button (desktop only) */}
-        <button
-          type="button"
-          aria-label="New note"
-          title="New note"
-          onClick={() => void create()}
-          className="fixed bottom-6 right-6 z-30 hidden md:flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
-          style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
-        >
-          <FilePlus className="h-5 w-5" />
-        </button>
+        {/* Floating new-note button (desktop only); viewers can't add notes. */}
+        {canEditSpace && (
+          <button
+            type="button"
+            aria-label="New note"
+            title="New note"
+            onClick={() => void create()}
+            className="fixed bottom-6 right-6 z-30 hidden md:flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+            style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+          >
+            <FilePlus className="h-5 w-5" />
+          </button>
+        )}
 
         <MobileBottomBar onOpenPalette={() => setPaletteOpen(true)} />
 
@@ -429,7 +444,7 @@ function AppShell() {
           }}
         />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -458,6 +473,8 @@ function SidebarHeader({
   onOpenDaily: () => void;
   treeControls: TreeControls;
 }) {
+  // Viewers of a shared space can't add notes or folders (hook before the early return).
+  const { canEditSpace } = useCanEdit();
   if (collapsed) return null;
 
   // Non-tree views: title-only bar with New note (+ Open today for journal).
@@ -481,11 +498,13 @@ function SidebarHeader({
             onClick={onOpenDaily}
           />
         )}
-        <ActionButton
-          label="New note"
-          icon={<FilePlus className="h-3.5 w-3.5" />}
-          onClick={onNewNote}
-        />
+        {canEditSpace && (
+          <ActionButton
+            label="New note"
+            icon={<FilePlus className="h-3.5 w-3.5" />}
+            onClick={onNewNote}
+          />
+        )}
         <ActionButton
           label="Collapse sidebar"
           icon={<PanelLeftClose className="h-3.5 w-3.5" />}
@@ -499,16 +518,20 @@ function SidebarHeader({
     <div style={{ borderBottom: "1px solid var(--border)" }}>
       {/* Root tree header */}
       <div className="flex items-center gap-0.5 px-2 py-1.5">
-        <ActionButton
-          label="New note"
-          icon={<FilePlus className="h-3.5 w-3.5" />}
-          onClick={onNewNote}
-        />
-        <ActionButton
-          label="New folder"
-          icon={<FolderPlus className="h-3.5 w-3.5" />}
-          onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
-        />
+        {canEditSpace && (
+          <>
+            <ActionButton
+              label="New note"
+              icon={<FilePlus className="h-3.5 w-3.5" />}
+              onClick={onNewNote}
+            />
+            <ActionButton
+              label="New folder"
+              icon={<FolderPlus className="h-3.5 w-3.5" />}
+              onClick={() => document.getElementById("nexote-new-folder-btn")?.click()}
+            />
+          </>
+        )}
         <ActionButton
           label={treeControls.sorted ? "Sort: A–Z" : "Sort: recent first"}
           icon={<ArrowDownAZ className="h-3.5 w-3.5" />}

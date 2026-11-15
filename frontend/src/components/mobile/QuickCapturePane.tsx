@@ -46,10 +46,13 @@ const errorText = (err: unknown, fallback: string) => (err instanceof Error && e
 // "/api/vaults/<vault>/images/<rel>" → "<rel>" (what the delete route takes).
 const imageRel = (url: string) => url.slice(url.indexOf("/images/") + "/images/".length);
 
+// The personal store that holds the Notepad (pseudo vault id).
+const HOME_VAULT = "home";
+
 export default function QuickCapturePane({ focused, onBack }: { focused: boolean; onBack: () => void }) {
   const {
     vaults,
-    activeVault,
+    allVaults,
     allVaultData,
     journalNotes,
     refresh,
@@ -94,35 +97,29 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   }, [focused]);
   useEffect(() => () => transcribeAbort.current?.abort(), []);
 
-  const notepad = useMemo(() => {
-    for (const v of vaults) {
-      if (isCollectionsVault(v)) continue;
-      const hit = allVaultData[v.id]?.notes.find((n) => n.title === NOTEPAD_TITLE && !n.collection);
-      if (hit) return { vaultId: v.id, id: hit.id };
-    }
-    return null;
-  }, [vaults, allVaultData]);
-  const notepadVault = notepad?.vaultId;
-  const notepadId = notepad?.id;
-
+  // The Notepad lives in the user's personal "home" store (the same in every
+  // space). Found and (re)loaded whenever the pane is shown, so edits made
+  // elsewhere appear. Creating it on the first post only sets targetRef:
+  // reloading then would race the post and show the empty new note.
   useEffect(() => {
-    if (notepadVault && notepadId) targetRef.current = { vaultId: notepadVault, id: notepadId };
-  }, [notepadVault, notepadId]);
-
-  // (Re)load whenever the pane is shown, so edits made elsewhere appear.
-  useEffect(() => {
-    if (!focused || !notepadVault || !notepadId) return;
+    if (!focused) return;
     let cancelled = false;
-    api
-      .get(notepadVault, notepadId)
-      .then((note) => {
+    void (async () => {
+      try {
+        const res = await api.list(HOME_VAULT);
+        const hit = (res.notes ?? []).find((n) => n.title === NOTEPAD_TITLE);
+        if (cancelled || !hit) return;
+        targetRef.current = { vaultId: HOME_VAULT, id: hit.id };
+        const note = await api.get(HOME_VAULT, hit.id);
         if (!cancelled) setBody(note.body);
-      })
-      .catch(() => {});
+      } catch {
+        // Offline or not created yet: the pane keeps what it shows.
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [focused, notepadVault, notepadId]);
+  }, [focused]);
 
   useEffect(() => {
     if (!focused) setMenu(null);
@@ -142,7 +139,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     for (const v of vaults) {
       if (isCollectionsVault(v)) continue;
       for (const n of allVaultData[v.id]?.notes ?? []) {
-        if (n.id === notepadId || !n.title) continue;
+        if (!n.title) continue;
         refs.push({
           id: n.id,
           title: n.title,
@@ -156,21 +153,16 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
       if (n.title) refs.push({ id: n.id, title: n.title, vaultId: null, where: "Journal", updatedAt: n.updatedAt });
     }
     return refs;
-  }, [vaults, allVaultData, journalNotes, notepadId]);
+  }, [vaults, allVaultData, journalNotes]);
 
-  // [[Title]] → note: same title (any case), the notepad's vault first.
+  // [[Title]] → note: same title (any case); the first match wins (the
+  // active space's vaults, then the journal).
   const resolve = useCallback(
     (title: string) => {
       const wanted = title.toLowerCase();
-      let fallback: NoteRef | null = null;
-      for (const ref of noteRefs) {
-        if (ref.title.toLowerCase() !== wanted) continue;
-        if (ref.vaultId === notepadVault) return ref;
-        fallback ??= ref;
-      }
-      return fallback;
+      return noteRefs.find((ref) => ref.title.toLowerCase() === wanted) ?? null;
     },
-    [noteRefs, notepadVault],
+    [noteRefs],
   );
 
   // "@query" suggestions: titles containing the query, prefix matches first,
@@ -193,12 +185,8 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   const ensureTarget = (): Promise<Target> => {
     if (targetRef.current) return Promise.resolve(targetRef.current);
     creatingRef.current ??= (async () => {
-      const vault =
-        activeVault && !isCollectionsVault(activeVault) ? activeVault : vaults.find((v) => !isCollectionsVault(v));
-      if (!vault) throw new Error("No vault to keep the notepad in");
-      const created = await api.create(vault.id, { title: NOTEPAD_TITLE });
-      targetRef.current = { vaultId: vault.id, id: created.id };
-      void refresh();
+      const created = await api.create(HOME_VAULT, { title: NOTEPAD_TITLE });
+      targetRef.current = { vaultId: HOME_VAULT, id: created.id };
       return targetRef.current;
     })().finally(() => {
       creatingRef.current = null;
@@ -420,7 +408,10 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   // "Make note": the memo becomes a note in the default notebook (asked for
   // the first time), then leaves the notepad — moved, not copied.
   const makeNote = (entry: NotepadEntry) => {
-    const vault = vaults.find((v) => v.id === settings.memoNoteVault && !isCollectionsVault(v));
+    // The default notebook may be in any space; viewer-only vaults can't take notes.
+    const vault = allVaults.find(
+      (v) => v.id === settings.memoNoteVault && !isCollectionsVault(v) && v.role !== "viewer",
+    );
     if (vault) void moveToNote(entry, { vaultId: vault.id, folder: settings.memoNoteFolder });
     else setPicking(entry);
   };
@@ -471,7 +462,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   return (
     <section
       aria-label="Quick notes"
-      className="relative flex h-full w-1/3 shrink-0 flex-col overflow-hidden"
+      className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden"
       style={{
         background: "var(--mob-bg)",
         borderLeft: "1px solid var(--mob-surface)",

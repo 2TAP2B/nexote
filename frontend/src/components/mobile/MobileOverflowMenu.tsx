@@ -18,6 +18,7 @@ import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
 import { generateNoteTitle } from "@/lib/ai";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type Props = {
   x: number;
@@ -80,6 +81,7 @@ export default function MobileOverflowMenu({
   };
 
   const hasAI = Boolean(settings.aiBaseUrl.trim());
+  const canEdit = useCanEdit().canEditNote(noteId);
 
   const items: MenuItem[] = [
     {
@@ -88,11 +90,13 @@ export default function MobileOverflowMenu({
       onClick: () => void openTab(noteId),
     },
     { label: "", onClick: () => {}, separator: true },
-    {
-      label: "Make a copy",
-      icon: <Copy className="h-4 w-4" />,
-      onClick: () => void copyNote(noteId),
-    },
+    ...(canEdit
+      ? [{
+          label: "Make a copy",
+          icon: <Copy className="h-4 w-4" />,
+          onClick: () => void copyNote(noteId),
+        }]
+      : []),
     {
       label: "Note history",
       icon: <History className="h-4 w-4" />,
@@ -103,18 +107,20 @@ export default function MobileOverflowMenu({
       icon: <ListTree className="h-4 w-4" />,
       onClick: onToc,
     },
-    ...(hasAI
+    ...(hasAI && canEdit
       ? [{
           label: "Generate AI title",
           icon: <Sparkles className="h-4 w-4" />,
           onClick: () => void handleGenerateTitle(),
         }]
       : []),
-    {
-      label: "Move to…",
-      icon: <FolderInput className="h-4 w-4" />,
-      onClick: () => onMoveTo(noteId),
-    },
+    ...(canEdit
+      ? [{
+          label: "Move to…",
+          icon: <FolderInput className="h-4 w-4" />,
+          onClick: () => onMoveTo(noteId),
+        }]
+      : []),
     {
       label: isShortcut ? "Remove shortcut" : "Add shortcut",
       icon: isShortcut ? <BookmarkCheck className="h-4 w-4" /> : <Star className="h-4 w-4" />,
@@ -125,18 +131,22 @@ export default function MobileOverflowMenu({
       icon: <Bookmark className="h-4 w-4" />,
       onClick: () => toggleBookmark(noteId),
     },
-    { label: "", onClick: () => {}, separator: true },
-    {
-      label: "Rename",
-      icon: <Edit3 className="h-4 w-4" />,
-      onClick: () => onRename(noteId),
-    },
-    {
-      label: "Delete",
-      icon: <Trash2 className="h-4 w-4" />,
-      danger: true,
-      onClick: () => onDelete(noteId),
-    },
+    ...(canEdit
+      ? [
+          { label: "", onClick: () => {}, separator: true },
+          {
+            label: "Rename",
+            icon: <Edit3 className="h-4 w-4" />,
+            onClick: () => onRename(noteId),
+          },
+          {
+            label: "Delete",
+            icon: <Trash2 className="h-4 w-4" />,
+            danger: true,
+            onClick: () => onDelete(noteId),
+          },
+        ]
+      : []),
   ];
 
   return (

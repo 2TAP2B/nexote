@@ -48,7 +48,7 @@ export default function MobileTocPane({ noteId, focused, onClose }: Props) {
 
   return (
     <div
-      className="relative flex h-full w-1/3 shrink-0 flex-col overflow-hidden"
+      className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden"
       style={{
         background: "var(--mob-bg)",
         borderLeft: "1px solid var(--mob-surface)",

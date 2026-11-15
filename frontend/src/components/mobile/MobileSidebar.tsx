@@ -20,6 +20,7 @@ import { useEffect, useRef } from "react";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
 import { useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type Props = {
   onClose: () => void;
@@ -54,6 +55,8 @@ export default function MobileSidebar({
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
   const { openDaily, settings } = useNotes();
+  // Viewers of a shared space can't add notes or folders.
+  const { canEditSpace } = useCanEdit();
 
   // Honor the Features toggles: hidden views disappear from the switcher.
   const visibleItems = RIBBON_ITEMS.filter(
@@ -86,7 +89,7 @@ export default function MobileSidebar({
 
   return (
     <div
-      className="relative flex h-full w-1/3 shrink-0 flex-col overflow-hidden"
+      className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden"
       style={{
         background: "var(--mob-bg)",
         borderRight: "1px solid var(--mob-surface)",
@@ -192,12 +195,16 @@ export default function MobileSidebar({
               borderTop: "1px solid var(--mob-surface)",
             }}
           >
-            <RibbonBtn label="New note" onClick={newNote}>
-              <FilePlus size={20} />
-            </RibbonBtn>
-            <RibbonBtn label="New folder" onClick={newFolder}>
-              <FolderPlus size={20} />
-            </RibbonBtn>
+            {canEditSpace && (
+              <>
+                <RibbonBtn label="New note" onClick={newNote}>
+                  <FilePlus size={20} />
+                </RibbonBtn>
+                <RibbonBtn label="New folder" onClick={newFolder}>
+                  <FolderPlus size={20} />
+                </RibbonBtn>
+              </>
+            )}
             <div className="flex-1" />
             <RibbonBtn
               label={

@@ -12,8 +12,8 @@ import { useNotes } from "@/lib/notes-context";
  * "Make note" is used; the choice becomes the default (Settings › Features).
  */
 export function NotebookPicker({ onPick, onClose }: { onPick: (notebook: Notebook) => void; onClose: () => void }) {
-  const { vaults, allVaultData } = useNotes();
-  const notebooks = listNotebooks(vaults, allVaultData);
+  const { allVaults, allVaultData, spaces } = useNotes();
+  const notebooks = listNotebooks(allVaults, allVaultData, spaces);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

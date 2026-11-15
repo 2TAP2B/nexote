@@ -8,7 +8,7 @@
 //
 // This cache name must be kept in sync with the one in public/sw.js — bump
 // both together when invalidating the app shell.
-const IMAGE_CACHE = "nexote-v2";
+const IMAGE_CACHE = "nexote-v4";
 
 export async function cacheImage(url: string, data: Blob): Promise<void> {
   if (typeof caches === "undefined" || !url) return;

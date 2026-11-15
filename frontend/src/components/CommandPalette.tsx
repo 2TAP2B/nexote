@@ -25,6 +25,7 @@ import { useTheme } from "next-themes";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { api, isCollectionsVault, type SearchHit } from "@/lib/api";
 import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type CommandPaletteProps = {
   open: boolean;
@@ -47,7 +48,8 @@ type Item =
   | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, switchVault, activeVault, tagsByVault, settings } = useNotes();
+  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, switchVault, activeVault, tagsByVault, settings, activeSpaceId } = useNotes();
+  const { canEditSpace } = useCanEdit();
   const { theme, setTheme } = useTheme();
   // Track the visual viewport: when the touch keyboard opens (iOS keeps the
   // layout viewport full-height), the backdrop must shrink to end at the
@@ -90,14 +92,14 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     const req = ++hitsReqRef.current;
     const timer = setTimeout(async () => {
       try {
-        const res = await api.search(q);
+        const res = await api.search(q, activeSpaceId ?? undefined);
         if (req === hitsReqRef.current && open) setHits(res.results ?? []);
       } catch {
         // search is best-effort; keep the local filter usable
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [open, query]);
+  }, [open, query, activeSpaceId]);
 
   const commands = useMemo<Command[]>(
     () => [
@@ -311,8 +313,8 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
     }
 
-    // Create note action at the end if there's a query
-    if (q) {
+    // Create note action at the end if there's a query (viewers can't).
+    if (q && canEditSpace) {
       result.push({
         kind: "create",
         label: `Create note "${query.trim()}"`,
@@ -321,7 +323,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, vaults, activeVault, tagsByVault, query, settings]);
+  }, [commands, notes, vaults, activeVault, tagsByVault, query, settings, canEditSpace]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));

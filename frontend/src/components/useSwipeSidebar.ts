@@ -2,14 +2,16 @@
 
 import { useEffect, useRef } from "react";
 
-// "toc" is the right-hand pane: the table of contents for a note, quick
-// capture on the dashboard.
-export type PagerFocus = "sidebar" | "editor" | "toc";
+// "spaces" is the space switcher left of the note tree. "toc" is the
+// right-hand pane: the table of contents for a note, quick capture on the
+// dashboard.
+export type PagerFocus = "spaces" | "sidebar" | "editor" | "toc";
 
-// Pane order in the 300vw mobile pager track: sidebar (0), editor (1), toc (2).
-const PANES: readonly PagerFocus[] = ["sidebar", "editor", "toc"];
+// Pane order in the 400vw mobile pager track: spaces (0), sidebar (1),
+// editor (2), toc (3).
+const PANES: readonly PagerFocus[] = ["spaces", "sidebar", "editor", "toc"];
 const PANE_COUNT = PANES.length;
-const PANE_INDEX: Record<PagerFocus, number> = { sidebar: 0, editor: 1, toc: 2 };
+const PANE_INDEX: Record<PagerFocus, number> = { spaces: 0, sidebar: 1, editor: 2, toc: 3 };
 
 type SwipeHandlers = {
   focus: PagerFocus;
@@ -26,21 +28,22 @@ const SNAP_MIN_MS = 160;
 const SNAP_MAX_MS = 380;
 const SNAP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
-// Drag-to-follow swipe for the mobile three-pane pager.
+// Drag-to-follow swipe for the mobile four-pane pager.
 //
-// The pager track ("triple width canvas", .mob-pager) holds the sidebar pane
-// (left), the note-view pane (center) and the table-of-contents pane (right),
-// each one viewport wide. Focus is a translateX on the track:
-//   sidebar → 0
-//   editor  → -100vw (one pane off the left)
-//   toc     → -200vw (two panes off the left)
+// The pager track (.mob-pager) holds the spaces pane, the sidebar pane (note
+// tree), the note-view pane and the table-of-contents pane, each one viewport
+// wide. Focus is a translateX on the track:
+//   spaces  → 0
+//   sidebar → -100vw
+//   editor  → -200vw
+//   toc     → -300vw
 //
-// From the editor: drag right → the note tree slides in; drag left → the TOC
-// slides in. On the pill always; with swipeFromContent anywhere in the pager
-// track (editor text included), except on form fields, [data-no-swipe]
-// elements, horizontally scrollable content (code blocks, tables, toolbars)
-// and while text is selected. From a side pane: drag toward the editor
-// anywhere on it.
+// From the editor: drag right → the note tree slides in, once more → the
+// spaces; drag left → the TOC slides in. On the pill always; with
+// swipeFromContent anywhere in the pager track (editor text included), except
+// on form fields, [data-no-swipe] elements, horizontally scrollable content
+// (code blocks, tables, toolbars) and while text is selected. From a side
+// pane: drag either way anywhere on it.
 //
 // Touch events (not pointer events) drive it: the editor's vertical scroller
 // would otherwise claim the gesture and fire pointercancel mid-drag. Once a

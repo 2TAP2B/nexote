@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Braces, Ellipsis, Moon, PanelLeft, Settings, Sun, X } from "lucide-react";
+import { BookOpen, Braces, Ellipsis, Eye, Moon, PanelLeft, Settings, Sun, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,6 +10,7 @@ import AICommandPanel from "@/components/AICommandPanel";
 import CollectionItemHeader from "@/components/CollectionItemHeader";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 import { editorFontStack } from "@/lib/editor-fonts";
 import type { Note } from "@/lib/api";
 import MobileDashboard from "./MobileDashboard";
@@ -55,6 +56,7 @@ export default function MobileNoteView({
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
     useNotes();
+  const readOnly = !useCanEdit().canEditNote(activeId);
 
   const editorRef = useRef<MilkdownEditorHandle>(null);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
@@ -189,7 +191,7 @@ export default function MobileNoteView({
 
   useEffect(() => {
     if (!activeId || loadedKeyRef.current !== activeId) return;
-    if (skipNextChange.current) return;
+    if (skipNextChange.current || readOnly) return;
 
     const t = setTimeout(() => {
       ownSaveCountRef.current++;
@@ -197,7 +199,7 @@ export default function MobileNoteView({
       void save(activeId, { title, body });
     }, 800);
     return () => clearTimeout(t);
-  }, [activeId, title, body, save]);
+  }, [activeId, title, body, save, readOnly]);
 
   // Switch between the rendered editor and the raw markdown textarea. Leaving
   // raw mode flushes the raw edits to the server first, then remounts the
@@ -223,10 +225,13 @@ export default function MobileNoteView({
       return;
     }
     if (!activeId) return;
-    ownSaveCountRef.current++;
-    prevBodyRef.current = body;
-    skipNextChange.current = true;
-    await save(activeId, { title, body }).catch(() => {});
+    // Read-only notes have nothing to flush; just remount the rendered view.
+    if (!readOnly) {
+      ownSaveCountRef.current++;
+      prevBodyRef.current = body;
+      skipNextChange.current = true;
+      await save(activeId, { title, body }).catch(() => {});
+    }
     setBodyKey((k) => k + 1);
     setRawMode(false);
     window.setTimeout(() => {
@@ -315,6 +320,7 @@ export default function MobileNoteView({
         onOpenSidebar={onOpenSidebar}
         onOverflow={onOverflow}
         rawMode={rawMode}
+        viewOnly={readOnly}
         isCollectionItem={activeNote?.type === "collection-item"}
         onCloseCollectionItem={onCloseCollectionItem}
       />
@@ -351,6 +357,7 @@ export default function MobileNoteView({
             value={body}
             onChange={handleEditorChange}
             fontSize={settings.editorFontSize}
+            readOnly={readOnly}
           />
         ) : (
           <MilkdownEditorWrapper
@@ -363,6 +370,7 @@ export default function MobileNoteView({
             noteId={activeNote.id}
             mobile
             onAskAI={() => setAiPanelOpen(true)}
+            readOnly={readOnly}
           />
         )}
       </div>
@@ -370,10 +378,12 @@ export default function MobileNoteView({
       {/* Bottom toolbar — appears after the user taps the editor to set a
        * cursor (or selects text), pinned right above the on-screen keyboard.
        * Replaces the floating Milkdown selection toolbar. Hides on scroll. */}
-      <MobileEditorToolbar
-        editorRef={editorRef}
-        aiAvailable={Boolean(aiConfig.baseUrl)}
-      />
+      {!readOnly && (
+        <MobileEditorToolbar
+          editorRef={editorRef}
+          aiAvailable={Boolean(aiConfig.baseUrl)}
+        />
+      )}
 
       {/* Raw/rendered toggle — floating button at the bottom right, above the
        * keyboard (or above the bottom nav pill when the keyboard is closed).
@@ -394,7 +404,7 @@ export default function MobileNoteView({
         </CircleButton>
       </div>
 
-      {aiPanelOpen && (
+      {aiPanelOpen && !readOnly && (
         <AICommandPanel
           editorRef={editorRef}
           onClose={() => setAiPanelOpen(false)}
@@ -410,6 +420,7 @@ function MobileTopBar({
   onOverflow,
   onOpenSettings,
   rawMode = false,
+  viewOnly = false,
   showThemeToggle = false,
   isCollectionItem = false,
   onCloseCollectionItem,
@@ -418,6 +429,7 @@ function MobileTopBar({
   onOverflow: (x: number, y: number) => void;
   onOpenSettings?: () => void;
   rawMode?: boolean;
+  viewOnly?: boolean;
   showThemeToggle?: boolean;
   isCollectionItem?: boolean;
   onCloseCollectionItem?: () => void;
@@ -448,6 +460,7 @@ function MobileTopBar({
             <X size={20} />
           </CircleButton>
         </div>
+        {viewOnly && <ViewOnlyPill />}
       </div>
     );
   }
@@ -468,6 +481,7 @@ function MobileTopBar({
           <PanelLeft size={20} />
         </CircleButton>
       </div>
+      {viewOnly && <ViewOnlyPill />}
       <div className="flex items-center gap-2">
         <div className="pointer-events-auto">
           {showThemeToggle && (
@@ -501,6 +515,19 @@ function MobileTopBar({
         </div>
       </div>
     </div>
+  );
+}
+
+// Tells viewers of a shared space why the note doesn't take input.
+function ViewOnlyPill() {
+  return (
+    <span
+      className="pointer-events-auto mx-auto inline-flex items-center gap-1.5 rounded-full px-3 text-xs font-medium"
+      style={{ height: 28, background: "var(--mob-surface)", color: "var(--mob-muted)" }}
+    >
+      <Eye size={14} />
+      View only
+    </span>
   );
 }
 

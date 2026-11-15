@@ -19,6 +19,7 @@ import {
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
 
@@ -89,14 +90,18 @@ export default function MobileDashboard({
     refreshTags,
     toggleTaskItem,
     settings,
+    listCollections,
+    activeSpaceId,
   } = useNotes();
+  // Viewers of a shared space can't add notes.
+  const { canEditSpace } = useCanEdit();
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
   useEffect(() => {
-    void api.listCollections().then((res) => setCollections(res.collections ?? []));
-  }, []);
+    void listCollections().then(setCollections);
+  }, [listCollections, activeSpaceId]);
 
   useEffect(() => {
     if (vaults.length === 0) return;
@@ -155,15 +160,16 @@ export default function MobileDashboard({
     [tasks],
   );
 
+  // Tags of the active space's vaults (other spaces' tags stay loaded).
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const tags of Object.values(tagsByVault)) {
-      for (const t of tags) counts.set(t.name, (counts.get(t.name) ?? 0) + t.count);
+    for (const v of vaults) {
+      for (const t of tagsByVault[v.id] ?? []) counts.set(t.name, (counts.get(t.name) ?? 0) + t.count);
     }
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => ({ name, count }));
-  }, [tagsByVault]);
+  }, [tagsByVault, vaults]);
 
   const openTaskNote = (task: (typeof tasks)[number]) => {
     if (task.vaultId === "journal") void openJournalNote(task.noteId);
@@ -188,8 +194,8 @@ export default function MobileDashboard({
           dashboard variant), so no local title/greeting/actions here. */}
 
       {/* Row 1: Quick actions */}
-      <div className="grid grid-cols-3 gap-2">
-        <QuickAction icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />
+      <div className={canEditSpace ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+        {canEditSpace && <QuickAction icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />}
         <QuickAction icon={<CalendarDays size={22} />} label="Today" onClick={onOpenDaily} />
         <QuickAction icon={<Search size={22} />} label="Search" onClick={onOpenSearch} />
       </div>
@@ -389,7 +395,7 @@ export default function MobileDashboard({
           onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
           onCollectionChanged={(c) => {
             setGalleryCollection(c);
-            void api.listCollections().then((res) => setCollections(res.collections ?? []));
+            void listCollections().then(setCollections);
           }}
         />
       )}
@@ -397,7 +403,7 @@ export default function MobileDashboard({
         open={formOpen}
         onClose={() => setFormOpen(false)}
         onSaved={() => {
-          void api.listCollections().then((res) => setCollections(res.collections ?? []));
+          void listCollections().then(setCollections);
         }}
       />
     </main>

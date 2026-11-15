@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
+import { useCanEdit } from "@/components/useCanEdit";
 
 type ShortcutsProps = {
   onOpenPalette: () => void;
@@ -27,6 +28,7 @@ type ShortcutsProps = {
 export default function Shortcuts({ onOpenPalette }: ShortcutsProps) {
   const { create, forceSave, activeId, closeTab, openTabs, openTab, openDaily } =
     useNotes();
+  const { canEditNote } = useCanEdit();
 
   // Ctrl/Cmd+Shift+L — jump back to the note tree from anywhere (editor,
   // dashboard, etc.). Always available, regardless of focus.
@@ -64,7 +66,7 @@ export default function Shortcuts({ onOpenPalette }: ShortcutsProps) {
       if (key === "s" && !e.shiftKey && !e.altKey) {
         if (activeId) {
           e.preventDefault();
-          void forceSave();
+          if (canEditNote(activeId)) void forceSave();
         }
         return;
       }
@@ -143,6 +145,7 @@ export default function Shortcuts({ onOpenPalette }: ShortcutsProps) {
     create,
     forceSave,
     activeId,
+    canEditNote,
     closeTab,
     openTabs,
     openTab,

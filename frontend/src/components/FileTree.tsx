@@ -74,6 +74,7 @@ import ContextMenu, { type MenuItem } from "./ContextMenu";
 import DeleteConfirm from "./DeleteConfirm";
 import FolderCreateDialog from "./FolderCreateDialog";
 import JournalCalendar from "./JournalCalendar";
+import { useCanEdit } from "./useCanEdit";
 
 type TreeNode = {
   name: string;
@@ -207,7 +208,10 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     noteVaultMap,
     openDaily,
     renameFolder,
+    listCollections,
+    activeSpaceId,
   } = useNotes();
+  const { canEditSpace, canEditVault } = useCanEdit();
   const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
   // Persist folder open/closed state, so a reload restores the same tree
   // shape. Hydrated synchronously via the state initializer (several
@@ -236,15 +240,16 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     [openMap],
   );
 
-  // Load the collection definitions so collection cards can map an item's
-  // collection id to its display name for accurate counts. Also reload on
-  // nexote:refresh-data (e.g. after a new collection is created).
+  // Load the active space's collection definitions so collection cards can
+  // map an item's collection id to its display name for accurate counts.
+  // Also reload on nexote:refresh-data (e.g. after a new collection is
+  // created) and when the space changes.
   useEffect(() => {
-    const reload = () => void api.listCollections().then((res) => setCollections(res.collections ?? []));
+    const reload = () => void listCollections().then(setCollections);
     reload();
     window.addEventListener("nexote:refresh-data", reload);
     return () => window.removeEventListener("nexote:refresh-data", reload);
-  }, []);
+  }, [listCollections, activeSpaceId]);
 
   // Names of every collection (folder-per-collection). Used to strip stale
   // collection folders (created by older item forms, e.g. myvault/Vinyls) out
@@ -752,6 +757,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     (e: React.MouseEvent, vaultId: string, vaultName: string) => {
       e.preventDefault();
       e.stopPropagation();
+      // Viewers: every vault action changes the vault.
+      if (!canEditVault(vaultId)) return;
       setCtxMenu({
         x: e.clientX,
         y: e.clientY,
@@ -788,7 +795,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         ],
       });
     },
-    [create, openFolderDialog],
+    [create, openFolderDialog, canEditVault],
   );
 
   // Close icon picker on outside mousedown (not click — the opening
@@ -862,13 +869,15 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }, [vaults, allVaultData, journalNotes]);
   const noteIcon = useCallback((id: string) => noteIconMap[id], [noteIconMap]);
 
+  // Also reached via the hidden buttons from shortcuts, the palette and the
+  // mobile sidebar, so this is where viewers are stopped.
   const handleCreateHere = useCallback(() => {
-    void create();
-  }, [create]);
+    if (canEditSpace) void create();
+  }, [create, canEditSpace]);
 
   const handleNewFolderHere = useCallback(() => {
-    openFolderDialog();
-  }, [openFolderDialog]);
+    if (canEditSpace) openFolderDialog();
+  }, [openFolderDialog, canEditSpace]);
 
   useEffect(() => {
     onControlsReady?.({
@@ -942,8 +951,9 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }, []);
 
   // Execute the move chosen in the dialog. Moving within the active vault uses
-  // moveNote (path change); moving to another vault routes through
-  // moveNoteToVault, which resolves the note's real source vault itself.
+  // moveNote (path change); moving to another vault (possibly in another
+  // space) routes through moveNoteToVault, which resolves the note's real
+  // source vault itself and lands it in the chosen folder.
   const performMoveTo = useCallback(
     async (dstVaultId: string, dstPath: string) => {
       const id = moveTo?.noteId;
@@ -952,7 +962,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       if (dstVaultId === (activeVault?.id ?? "")) {
         await moveNote(id, dstPath);
       } else {
-        await moveNoteToVault(id, dstVaultId);
+        await moveNoteToVault(id, dstVaultId, dstPath);
       }
     },
     [moveTo, activeVault, moveNote, moveNoteToVault],
@@ -1321,8 +1331,6 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
 
       <MoveToDialog
         open={moveTo !== null}
-        vaults={vaults}
-        allVaultData={allVaultData}
         activeVaultId={activeVault?.id ?? ""}
         onClose={() => setMoveTo(null)}
         onMove={performMoveTo}
@@ -1527,6 +1535,8 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
   const isDragOver = dragOverPath === node.path;
   const isSelected = treeSelectedNav === `folder:${node.path}`;
   const isFolderRenaming = renaming?.id === `folder:${node.path}`;
+  // Every entry of the folder menu changes the vault.
+  const { canEditSpace } = useCanEdit();
 
   return (
     <li>
@@ -1552,6 +1562,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
+          if (!canEditSpace) return;
           onContextMenu(e.clientX, e.clientY, [
             {
               label: "New note",
@@ -1786,6 +1797,7 @@ function NoteItem(
   const isBookmarked = bookmarks.has(note.id);
   const isShortcut = shortcuts.has(note.id);
   const isSelected = treeSelectedNav === `note:${note.id}`;
+  const canEdit = useCanEdit().canEditNote(note.id);
 
   return (
     <li>
@@ -1795,7 +1807,7 @@ function NoteItem(
         // mouse. On touch devices `draggable` hijacks the first tap as a drag
         // start and suppresses the click, so a note can't be opened — disable
         // it there.
-        draggable={!isCoarsePointer}
+        draggable={!isCoarsePointer && canEdit}
         onDragStart={(e) => onNoteDragStart(e, note.id)}
         onMouseEnter={() => setTreeSelectedNav?.(`note:${note.id}`)}
         onClick={() => !isRenaming && onOpen(note.id)}
@@ -1809,24 +1821,28 @@ function NoteItem(
               onClick: () => onOpen(note.id),
             },
             { label: "", onClick: () => {}, separator: true },
-            {
-              label: "Make a copy",
-              icon: <Copy className="h-4 w-4" />,
-              onClick: () => onCopy(note.id),
-            },
-            ...(noteParentPath !== undefined
-              ? [{
-                  label: "New folder here…",
-                  icon: <FolderPlus className="h-4 w-4" />,
-                  onClick: () => onNewFolderInFolder(noteParentPath),
-                }]
-              : []),
-            ...(onMoveTo
-              ? [{
-                  label: "Move to…",
-                  icon: <FolderInput className="h-4 w-4" />,
-                  onClick: () => onMoveTo(note.id),
-                }]
+            ...(canEdit
+              ? [
+                  {
+                    label: "Make a copy",
+                    icon: <Copy className="h-4 w-4" />,
+                    onClick: () => onCopy(note.id),
+                  },
+                  ...(noteParentPath !== undefined
+                    ? [{
+                        label: "New folder here…",
+                        icon: <FolderPlus className="h-4 w-4" />,
+                        onClick: () => onNewFolderInFolder(noteParentPath),
+                      }]
+                    : []),
+                  ...(onMoveTo
+                    ? [{
+                        label: "Move to…",
+                        icon: <FolderInput className="h-4 w-4" />,
+                        onClick: () => onMoveTo(note.id),
+                      }]
+                    : []),
+                ]
               : []),
             {
               label: isShortcut ? "Remove shortcut" : "Add shortcut",
@@ -1840,7 +1856,7 @@ function NoteItem(
               icon: <Bookmark className="h-4 w-4" />,
               onClick: () => onBookmark(note.id),
             },
-            ...(noteIcon
+            ...(noteIcon && canEdit
               ? [{
                   label: "Pick icon",
                   icon: <Palette className="h-4 w-4" />,
@@ -1853,20 +1869,22 @@ function NoteItem(
                 }]
               : []),
           ];
-          items.push(
-            { label: "", onClick: () => {}, separator: true },
-            {
-              label: "Rename",
-              icon: <Edit3 className="h-4 w-4" />,
-              onClick: () => setRenaming({ id: note.id, value: note.title }),
-            },
-            {
-              label: "Delete",
-              icon: <Trash2 className="h-4 w-4" />,
-              danger: true,
-              onClick: () => onDelete(note.id),
-            },
-          );
+          if (canEdit) {
+            items.push(
+              { label: "", onClick: () => {}, separator: true },
+              {
+                label: "Rename",
+                icon: <Edit3 className="h-4 w-4" />,
+                onClick: () => setRenaming({ id: note.id, value: note.title }),
+              },
+              {
+                label: "Delete",
+                icon: <Trash2 className="h-4 w-4" />,
+                danger: true,
+                onClick: () => onDelete(note.id),
+              },
+            );
+          }
           onContextMenu(e.clientX, e.clientY, items);
         }}
         className={[
@@ -1921,7 +1939,7 @@ function NoteItem(
         ) : (
           <button
             type="button"
-            onDoubleClick={() => setRenaming({ id: note.id, value: note.title })}
+            onDoubleClick={() => canEdit && setRenaming({ id: note.id, value: note.title })}
             className="tree-row-title min-w-0 flex-1 truncate text-left"
             style={{
               fontSize: 13,
@@ -1932,19 +1950,21 @@ function NoteItem(
             {note.title || "Untitled"}
           </button>
         )}
-        <button
-          type="button"
-          aria-label="Delete note"
-          title="Delete note"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(note.id);
-          }}
-          className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-          style={{ color: active ? undefined : "var(--muted-foreground)" }}
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            aria-label="Delete note"
+            title="Delete note"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(note.id);
+            }}
+            className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+            style={{ color: active ? undefined : "var(--muted-foreground)" }}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
     </li>
   );
@@ -2119,6 +2139,7 @@ function DetailedNoteList({
   bookmarks: Set<string>;
   shortcuts: Set<string>;
 }) {
+  const { canEditNote } = useCanEdit();
   // Sort by updatedAt desc, then group into time buckets.
   const grouped = useMemo(() => {
     const sorted = [...notes].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -2165,18 +2186,8 @@ function DetailedNoteList({
                         e.stopPropagation();
                         const isBookmarked = bookmarks.has(n.id);
                         const isShortcut = shortcuts.has(n.id);
-                        onContextMenu(e.clientX, e.clientY, [
-                          {
-                            label: "Open",
-                            icon: <SquareArrowOutUpRight className="h-4 w-4" />,
-                            onClick: () => onOpen(n.id),
-                          },
-                          { label: "", onClick: () => {}, separator: true },
-                          {
-                            label: "Make a copy",
-                            icon: <Copy className="h-4 w-4" />,
-                            onClick: () => onCopy(n.id),
-                          },
+                        const canEdit = canEditNote(n.id);
+                        const personal: MenuItem[] = [
                           {
                             label: isShortcut ? "Remove shortcut" : "Add shortcut",
                             icon: isShortcut
@@ -2189,23 +2200,41 @@ function DetailedNoteList({
                             icon: <Bookmark className="h-4 w-4" />,
                             onClick: () => onBookmark(n.id),
                           },
+                        ];
+                        onContextMenu(e.clientX, e.clientY, [
                           {
-                            label: "Pick icon",
-                            icon: <Palette className="h-4 w-4" />,
-                            onClick: () =>
-                              window.dispatchEvent(
-                                new CustomEvent("nexote:note-icon-picker", {
-                                  detail: { noteId: n.id, x: e.clientX, y: e.clientY },
-                                }),
-                              ),
+                            label: "Open",
+                            icon: <SquareArrowOutUpRight className="h-4 w-4" />,
+                            onClick: () => onOpen(n.id),
                           },
                           { label: "", onClick: () => {}, separator: true },
-                          {
-                            label: "Delete",
-                            icon: <Trash2 className="h-4 w-4" />,
-                            danger: true,
-                            onClick: () => onDelete(n.id),
-                          },
+                          ...(canEdit
+                            ? [
+                                {
+                                  label: "Make a copy",
+                                  icon: <Copy className="h-4 w-4" />,
+                                  onClick: () => onCopy(n.id),
+                                },
+                                ...personal,
+                                {
+                                  label: "Pick icon",
+                                  icon: <Palette className="h-4 w-4" />,
+                                  onClick: () =>
+                                    window.dispatchEvent(
+                                      new CustomEvent("nexote:note-icon-picker", {
+                                        detail: { noteId: n.id, x: e.clientX, y: e.clientY },
+                                      }),
+                                    ),
+                                },
+                                { label: "", onClick: () => {}, separator: true },
+                                {
+                                  label: "Delete",
+                                  icon: <Trash2 className="h-4 w-4" />,
+                                  danger: true,
+                                  onClick: () => onDelete(n.id),
+                                },
+                              ]
+                            : personal),
                         ]);
                       }}
                       className={[
@@ -2519,6 +2548,7 @@ function TagsView({
   onDeleteTag: (vaultId: string, tag: string) => void;
   onRefreshTags: (vaultId: string) => void;
 }) {
+  const { canEditVault } = useCanEdit();
   useEffect(() => {
     for (const v of vaults) onRefreshTags(v.id);
   }, [vaults, onRefreshTags]);
@@ -2677,6 +2707,9 @@ function TagsView({
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  // Tags change only in the vaults the user may edit.
+                  const editable = t.vaults.filter((vid) => canEditVault(vid));
+                  if (editable.length === 0) return;
                   onContextMenu(e.clientX, e.clientY, [
                     {
                       label: "Rename tag",
@@ -2684,7 +2717,7 @@ function TagsView({
                       onClick: () => {
                         const newName = window.prompt("Rename tag:", t.name);
                         if (newName && newName.trim() && newName !== t.name) {
-                          for (const vid of t.vaults) onRenameTag(vid, t.name, newName.trim());
+                          for (const vid of editable) onRenameTag(vid, t.name, newName.trim());
                         }
                       },
                     },
@@ -2694,7 +2727,7 @@ function TagsView({
                       danger: true,
                       onClick: () => {
                         if (window.confirm(`Delete tag "${t.name}" from all notes?`)) {
-                          for (const vid of t.vaults) onDeleteTag(vid, t.name);
+                          for (const vid of editable) onDeleteTag(vid, t.name);
                         }
                       },
                     },
@@ -2753,6 +2786,7 @@ function TasksView({
   onOpenNote: (vaultId: string, noteId: string) => void;
   onToggle: (vaultId: string, noteId: string, line: number, checked: boolean) => void;
 }) {
+  const { canEditVault } = useCanEdit();
   const [showCompleted, setShowCompleted] = useState(false);
 
   const unchecked = useMemo(
@@ -2810,11 +2844,13 @@ function TasksView({
           <button
             type="button"
             aria-label={t.checked ? "Mark as open" : "Mark as done"}
+            disabled={!canEditVault(t.vaultId)}
+            title={canEditVault(t.vaultId) ? undefined : "View only"}
             onClick={(e) => {
               e.stopPropagation();
               onToggle(t.vaultId, t.noteId, t.line, !t.checked);
             }}
-            className="mt-0.5 flex shrink-0 items-center justify-center transition-colors"
+            className="mt-0.5 flex shrink-0 items-center justify-center transition-colors disabled:opacity-40"
             style={{
               width: 20,
               height: 20,
@@ -3058,6 +3094,7 @@ function CollectionsView({
   collections: CollectionMeta[];
   collectionItemCounts: Record<string, number>;
 }) {
+  const { canEditSpace } = useCanEdit();
   const sorted = collections
     .filter((c) => !c.hidden)
     .sort((a, b) => {
@@ -3067,26 +3104,28 @@ function CollectionsView({
 
   return (
     <div className="pt-1">
-      <div className="mb-1.5 flex items-center justify-end px-1.5">
-        <button
-          type="button"
-          aria-label="New collection"
-          title="New collection"
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent("nexote:new-collection"),
-            )
-          }
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-        >
-          <FilePlus size={15} />
-        </button>
-      </div>
+      {canEditSpace && (
+        <div className="mb-1.5 flex items-center justify-end px-1.5">
+          <button
+            type="button"
+            aria-label="New collection"
+            title="New collection"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("nexote:new-collection"),
+              )
+            }
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+          >
+            <FilePlus size={15} />
+          </button>
+        </div>
+      )}
       {sorted.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
           <Disc3 size={20} style={{ color: "var(--muted-foreground)", opacity: 0.6 }} />
           <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-            No collections yet. Click + to create one.
+            {canEditSpace ? "No collections yet. Click + to create one." : "No collections yet."}
           </div>
         </div>
       ) : (
@@ -3163,6 +3202,8 @@ function ImagesView({
   onOpenNote: (vaultId: string, noteId: string) => void;
   onOpenJournalNote: (noteId: string) => void;
 }) {
+  const { activeId } = useNotes();
+  const { canEditVault, canEditNote } = useCanEdit();
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<ImageItem | null>(null);
@@ -3350,17 +3391,19 @@ function ImagesView({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    type="button"
-                    title="Insert into note"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      insertImage(item);
-                    }}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-                  >
-                    <SquareArrowOutUpRight size={14} />
-                  </button>
+                  {canEditNote(activeId) && (
+                    <button
+                      type="button"
+                      title="Insert into note"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        insertImage(item);
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+                    >
+                      <SquareArrowOutUpRight size={14} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     title="Copy markdown link"
@@ -3372,17 +3415,19 @@ function ImagesView({
                   >
                     <Copy size={14} />
                   </button>
-                  <button
-                    type="button"
-                    title="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteImage(item);
-                    }}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  {canEditVault(item.vaultId) && (
+                    <button
+                      type="button"
+                      title="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteImage(item);
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             </li>
@@ -3418,10 +3463,12 @@ function ImagesView({
                   : " · not in any note"}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <button type="button" onClick={() => insertImage(preview)} className={buttonClass}>
-                  <SquareArrowOutUpRight size={13} />
-                  Insert into note
-                </button>
+                {canEditNote(activeId) && (
+                  <button type="button" onClick={() => insertImage(preview)} className={buttonClass}>
+                    <SquareArrowOutUpRight size={13} />
+                    Insert into note
+                  </button>
+                )}
                 <button type="button" onClick={() => copyMarkdown(preview)} className={buttonClass}>
                   <Copy size={13} />
                   Copy link
@@ -3444,14 +3491,16 @@ function ImagesView({
                     Open note
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => deleteImage(preview)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10"
-                >
-                  <Trash2 size={13} />
-                  Delete
-                </button>
+                {canEditVault(preview.vaultId) && (
+                  <button
+                    type="button"
+                    onClick={() => deleteImage(preview)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10"
+                  >
+                    <Trash2 size={13} />
+                    Delete
+                  </button>
+                )}
                 <button type="button" onClick={() => setPreview(null)} className={buttonClass}>
                   <X size={13} />
                   Close
@@ -3466,23 +3515,21 @@ function ImagesView({
 }
 
 // --- Move To Dialog ---
-// Lets the user move a note to a folder (in any vault) or to another vault.
-// Lists each vault with its folders as a collapsible tree of destinations.
+// Lets the user move a note to a folder of any vault they may edit, across
+// all spaces: grouped by space (current space first), each vault with its
+// folders. A note moved into another space simply leaves this tree.
 export function MoveToDialog({
   open,
-  vaults,
-  allVaultData,
   activeVaultId,
   onClose,
   onMove,
 }: {
   open: boolean;
-  vaults: VaultMeta[];
-  allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
   activeVaultId: string;
   onClose: () => void;
   onMove: (dstVaultId: string, dstPath: string) => void;
 }) {
+  const { allVaults, allVaultData, spaces, activeSpaceId } = useNotes();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -3491,6 +3538,17 @@ export function MoveToDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  const groups = useMemo(() => {
+    const targets = allVaults.filter((v) => v.role !== "viewer" && !isCollectionsVault(v));
+    const ordered = [
+      ...spaces.filter((s) => s.id === activeSpaceId),
+      ...spaces.filter((s) => s.id !== activeSpaceId),
+    ];
+    return ordered
+      .map((s) => ({ space: s, vaults: targets.filter((v) => v.spaceId === s.id) }))
+      .filter((g) => g.vaults.length > 0);
+  }, [allVaults, spaces, activeSpaceId]);
 
   if (!open) return null;
 
@@ -3553,12 +3611,25 @@ export function MoveToDialog({
           </p>
         </div>
         <div className="flex-1 overflow-y-auto px-2 py-2">
-          {vaults.length === 0 && (
+          {groups.length === 0 && (
             <div className="px-2 py-3 text-sm text-muted-foreground">
               No vaults available.
             </div>
           )}
-          {vaults.filter((v) => !isCollectionsVault(v)).map(renderVault)}
+          {/* One space: plain vault list, as before spaces existed. */}
+          {groups.length === 1
+            ? groups[0].vaults.map(renderVault)
+            : groups.map(({ space, vaults }) => (
+                <section key={space.id} className="mb-2 last:mb-0">
+                  <div className="flex items-center gap-1.5 px-1 pb-1 pt-1.5 text-xs font-medium text-foreground">
+                    {space.name}
+                    {space.id === activeSpaceId && (
+                      <span className="text-[10px] font-normal text-muted-foreground">current space</span>
+                    )}
+                  </div>
+                  <div className="border-l border-border pl-1.5">{vaults.map(renderVault)}</div>
+                </section>
+              ))}
         </div>
         <div className="flex shrink-0 justify-end border-t border-border px-4 py-3">
           <button

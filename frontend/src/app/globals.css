@@ -806,13 +806,14 @@ body {
   }
 }
 
-/* Mobile pager — a "triple width canvas": the sidebar pane (left), the
- * note-view pane (center) and the right pane (table of contents for a note,
- * quick capture on the dashboard) sit side by side in one track that is
- * 300vw wide. Focusing a pane just pans the track, so every pane keeps its
- * full viewport and nothing is squeezed. Focus is driven by data-pager-focus
- * on the shell (sidebar / editor / toc); the swipe hook overrides with an
- * inline transform mid-drag and clears it to let the transition snap. */
+/* Mobile pager — a "quadruple width canvas": the spaces pane, the sidebar
+ * pane (note tree), the note-view pane and the right pane (table of contents
+ * for a note, quick capture on the dashboard) sit side by side in one track
+ * that is 400vw wide. Focusing a pane just pans the track, so every pane
+ * keeps its full viewport and nothing is squeezed. Focus is driven by
+ * data-pager-focus on the shell (spaces / sidebar / editor / toc); the swipe
+ * hook overrides with an inline transform mid-drag and clears it to let the
+ * transition snap. */
 .mob-pager {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform;
@@ -824,14 +825,17 @@ html:has(.mob-shell-root),
 html:has(.mob-shell-root) body {
   overscroll-behavior-x: none;
 }
-.mob-shell-root[data-pager-focus="sidebar"] .mob-pager {
+.mob-shell-root[data-pager-focus="spaces"] .mob-pager {
   transform: translateX(0);
 }
+.mob-shell-root[data-pager-focus="sidebar"] .mob-pager {
+  transform: translateX(-25%);
+}
 .mob-shell-root[data-pager-focus="editor"] .mob-pager {
-  transform: translateX(calc(-100% / 3));
+  transform: translateX(-50%);
 }
 .mob-shell-root[data-pager-focus="toc"] .mob-pager {
-  transform: translateX(calc(-200% / 3));
+  transform: translateX(-75%);
 }
 /* TOC jump: keep the jumped-to heading from sliding under the mobile top bar
  * (which overlays the editor and auto-hides). */

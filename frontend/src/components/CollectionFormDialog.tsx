@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
 import type { CollectionField, CollectionFieldType, CollectionMeta } from "@/lib/api";
+import { useNotes } from "@/lib/notes-context";
 
 type Props = {
   open: boolean;
@@ -34,6 +35,7 @@ export default function CollectionFormDialog({
   const [fields, setFields] = useState<CollectionField[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { activeSpaceId } = useNotes();
 
   const isEdit = Boolean(collection);
 
@@ -89,14 +91,15 @@ export default function CollectionFormDialog({
     setSaving(true);
     setError(null);
     try {
+      if (!activeSpaceId) throw new Error("No space is open");
       if (collection) {
-        await api.updateCollection(collection.id, {
+        await api.updateCollection(activeSpaceId, collection.id, {
           name: trimmed,
           icon,
           fields: cleanFields,
         });
       } else {
-        await api.createCollection({ name: trimmed, icon, fields: cleanFields });
+        await api.createCollection(activeSpaceId, { name: trimmed, icon, fields: cleanFields });
       }
       onSaved();
       onClose();
