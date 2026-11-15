@@ -261,11 +261,13 @@ func (gs *GitSync) InitRepo() error {
 
 // writeGitignoreLocked writes the root .gitignore: the whole home is
 // committed except history snapshots, git.json (it holds the remote
-// credentials) and, when excluded, images. Note files carry their titles as
-// names, so the committed tree reads like the vault itself.
+// credentials), login sessions and invite links (auth/ except users.json,
+// which holds only public passkey data) and, when excluded, images. Note
+// files carry their titles as names, so the committed tree reads like the
+// vault itself.
 // Caller must hold gs.mu.
 func (gs *GitSync) writeGitignoreLocked() error {
-	lines := []string{"*/.history/", ".history/", "/git.json"}
+	lines := []string{"*/.history/", ".history/", "/git.json", "/auth/*", "!/auth/users.json"}
 	if !gs.cfg.IncludeImages {
 		lines = append(lines,
 			"*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.avif", "*.svg", "*.bmp")

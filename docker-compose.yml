@@ -25,6 +25,11 @@ services:
       NEXOTE_PORT: "8080"
       NEXOTE_BACKEND_URL: http://127.0.0.1:8080
       PORT: "3000"
+      # The address you open Nexote at (your domain behind the reverse
+      # proxy). Passkeys are bound to its host name, so it must be https on a
+      # domain (not an IP). Set it in a .env file next to this one:
+      #   NEXOTE_PUBLIC_URL=https://notes.example.com
+      NEXOTE_PUBLIC_URL: ${NEXOTE_PUBLIC_URL:-http://localhost:3000}
     restart: unless-stopped
 
 volumes:

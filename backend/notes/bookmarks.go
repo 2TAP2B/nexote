@@ -105,18 +105,58 @@ func (l *idList) write(ids []string) error {
 	return os.WriteFile(l.path(), data, 0o644)
 }
 
-// Bookmarks is a persisted set of note IDs the user has bookmarked.
+// Bookmarks is a persisted set of note IDs a user has bookmarked in a vault.
 type Bookmarks struct{ *idList }
 
-// NewBookmarks creates a Bookmarks store rooted at the given notes directory.
-func NewBookmarks(dir string) *Bookmarks {
-	return &Bookmarks{newIDList(dir, ".bookmarks.json")}
+// NewBookmarks creates the user's Bookmarks store in the given notes
+// directory.
+func NewBookmarks(dir, userID string) *Bookmarks {
+	return &Bookmarks{newIDList(dir, ".bookmarks-"+userID+".json")}
 }
 
-// Shortcuts is a persisted set of note IDs pinned to the top of the tree.
+// Shortcuts is a persisted set of note IDs a user pinned to the top of a
+// vault's tree.
 type Shortcuts struct{ *idList }
 
-// NewShortcuts creates a Shortcuts store rooted at the given notes directory.
-func NewShortcuts(dir string) *Shortcuts {
-	return &Shortcuts{newIDList(dir, ".shortcuts.json")}
+// NewShortcuts creates the user's Shortcuts store in the given notes
+// directory.
+func NewShortcuts(dir, userID string) *Shortcuts {
+	return &Shortcuts{newIDList(dir, ".shortcuts-"+userID+".json")}
+}
+
+// listFilePatterns match every user's bookmark and shortcut files.
+var listFilePatterns = []string{".bookmarks-*.json", ".shortcuts-*.json"}
+
+// forgetInLists removes a note id from every user's lists in dir.
+func forgetInLists(dir, noteID string) error {
+	var firstErr error
+	for _, pattern := range listFilePatterns {
+		files, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, f := range files {
+			if err := newIDList(dir, filepath.Base(f)).Remove(noteID); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+// AdoptLegacyLists gives the vault's pre-accounts bookmark and shortcut
+// files (".bookmarks.json", ".shortcuts.json") to userID. It never
+// overwrites a list the user already has.
+func AdoptLegacyLists(dir, userID string) error {
+	for _, kind := range []string{"bookmarks", "shortcuts"} {
+		legacy := filepath.Join(dir, "."+kind+".json")
+		target := filepath.Join(dir, "."+kind+"-"+userID+".json")
+		if _, err := os.Stat(legacy); err != nil {
+			continue
+		}
+		if _, err := os.Stat(target); err == nil {
+			continue
+		}
+		if err := os.Rename(legacy, target); err != nil {
+			return err
+		}
+	}
+	return nil
 }

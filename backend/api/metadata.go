@@ -101,7 +101,12 @@ func discogsRequest(ctx context.Context, path string, token string) ([]byte, err
 	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 
+// getMetadataConfig returns the lookup API keys (admins only: lookups run
+// server-side for everyone, the keys themselves are secrets).
 func (h *Handler) getMetadataConfig(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	cfg, err := LoadMetadataConfig(h.Registry.Root())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -111,6 +116,9 @@ func (h *Handler) getMetadataConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setMetadataConfig(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	// Clients send only the fields their settings forms know: the mobile
 	// view sends just the Discogs token, desktop may also send the Google
 	// Books key. Patch, don't replace — absent fields keep their value.
@@ -711,21 +719,11 @@ func (h *Handler) metadataCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the store: journal items live in the journal pseudo-vault.
-	var store *notes.Store
-	if in.VaultID == "journal" {
-		if h.JournalStore == nil {
-			writeError(w, http.StatusServiceUnavailable, errors.New("journal store not available"))
-			return
-		}
-		store = h.JournalStore
-	} else {
-		var err error
-		store, err = h.Registry.Store(in.VaultID)
-		if err != nil {
-			h.writeRegistryError(w, err)
-			return
-		}
+	// Resolve the store (a vault the user may edit, or their own journal).
+	store, err := h.storeFor(currentUser(r), in.VaultID, notes.SpaceEditor)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)

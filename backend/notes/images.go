@@ -245,6 +245,47 @@ func (s *Store) MigrateImagesTo(body string, dst *Store, dstVaultID string) (str
 	return newBody, nil
 }
 
+// CopyImagesTo copies the image files the body references under srcVaultID
+// from this store into dst (keeping the relative folder) and rewrites those
+// URLs to dstVaultID; other image URLs stay as they are. Used when text
+// leaves a personal store for a vault others can see (a quick-capture memo
+// made into a note), so collaborators can load the images. Copies, not
+// moves: the source text may keep referencing them.
+func (s *Store) CopyImagesTo(body, srcVaultID string, dst *Store, dstVaultID string) (string, error) {
+	newBody := body
+	for _, m := range imageURLRe.FindAllStringSubmatch(body, -1) {
+		if m[1] != srcVaultID {
+			continue
+		}
+		rel := m[2]
+		if !IsImageName(filepath.Base(rel)) {
+			continue
+		}
+		src, ok := s.safeImagePath(rel)
+		if !ok {
+			continue
+		}
+		dstFile, ok := dst.safeImagePath(rel)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue // a dangling reference stays dangling
+		}
+		if err := os.MkdirAll(filepath.Dir(dstFile), 0o755); err != nil {
+			return body, fmt.Errorf("create target image dir: %w", err)
+		}
+		if err := os.WriteFile(dstFile, data, 0o644); err != nil {
+			return body, fmt.Errorf("copy image %q: %w", rel, err)
+		}
+		newBody = strings.ReplaceAll(newBody,
+			"/api/vaults/"+srcVaultID+"/images/"+rel,
+			"/api/vaults/"+dstVaultID+"/images/"+rel)
+	}
+	return newBody, nil
+}
+
 // imageDir returns the on-disk directory for images of a note in the given
 // folder (empty = vault root).
 func (s *Store) imageDir(folder string) string {
