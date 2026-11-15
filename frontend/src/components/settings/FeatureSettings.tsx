@@ -61,16 +61,16 @@ export function FeatureSettings() {
 
   return (
     <SettingsPage title="Features">
-      <SettingGroup heading="Sidebar and dashboard">
+      <SettingGroup heading="Sidebar">
         <ToggleSetting
           name="Tags"
-          description="Tags view in the sidebar and the tag list on the dashboard."
+          description="Tags view in the sidebar."
           checked={settings.showTagsSection}
           onChange={(v) => updateSettings({ showTagsSection: v })}
         />
         <ToggleSetting
           name="Tasks"
-          description="Tasks view in the sidebar and open tasks on the dashboard."
+          description="Tasks view in the sidebar."
           checked={settings.showTasksSection}
           onChange={(v) => updateSettings({ showTasksSection: v })}
         />

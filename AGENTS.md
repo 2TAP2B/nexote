@@ -113,6 +113,7 @@ touches**. Do not re-read the whole repo per session.
 | Add/change a REST route | `api/handler.go` **and** `src/lib/api.ts` (keep in sync) |
 | Change note metadata / frontmatter | `notes/frontmatter.go` (+ `store.go` if persistence changes) |
 | Vault or collection management | `notes/vaults.go`, `notes/collections.go`, `handler.go`, `NotesProvider.tsx` |
+| Collection item lookup (records, books) | `api/metadata.go` (Discogs; books: Google Books → Open Library → `api/dnb.go` Deutsche Nationalbibliothek, which goes first after Google for 978-3 ISBNs; search hits without an ISBN carry `gb:`/`ol:` ids), `CollectionItemForm.tsx` |
 | Note history / restore | `notes/history.go`, `NoteHistoryPanel.tsx` |
 | Image upload / migration | `notes/images.go`, `handler.go` image routes |
 | AI features | `api/ai.go`, `src/lib/ai.ts`, `AICommandPanel.tsx`; voice memos: `api.transcribeAudio` (`src/lib/api.ts`) + `mobile/useVoiceRecorder.ts`. AI settings are per device (localStorage). |

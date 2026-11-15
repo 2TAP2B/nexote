@@ -121,7 +121,7 @@ export default function MobileDashboard({
       items.push({ id: j.id, title: j.title, path: j.path, updatedAt: j.updatedAt, vaultId: "journal", source: "journal" });
     }
     items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    return items;
+    return items.slice(0, 10);
   }, [vaults, allVaultData, journalNotes]);
 
   const bookmarkNotes = useMemo(() => {
@@ -194,14 +194,16 @@ export default function MobileDashboard({
           dashboard variant), so no local title/greeting/actions here. */}
 
       {/* Row 1: Quick actions */}
-      <div className={canEditSpace ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
-        {canEditSpace && <QuickAction icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />}
-        <QuickAction icon={<CalendarDays size={22} />} label="Today" onClick={onOpenDaily} />
-        <QuickAction icon={<Search size={22} />} label="Search" onClick={onOpenSearch} />
-      </div>
+      {settings.dashActions && (
+        <div className={canEditSpace ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+          {canEditSpace && <QuickAction icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />}
+          <QuickAction icon={<CalendarDays size={22} />} label="Today" onClick={onOpenDaily} />
+          <QuickAction icon={<Search size={22} />} label="Search" onClick={onOpenSearch} />
+        </div>
+      )}
 
       {/* Row 2: Shortcuts (3 preview, clickable header → all shortcuts) */}
-      {shortcutNotes.length > 0 && (
+      {settings.dashShortcuts && shortcutNotes.length > 0 && (
         <CollapsibleSection
           icon={<Star size={16} />}
           title="Shortcuts"
@@ -239,7 +241,7 @@ export default function MobileDashboard({
             Tap "New note" to create your first note, or open the journal.
           </p>
         </div>
-      ) : (
+      ) : settings.dashRecents && (
         <CollapsibleSection
           icon={<History size={16} />}
           title="Continue where you left off"
@@ -263,7 +265,7 @@ export default function MobileDashboard({
       )}
 
       {/* Pinned collections */}
-      {collections.filter((c) => c.pinned && !c.hidden).length > 0 && (
+      {settings.dashCollections && collections.filter((c) => c.pinned && !c.hidden).length > 0 && (
         <section className="flex flex-col gap-2">
           <SectionHeading icon={<Disc3 size={16} />} title="Collections" />
           <div className="grid grid-cols-2 gap-2">
@@ -284,7 +286,7 @@ export default function MobileDashboard({
       )}
 
       {/* Bookmarks */}
-      {bookmarkNotes.length > 0 && (
+      {settings.dashBookmarks && bookmarkNotes.length > 0 && (
         <CollapsibleSection
           icon={<Bookmark size={16} />}
           title="Bookmarks"
@@ -311,7 +313,7 @@ export default function MobileDashboard({
       )}
 
       {/* Todo list */}
-      {settings.showTasksSection && openTasks.length > 0 && (
+      {settings.dashTasks && openTasks.length > 0 && (
         <CollapsibleSection
           icon={<ListTodo size={16} />}
           title="Todo"
@@ -356,7 +358,7 @@ export default function MobileDashboard({
       )}
 
       {/* Tags at the bottom */}
-      {settings.showTagsSection && allTags.length > 0 && (
+      {settings.dashTags && allTags.length > 0 && (
         <CollapsibleSection
           icon={<Hash size={16} />}
           title="Tags"

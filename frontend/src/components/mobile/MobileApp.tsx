@@ -468,10 +468,12 @@ export default function MobileApp() {
             setGalleryCollection(null);
           }}
           onExit={() => {
-            // Leaving the gallery returns to the dashboard, not back to an
-            // item still open as the active note (which would loop).
+            // Leaving the gallery lands on the sidebar's Collections list; the
+            // note pane behind it shows the dashboard, not an item still open
+            // as the active note (which would loop).
             setSidebarView("collections");
             setGalleryCollection(null);
+            setPagerFocus("sidebar");
             void openTab(DASHBOARD_ID);
           }}
           onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}

@@ -219,6 +219,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             <span className="flex-1">Search notes, run commands…</span>
             <Kbd>Ctrl P</Kbd>
           </button>
+          {settings.dashActions && (
           <div className={canEditSpace ? "grid grid-cols-1 gap-3 sm:grid-cols-3" : "grid grid-cols-1 gap-3"}>
             {canEditSpace && (
               <QuickAction icon={<FilePlus className="h-4 w-4" />} label="New note" hint="Ctrl Shift N" onClick={() => void create()} />
@@ -228,11 +229,13 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={() => setFormOpen(true)} />
             )}
           </div>
+          )}
         </header>
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* Main column */}
           <div className="flex min-w-0 flex-col gap-8 lg:col-span-2">
+            {settings.dashRecents && (
             <section className="flex flex-col gap-3">
               <SectionHeader
                 icon={<History className="h-4 w-4" />}
@@ -265,7 +268,9 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                 </div>
               )}
             </section>
+            )}
 
+            {settings.dashCollections && (
             <section className="flex flex-col gap-3">
               <SectionHeader icon={<Database className="h-4 w-4" />} title="Collections" />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -300,6 +305,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                 )}
               </div>
             </section>
+            )}
           </div>
 
           {/* Side column */}
@@ -309,7 +315,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               onOpenJournal={(id) => void openJournalNote(id)}
             />
 
-            {shortcutNotes.length > 0 && (
+            {settings.dashShortcuts && shortcutNotes.length > 0 && (
               <Panel
                 icon={<Star className="h-4 w-4" />}
                 title="Shortcuts"
@@ -324,7 +330,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               </Panel>
             )}
 
-            {bookmarkNotes.length > 0 && (
+            {settings.dashBookmarks && bookmarkNotes.length > 0 && (
               <Panel
                 icon={<Bookmark className="h-4 w-4" />}
                 title="Bookmarks"
@@ -339,7 +345,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               </Panel>
             )}
 
-            {settings.showTasksSection && openTasks.length > 0 && (
+            {settings.dashTasks && openTasks.length > 0 && (
               <Panel
                 icon={<ListTodo className="h-4 w-4" />}
                 title="Tasks"
@@ -365,7 +371,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               </Panel>
             )}
 
-            {settings.showTagsSection && allTags.length > 0 && (
+            {settings.dashTags && allTags.length > 0 && (
               <Panel
                 icon={<Hash className="h-4 w-4" />}
                 title="Tags"

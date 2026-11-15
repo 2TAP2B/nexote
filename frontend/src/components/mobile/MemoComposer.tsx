@@ -165,11 +165,7 @@ export function MemoComposer({
       aria-label="Record a voice memo"
       onClick={voice.onStart}
       className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-      style={
-        fullscreen
-          ? { background: "var(--mob-surface)", color: "var(--mob-text)" }
-          : { background: "var(--mob-accent)", color: "#fff" }
-      }
+      style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
     >
       <Mic size={20} />
     </button>
@@ -452,21 +448,19 @@ export function MemoComposer({
             </button>
           )}
         </div>
-        {!fullscreen &&
-          (showMic ? (
-            micButton
-          ) : (
-            <button
-              type="button"
-              aria-label={sendLabel}
-              {...tap(send)}
-              disabled={sendDisabled}
-              className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
-              style={{ background: "var(--mob-accent)", color: "#fff" }}
-            >
-              {sendIcon}
-            </button>
-          ))}
+        {!fullscreen && showMic && micButton}
+        {!fullscreen && (
+          <button
+            type="button"
+            aria-label={sendLabel}
+            {...tap(send)}
+            disabled={sendDisabled}
+            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
+            style={{ background: "var(--mob-accent)", color: "#fff" }}
+          >
+            {sendIcon}
+          </button>
+        )}
         {!fullscreen && voice.state !== "idle" && (
           <div className="absolute inset-0 z-10 flex items-end gap-2" style={{ background: "var(--mob-bg)" }}>
             {voiceControls}

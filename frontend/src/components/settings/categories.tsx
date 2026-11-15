@@ -4,6 +4,7 @@ import {
   Home,
   Info,
   Keyboard,
+  LayoutDashboard,
   Music,
   Palette,
   PenLine,
@@ -20,6 +21,7 @@ import { AboutSettings } from "./AboutSettings";
 import { AccountSettings } from "./AccountSettings";
 import { AISettings } from "./AISettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { DashboardSettings } from "./DashboardSettings";
 import { EditorSettings } from "./EditorSettings";
 import { FeatureSettings } from "./FeatureSettings";
 import { GeneralSettings } from "./GeneralSettings";
@@ -43,6 +45,7 @@ export type SettingsCategoryId =
   | "appearance"
   | "vaults"
   | "features"
+  | "dashboard"
   | "shortcuts"
   | "ai"
   | "metadata"
@@ -78,6 +81,7 @@ const SETTINGS_NAV: SettingsNav = [
       { id: "appearance", label: "Appearance", icon: Palette, Section: AppearanceSettings },
       { id: "vaults", label: "Vaults", icon: FolderPlus, Section: VaultSettings },
       { id: "features", label: "Features", icon: SlidersHorizontal, Section: FeatureSettings },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, Section: DashboardSettings },
       { id: "shortcuts", label: "Shortcuts", icon: Keyboard, Section: ShortcutSettings, desktopOnly: true },
     ],
   },

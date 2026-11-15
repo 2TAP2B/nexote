@@ -482,11 +482,16 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
         touchAction: "pan-y",
       }}
     >
-      {/* Shrinks by the keyboard height (iOS overlays it) so the composer
-          always sits right above the keyboard. */}
+      {/* Exactly the visible area while the keyboard is open: iOS overlays the
+          keyboard and may pan the visual viewport down (offsetTop), which would
+          otherwise expose empty space below the composer. */}
       <div
         className="relative flex min-h-0 flex-col"
-        style={{ height: vv.isKeyboardOpen ? `calc(100% - ${vv.inset}px)` : "100%" }}
+        style={
+          vv.isKeyboardOpen
+            ? { height: `calc(100% - ${vv.inset}px)`, transform: `translateY(${vv.top}px)` }
+            : { height: "100%" }
+        }
       >
         <div
           className="flex shrink-0 items-center gap-3 px-3"
@@ -518,7 +523,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           </span>
         </div>
 
-        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3" style={{ touchAction: "pan-y" }}>
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3" style={{ touchAction: "pan-y" }}>
           {entries.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
               <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>

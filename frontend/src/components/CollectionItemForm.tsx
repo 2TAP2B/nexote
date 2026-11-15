@@ -261,19 +261,21 @@ export default function CollectionItemForm({
   // Pick a search result: fetch its full metadata by id and fill the form.
   const pickSearchResult = async (hit: MetadataSearchResult) => {
     setSearchOpen(false);
-    setLookupValue(hit.externalId);
     setLookupLoading(true);
     setError(null);
     try {
       if (lookupSource === "book") {
-        // Book hits carry an ISBN (summary only) — resolve the full record
-        // via the ISBN lookup so all fields fill, same as a Fetch.
+        // Book hits carry an ISBN, or a source id when they have none
+        // ("gb:…", "ol:…"). The lookup resolves either to the full record;
+        // the ISBN field gets the record's ISBN (empty if it has none).
         const res = await api.bookLookup(hit.externalId);
         applyMetadata(res);
+        setLookupValue(res.externalId);
         setCover(res.coverUrl ?? "");
         setCoverFile(null);
         return;
       }
+      setLookupValue(hit.externalId);
       const res = await api.discogsRelease(hit.externalId);
       applyMetadata(res);
       setCover(res.coverUrl ?? "");

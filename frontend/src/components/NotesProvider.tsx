@@ -52,6 +52,14 @@ export type AppSettings = {
   notepadFolder: string;
   // Whether the Notepad shows in the note tree when it lives in a vault.
   notepadInTree: boolean;
+  // Dashboard sections (Settings › Dashboard), desktop and mobile.
+  dashActions: boolean;
+  dashShortcuts: boolean;
+  dashRecents: boolean;
+  dashCollections: boolean;
+  dashBookmarks: boolean;
+  dashTasks: boolean;
+  dashTags: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -75,6 +83,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notepadVault: "",
   notepadFolder: "",
   notepadInTree: true,
+  dashActions: true,
+  dashShortcuts: true,
+  dashRecents: true,
+  dashCollections: true,
+  dashBookmarks: true,
+  dashTasks: true,
+  dashTags: true,
 };
 
 type NotesContextValue = {

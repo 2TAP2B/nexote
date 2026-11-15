@@ -56,7 +56,7 @@ var metadataHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
 // MetadataResult is the normalized lookup result shared by all sources.
 type MetadataResult struct {
-	Source      string   `json:"source"` // "discogs" | "googlebooks" | "openlibrary"
+	Source      string   `json:"source"` // "discogs" | "googlebooks" | "openlibrary" | "dnb"
 	ExternalID  string   `json:"externalId"`
 	Title       string   `json:"title"`
 	Artists     []string `json:"artists,omitempty"` // discogs: artists; books: authors
@@ -329,64 +329,206 @@ func normalizeISBN(s string) string {
 	return s
 }
 
-// bookLookup resolves a book by ISBN. Google Books first; if nothing is
-// found (or Google rate-limits), Open Library is tried as a fallback.
+// Book ids from the search list: an ISBN, or (for hits without one) a source
+// id with one of these prefixes, resolved against that source directly.
+const (
+	googleVolumePrefix = "gb:"
+	openLibraryPrefix  = "ol:"
+)
+
+// bookLookup resolves a book by ISBN (or a prefixed search-hit id). ISBNs go
+// through Google Books, Open Library's books API, Open Library's search index
+// and finally the Deutsche Nationalbibliothek, which knows most German books
+// the others lack.
 func (h *Handler) bookLookup(w http.ResponseWriter, r *http.Request) {
-	isbn := normalizeISBN(r.URL.Query().Get("isbn"))
-	if isbn == "" {
+	raw := strings.TrimSpace(r.URL.Query().Get("isbn"))
+	if raw == "" {
 		writeError(w, http.StatusBadRequest, errors.New("isbn is required"))
 		return
 	}
+	ctx := r.Context()
+	apiKey := googleBooksKey(h.Registry.Root())
 
-	// Google Books first (better cover + description data).
-	res, found, err := googleBooksLookup(r.Context(), "isbn:"+isbn, isbn, googleBooksKey(h.Registry.Root()))
-	if err == nil && found {
-		writeJSON(w, http.StatusOK, res)
+	switch {
+	case strings.HasPrefix(raw, googleVolumePrefix):
+		res, found, err := googleBooksVolume(ctx, strings.TrimPrefix(raw, googleVolumePrefix), apiKey)
+		writeBookResult(w, res, found, err, raw)
+		return
+	case strings.HasPrefix(raw, openLibraryPrefix):
+		res, found, err := openLibraryWork(ctx, strings.TrimPrefix(raw, openLibraryPrefix))
+		writeBookResult(w, res, found, err, raw)
 		return
 	}
 
-	// Open Library fallback — the books API first (full records with covers),
-	res, found, err = openLibraryLookup(r.Context(), isbn)
-	if err == nil && found {
-		writeJSON(w, http.StatusOK, res)
-		return
+	isbn := normalizeISBN(raw)
+	var lastErr error
+	google := func() (MetadataResult, bool, error) { return googleBooksLookup(ctx, "isbn:"+isbn, isbn, apiKey) }
+	olBooks := func() (MetadataResult, bool, error) { return openLibraryLookup(ctx, isbn) }
+	olSearch := func() (MetadataResult, bool, error) { return openLibrarySearchISBN(ctx, isbn) }
+	dnb := func() (MetadataResult, bool, error) { return dnbLookup(ctx, isbn) }
+	// Google Books first (better cover + description data), then Open
+	// Library's books API (full records), its search index (editions the
+	// books API doesn't list) and the German national library. German-
+	// language ISBNs (group 3) ask the national library right after Google:
+	// its records are complete where Open Library's often lack authors/year.
+	lookups := []func() (MetadataResult, bool, error){google, olBooks, olSearch, dnb}
+	if strings.HasPrefix(isbn, "9783") || (len(isbn) == 10 && isbn[0] == '3') {
+		lookups = []func() (MetadataResult, bool, error){google, dnb, olBooks, olSearch}
 	}
-	// …then Open Library's search index, which knows editions the books API
-	// above does not list (anything not imported with full data).
-	res, found, err = openLibrarySearchISBN(r.Context(), isbn)
-
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
+	for _, lookup := range lookups {
+		res, found, err := lookup()
+		if err == nil && found {
+			writeJSON(w, http.StatusOK, res)
+			return
+		}
+		if err != nil {
+			lastErr = err
+		}
 	}
-	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]any{
-			"error": "no book found for isbn " + isbn,
-			"hint":  "Not in Google Books or Open Library. Check the ISBN, or configure a Google Books API key in Settings → Metadata for wider coverage.",
-		})
-		return
-	}
-	writeJSON(w, http.StatusOK, res)
+	writeBookResult(w, MetadataResult{}, false, lastErr, isbn)
 }
 
-// bookSearch performs a free-text book search, Google Books first. When
-// Google rate-limits (429) or fails, Open Library's search API is used as
-// a fallback so adding books never dead-ends.
+// writeBookResult answers a single-source lookup: the result, a 404 with a
+// hint, or 502 when the source failed.
+func writeBookResult(w http.ResponseWriter, res MetadataResult, found bool, err error, key string) {
+	switch {
+	case found:
+		writeJSON(w, http.StatusOK, res)
+	case err != nil:
+		writeError(w, http.StatusBadGateway, err)
+	default:
+		writeJSON(w, http.StatusNotFound, map[string]any{
+			"error": "no book found for " + key,
+			"hint":  "Not in Google Books, Open Library or the Deutsche Nationalbibliothek. Check the ISBN, or configure a Google Books API key in Settings → Metadata for wider coverage.",
+		})
+	}
+}
+
+// maxBookResults caps a merged search list.
+const maxBookResults = 20
+
+// bookSearch performs a free-text book search: Google Books, or Open Library
+// when Google fails (it 429s quickly without a key) or finds nothing. German
+// national library hits are appended, minus titles already listed, so German
+// books missing from both still show up.
 func (h *Handler) bookSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeError(w, http.StatusBadRequest, errors.New("q is required"))
 		return
 	}
-	results, err := googleBooksSearch(r.Context(), q, googleBooksKey(h.Registry.Root()))
-	if err != nil {
-		results, err = openLibrarySearch(r.Context(), q)
+	ctx := r.Context()
+	var dnb []MetadataSearchResult
+	var dnbErr error
+	dnbDone := make(chan struct{})
+	go func() {
+		defer close(dnbDone)
+		dnb, dnbErr = dnbSearch(ctx, q)
+	}()
+
+	results, err := googleBooksSearch(ctx, q, googleBooksKey(h.Registry.Root()))
+	if err != nil || len(results) == 0 {
+		if ol, olErr := openLibrarySearch(ctx, q); olErr == nil {
+			results, err = ol, nil
+		} else if err == nil {
+			err = olErr
+		}
+	}
+	<-dnbDone
+	results = mergeBookResults(results, dnb)
+	if len(results) == 0 {
+		if err == nil {
+			err = dnbErr
+		}
 		if err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": results})
+}
+
+// mergeBookResults appends extra hits whose ISBN and title aren't listed yet.
+func mergeBookResults(results, extra []MetadataSearchResult) []MetadataSearchResult {
+	seenID := make(map[string]bool, len(results)+len(extra))
+	seenTitle := make(map[string]bool, len(results)+len(extra))
+	out := make([]MetadataSearchResult, 0, min(len(results)+len(extra), maxBookResults))
+	add := func(r MetadataSearchResult) {
+		title := strings.ToLower(strings.TrimSpace(r.Title))
+		if len(out) >= maxBookResults || (r.ExternalID != "" && seenID[r.ExternalID]) || seenTitle[title] {
+			return
+		}
+		seenID[r.ExternalID] = true
+		seenTitle[title] = true
+		out = append(out, r)
+	}
+	for _, r := range results {
+		add(r)
+	}
+	for _, r := range extra {
+		add(r)
+	}
+	return out
+}
+
+// gbVolumeInfo is a Google Books volume's metadata.
+type gbVolumeInfo struct {
+	Title               string   `json:"title"`
+	Subtitle            string   `json:"subtitle"`
+	Authors             []string `json:"authors"`
+	PublishedDate       string   `json:"publishedDate"`
+	Publisher           string   `json:"publisher"`
+	PageCount           int      `json:"pageCount"`
+	Categories          []string `json:"categories"`
+	Description         string   `json:"description"`
+	IndustryIdentifiers []struct {
+		Type       string `json:"type"`
+		Identifier string `json:"identifier"`
+	} `json:"industryIdentifiers"`
+	ImageLinks struct {
+		Thumbnail string `json:"thumbnail"`
+	} `json:"imageLinks"`
+}
+
+// isbn returns the volume's ISBN-13, else its ISBN-10, else "".
+func (vi gbVolumeInfo) isbn() string {
+	var isbn10 string
+	for _, id := range vi.IndustryIdentifiers {
+		switch id.Type {
+		case "ISBN_13":
+			return id.Identifier
+		case "ISBN_10":
+			isbn10 = id.Identifier
+		}
+	}
+	return isbn10
+}
+
+func (vi gbVolumeInfo) cover() string {
+	return strings.Replace(vi.ImageLinks.Thumbnail, "http://", "https://", 1)
+}
+
+func (vi gbVolumeInfo) result(externalID string) MetadataResult {
+	title := vi.Title
+	if vi.Subtitle != "" {
+		title += ": " + vi.Subtitle
+	}
+	year := vi.PublishedDate
+	if i := strings.Index(year, "-"); i > 0 {
+		year = year[:i]
+	}
+	return MetadataResult{
+		Source:      "googlebooks",
+		ExternalID:  externalID,
+		Title:       strings.TrimSpace(title),
+		Artists:     vi.Authors,
+		Year:        year,
+		Genres:      vi.Categories,
+		Label:       vi.Publisher,
+		Pages:       strconv.Itoa(vi.PageCount),
+		CoverURL:    vi.cover(),
+		Description: vi.Description,
+	}
 }
 
 func googleBooksSearch(ctx context.Context, q, apiKey string) ([]MetadataSearchResult, error) {
@@ -396,18 +538,8 @@ func googleBooksSearch(ctx context.Context, q, apiKey string) ([]MetadataSearchR
 	}
 	var raw struct {
 		Items []struct {
-			VolumeInfo struct {
-				Title         string   `json:"title"`
-				Authors       []string `json:"authors"`
-				PublishedDate string   `json:"publishedDate"`
-				Publisher     string   `json:"publisher"`
-				PageCount     int      `json:"pageCount"`
-				Categories    []string `json:"categories"`
-				ImageLinks    struct {
-					Thumbnail string `json:"thumbnail"`
-				} `json:"imageLinks"`
-			} `json:"volumeInfo"`
-			ID string `json:"id"`
+			ID         string       `json:"id"`
+			VolumeInfo gbVolumeInfo `json:"volumeInfo"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -423,13 +555,18 @@ func googleBooksSearch(ctx context.Context, q, apiKey string) ([]MetadataSearchR
 			}
 			sub += vi.PublishedDate
 		}
-		cover := strings.Replace(vi.ImageLinks.Thumbnail, "http://", "https://", 1)
+		// The ISBN when there is one (so the lookup and the ISBN field get a
+		// real key), else the volume id.
+		id := vi.isbn()
+		if id == "" {
+			id = googleVolumePrefix + it.ID
+		}
 		results = append(results, MetadataSearchResult{
 			Source:     "googlebooks",
-			ExternalID: it.ID,
+			ExternalID: id,
 			Title:      vi.Title,
 			Subtitle:   sub,
-			CoverURL:   cover,
+			CoverURL:   vi.cover(),
 		})
 	}
 	return results, nil
@@ -482,51 +619,35 @@ func googleBooksLookup(ctx context.Context, q, isbn, apiKey string) (MetadataRes
 		return MetadataResult{}, false, err
 	}
 	var raw struct {
-		TotalItems int `json:"totalItems"`
-		Items      []struct {
-			VolumeInfo struct {
-				Title         string   `json:"title"`
-				Subtitle      string   `json:"subtitle"`
-				Authors       []string `json:"authors"`
-				PublishedDate string   `json:"publishedDate"`
-				Publisher     string   `json:"publisher"`
-				PageCount     int      `json:"pageCount"`
-				Categories    []string `json:"categories"`
-				Description   string   `json:"description"`
-				ImageLinks    struct {
-					Thumbnail string `json:"thumbnail"`
-				} `json:"imageLinks"`
-			} `json:"volumeInfo"`
+		Items []struct {
+			VolumeInfo gbVolumeInfo `json:"volumeInfo"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return MetadataResult{}, false, err
 	}
-	if raw.TotalItems == 0 || len(raw.Items) == 0 {
+	if len(raw.Items) == 0 {
 		return MetadataResult{}, false, nil
 	}
-	vi := raw.Items[0].VolumeInfo
-	year := vi.PublishedDate
-	if i := strings.Index(year, "-"); i > 0 {
-		year = year[:i]
+	return raw.Items[0].VolumeInfo.result(isbn), true, nil
+}
+
+// googleBooksVolume resolves a search hit without an ISBN by its volume id.
+func googleBooksVolume(ctx context.Context, id, apiKey string) (MetadataResult, bool, error) {
+	data, err := googleBooksGet(ctx, googleBooksBase+"/"+url.PathEscape(id), apiKey)
+	if err != nil {
+		return MetadataResult{}, false, err
 	}
-	return MetadataResult{
-		Source:     "googlebooks",
-		ExternalID: isbn,
-		Title: strings.TrimSpace(vi.Title + (func() string {
-			if vi.Subtitle != "" {
-				return ": " + vi.Subtitle
-			}
-			return ""
-		}())),
-		Artists:     vi.Authors,
-		Year:        year,
-		Genres:      vi.Categories,
-		Label:       vi.Publisher,
-		Pages:       strconv.Itoa(vi.PageCount),
-		CoverURL:    strings.Replace(vi.ImageLinks.Thumbnail, "http://", "https://", 1),
-		Description: vi.Description,
-	}, true, nil
+	var raw struct {
+		VolumeInfo gbVolumeInfo `json:"volumeInfo"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return MetadataResult{}, false, err
+	}
+	if raw.VolumeInfo.Title == "" {
+		return MetadataResult{}, false, nil
+	}
+	return raw.VolumeInfo.result(raw.VolumeInfo.isbn()), true, nil
 }
 
 func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, error) {
@@ -607,33 +728,49 @@ func openLibraryLookup(ctx context.Context, isbn string) (MetadataResult, bool, 
 	}, true, nil
 }
 
-// openLibrarySearchISBN resolves an ISBN via Open Library's search index
-// (which knows editions the full-record books API does not list). It returns
-// a lightweight result (title/authors/year/cover) like the free-text search.
-func openLibrarySearchISBN(ctx context.Context, isbn string) (MetadataResult, bool, error) {
-	q := "isbn:" + isbn
-	results, err := openLibrarySearch(ctx, q)
-	if err != nil || len(results) == 0 {
-		return MetadataResult{}, false, err
-	}
-	hit := results[0]
-	return MetadataResult{
-		Source:     hit.Source,
-		ExternalID: isbn,
-		Title:      hit.Title,
-		CoverURL:   hit.CoverURL,
-	}, true, nil
+// olDoc is one Open Library search document (a work, summarized over its
+// editions).
+type olDoc struct {
+	Key              string   `json:"key"` // "/works/OL82563W"
+	Title            string   `json:"title"`
+	Authors          []string `json:"author_name"`
+	FirstPublishYear int      `json:"first_publish_year"`
+	CoverID          int      `json:"cover_i"`
+	Isbns            []string `json:"isbn"`
+	Pages            int      `json:"number_of_pages_median"`
 }
 
-// openLibrarySearch performs a free-text search on Open Library's search
-// API (fallback when Google Books rate-limits). Results carry only summary
-// data — enough for the search-result list the frontend fills the form
-// from (title, authors, year, cover). The external id is a real ISBN (13-
-// digit preferred) so picking a result feeds a lookup-able key into the
-// ISBN field, not Open Library's internal work id.
-func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, error) {
+func (d olDoc) cover() string {
+	if d.CoverID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", d.CoverID)
+}
+
+// result maps the summary onto a lookup result (no publisher: the work's
+// editions list many).
+func (d olDoc) result(externalID string) MetadataResult {
+	res := MetadataResult{
+		Source:     "openlibrary",
+		ExternalID: externalID,
+		Title:      d.Title,
+		Artists:    d.Authors,
+		CoverURL:   d.cover(),
+	}
+	if d.FirstPublishYear > 0 {
+		res.Year = strconv.Itoa(d.FirstPublishYear)
+	}
+	if d.Pages > 0 {
+		res.Pages = strconv.Itoa(d.Pages)
+	}
+	return res
+}
+
+// openLibraryDocs queries Open Library's search API.
+func openLibraryDocs(ctx context.Context, q string, limit int) ([]olDoc, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://openlibrary.org/search.json?q="+url.QueryEscape(q)+"&limit=10&fields=key,title,author_name,first_publish_year,cover_i,isbn", nil)
+		"https://openlibrary.org/search.json?q="+url.QueryEscape(q)+"&limit="+strconv.Itoa(limit)+
+			"&fields=key,title,author_name,first_publish_year,cover_i,isbn,number_of_pages_median", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -642,27 +779,49 @@ func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, e
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("open library: %s", resp.Status)
+	}
+	var raw struct {
+		Docs []olDoc `json:"docs"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&raw); err != nil {
+		return nil, err
+	}
+	return raw.Docs, nil
+}
+
+// openLibrarySearchISBN resolves an ISBN via Open Library's search index
+// (which knows editions the full-record books API does not list).
+func openLibrarySearchISBN(ctx context.Context, isbn string) (MetadataResult, bool, error) {
+	docs, err := openLibraryDocs(ctx, "isbn:"+isbn, 1)
+	if err != nil || len(docs) == 0 {
+		return MetadataResult{}, false, err
+	}
+	return docs[0].result(isbn), true, nil
+}
+
+// openLibraryWork resolves a search hit without an ISBN by its work key.
+func openLibraryWork(ctx context.Context, key string) (MetadataResult, bool, error) {
+	docs, err := openLibraryDocs(ctx, "key:"+key, 1)
+	if err != nil || len(docs) == 0 {
+		return MetadataResult{}, false, err
+	}
+	return docs[0].result(""), true, nil
+}
+
+// openLibrarySearch performs a free-text search on Open Library's search
+// API. The external id is a real ISBN (13-digit preferred) so picking a
+// result feeds a lookup-able key into the ISBN field; works without any
+// ISBN fall back to their work key.
+func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, error) {
+	docs, err := openLibraryDocs(ctx, q, 10)
 	if err != nil {
 		return nil, err
 	}
-	var raw struct {
-		Docs []struct {
-			Key              string   `json:"key"` // "/works/OL82563W"
-			Title            string   `json:"title"`
-			Authors          []string `json:"author_name"`
-			FirstPublishYear int      `json:"first_publish_year"`
-			CoverID          int      `json:"cover_i"`
-			Isbns            []string `json:"isbn"`
-		} `json:"docs"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, err
-	}
-	// Prefer a 13-digit ISBN (modern standard); otherwise take the first one.
-	externalISBN := func(isbns []string) string {
+	externalID := func(d olDoc) string {
 		var first string
-		for _, s := range isbns {
+		for _, s := range d.Isbns {
 			if first == "" {
 				first = s
 			}
@@ -670,10 +829,13 @@ func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, e
 				return s
 			}
 		}
+		if first == "" {
+			return openLibraryPrefix + d.Key
+		}
 		return first
 	}
-	results := make([]MetadataSearchResult, 0, len(raw.Docs))
-	for _, d := range raw.Docs {
+	results := make([]MetadataSearchResult, 0, len(docs))
+	for _, d := range docs {
 		sub := strings.Join(d.Authors, ", ")
 		if d.FirstPublishYear > 0 {
 			if sub != "" {
@@ -681,16 +843,12 @@ func openLibrarySearch(ctx context.Context, q string) ([]MetadataSearchResult, e
 			}
 			sub += strconv.Itoa(d.FirstPublishYear)
 		}
-		cover := ""
-		if d.CoverID != 0 {
-			cover = fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", d.CoverID)
-		}
 		results = append(results, MetadataSearchResult{
 			Source:     "openlibrary",
-			ExternalID: externalISBN(d.Isbns),
+			ExternalID: externalID(d),
 			Title:      d.Title,
 			Subtitle:   sub,
-			CoverURL:   cover,
+			CoverURL:   d.cover(),
 		})
 	}
 	return results, nil
