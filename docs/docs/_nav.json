@@ -1,0 +1,5 @@
+[
+  { "text": "Guide", "link": "/guide/introduction", "activeMatch": "^/guide/" },
+  { "text": "Features", "link": "/features/editor", "activeMatch": "^/features/" },
+  { "text": "Reference", "link": "/reference/data-format", "activeMatch": "^/reference/" }
+]

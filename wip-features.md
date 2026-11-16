@@ -145,12 +145,9 @@ disappear from storage.
 - Default folder for pasted images (Obsidian: default location for new
   attachments).
 - Folder notes (a note that represents its folder).
-- Choose which sections the dashboard shows.
 - Appearance: accent color picker, interface font size / zoom.
 - Line numbers in raw markdown mode.
 - Font size for the rendered view too (today it only applies to raw markdown).
-- Quick notes: delete a memo from the long-press menu (only Copy/Edit/Make note
-  exist).
 - Quick notes: keep the audio of a voice memo as an attachment next to the
   transcript (needs non-image uploads in the backend).
 

@@ -345,3 +345,28 @@ func TestUpdateSyncsInlineTags(t *testing.T) {
 		t.Fatalf("tag index = %v, want empty", idx)
 	}
 }
+
+func TestCreateIndexesInlineTags(t *testing.T) {
+	s := newTestStore(t)
+
+	doc, err := s.Create(CreateInput{Title: "From memo", Body: "## From memo\n\nCall Sam #work\n"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(doc.Meta.Tags) != 1 || doc.Meta.Tags[0] != "work" {
+		t.Fatalf("tags = %v, want [work]", doc.Meta.Tags)
+	}
+	idx, err := s.TagIndex()
+	if err != nil {
+		t.Fatalf("TagIndex: %v", err)
+	}
+	found := false
+	for _, tc := range idx {
+		if tc.Name == "work" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("tag index %v lacks work", idx)
+	}
+}

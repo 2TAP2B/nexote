@@ -1,9 +1,13 @@
 # build context exclusion (keep it small; frontend/backend copied selectively)
+# Patterns are relative to the context root: **/ also catches frontend/'s
+# node_modules and .next, which would otherwise overwrite the image's install.
 .git
+.github
 .direnv
-.next
-node_modules
-.notes-dev
+**/.next
+**/node_modules
+**/.notes-dev
+docs
 backend/nexote
 backend/nexote-backend
 backend/.notes-dev

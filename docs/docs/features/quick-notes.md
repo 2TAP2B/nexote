@@ -1,0 +1,68 @@
+# Quick notes
+
+Quick notes are for capturing a thought quickly on a phone. They look like a messenger chat: short memos appear as bubbles, newest at the bottom, and a composer sits at the bottom of the screen. Quick notes are part of the [mobile app](./mobile-app); open the dashboard and swipe left.
+
+![Quick notes in the mobile app](/screenshots/mobile-quick-notes.png)
+
+## The Notepad
+
+All memos are stored in one ordinary note titled **Notepad**. Each day gets a heading and each memo is a list item with its time:
+
+```markdown
+### 2026-11-16
+
+- 09:12 Call the plumber about the kitchen tap
+- 13:40 Ideas for [[Garden plan]]
+  Order seeds before March
+```
+
+Further lines of a memo are indented by two spaces. Links to notes are `[[Title]]` wikilinks, and images are `![](url)` lines. Because the Notepad is a regular note, it can also be opened and edited in the editor.
+
+### Location
+
+**Settings › Features › Quick notes › Notepad location** decides where the Notepad lives:
+
+| Option | Behavior |
+| --- | --- |
+| Private — only you (default) | Stored in your personal store. Only you can see it, it is the same in every space, and it never appears in a note tree. |
+| A vault or folder | Stored in any vault or folder you can write to, in any space. Members of that space can read it. |
+
+Changing the location moves the existing Notepad. When it lives in a vault, **Show in note tree** (on by default) controls whether it appears in the tree and note lists.
+
+## Writing memos
+
+- Type in the composer and press Enter or the send button to post.
+- The expand button opens a full-screen composer for longer memos. There, Enter starts a new line and Ctrl/Cmd+Enter (or Post) sends.
+- The image button adds one or more images; pasting images works too. Images are uploaded right away into the Notepad's folder, and removing an image before sending deletes the file again. Tapping an image in a bubble shows it full screen.
+- Typing `@` suggests up to six notes and inserts a `[[Title]]` link. In the bubble the link shows as an `@Title` chip; tapping it opens the note.
+
+New memos are written into the latest version of the Notepad on the server, so memos from several devices do not overwrite each other.
+
+## Selecting memos
+
+Tap **Select memos** in the header, or long-press a memo, to enter selection mode. Circles appear next to the memos; tap them to select. The header then offers:
+
+| Action | Effect |
+| --- | --- |
+| Edit | Edit the memo (exactly one selected). The memo keeps its time. |
+| Copy | Copy the text of the selected memos. |
+| Make note | Turn the selected memos into one new note. |
+| Delete | Remove the memos. A toast offers Undo for five seconds, as long as the Notepad has not changed since. |
+
+### Make note
+
+**Make note** creates a note from the selected memos. The first memo gives the title (up to 80 characters); with **Settings › Editor › New notes › Title as heading** on, the note starts with it as a heading. The memos are then removed from the Notepad, so they are moved rather than copied. A toast offers to open the new note.
+
+The target is set in **Settings › Features › Quick notes › Notebook for memo notes**. The default, "Ask the first time", shows a sheet that asks for a vault or folder ("notebook") and remembers the answer. Read-only vaults and Collections vaults are not offered.
+
+Images stay in the Notepad's folder; the new note links to them there.
+
+## Voice memos
+
+While the composer is empty, a microphone button takes the place of the send button. Record, then tap the check mark to stop. The recording is sent to your AI endpoint for transcription, and the text lands in the composer so you can correct it before posting. The audio itself is not stored, only the text.
+
+- Requires an AI connection in **Settings › AI** on that device. The endpoint must offer `/v1/audio/transcriptions` (OpenAI and compatible services). See [AI](./ai).
+- The model is set in **Settings › AI › Voice memos › Transcription model** (default `whisper-1`).
+- Browsers only allow microphone access on https origins or `localhost`. Over plain http the button explains this instead of recording.
+- A recording stops automatically after 10 minutes. The server accepts audio files up to 25 MB.
+- If the transcription fails, the recording is kept so you can retry or discard it.

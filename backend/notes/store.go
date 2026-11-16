@@ -317,6 +317,9 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 			Path:      notePath,
 			CreatedAt: now,
 			UpdatedAt: now,
+			// Same rule as Update: a body that already carries #tags (a note
+			// made from a memo, an import) is tagged right away.
+			Tags: extractInlineTags(body),
 		},
 		Body: body,
 	}

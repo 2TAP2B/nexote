@@ -18,8 +18,10 @@ touches**. Do not re-read the whole repo per session.
 | --- | --- |
 | `backend/` | Go 1.25 REST API. Module name `nexote`. Deps: `gopkg.in/yaml.v3`, `github.com/go-webauthn/webauthn` (passkeys; v0.17 is the newest release that builds with Go 1.25). |
 | `frontend/` | Next.js 16 (app router), React 19, Tailwind v4, Milkdown Crepe (`@milkdown/react`), `next-themes`. |
-| `flake.nix` / `.envrc` | Nix devshell (`go_1_25`, `nodejs_22`, `pnpm`, gopls, tsserver). `.envrc` = `use flake`. |
-| `Dockerfile`, `docker-compose.yml` | Single-container prod build (Next `output:"standalone"` + Go binary). |
+| `flake.nix` / `.envrc` | Nix devshell (`go_1_25`, `nodejs_22`, `pnpm`, gopls, tsserver, `gh`). `.envrc` = `use flake`. |
+| `Dockerfile`, `docker-compose.yml` | Single-container prod build (Next `output:"standalone"` + Go binary); compose pulls `ghcr.io/2tap2b/nexote` and keeps a `build:` for source builds. |
+| `docs/` | User documentation (Rspress 2, own pnpm package; `docs/docs/` content, `docs/public/` logo + screenshots). Published to GitHub Pages. |
+| `.github/workflows/` | `release.yml` (tag + release + GHCR image per push to main), `docs.yml` (Pages). |
 | `.notes-dev/` | Dev data dir (gitignored). Real default is `$NEXOTE_HOME` → `~/.nexote`. |
 
 ## Data model
@@ -82,7 +84,7 @@ touches**. Do not re-read the whole repo per session.
 | `notes/id.go` | `NewID()` 16-char base64url generator. |
 | `notes/vaults.go` | `VaultMeta` + `VaultRegistry` (`vaults.json`, ensures default "Default" vault, caches **one shared `Store` per vault**). |
 | `notes/collections.go` | `CollectionMeta`/`CollectionField`/`CollectionFieldType` + `CollectionRegistry`. |
-| `notes/history.go` | Per-note full snapshots under `<store>/.history/<noteId>/<unix-ms>.md`. |
+| `notes/history.go` | Per-note full snapshots under `<store>/.history/<noteId>/<unix-nanos>.md`. |
 | `notes/snippet.go` | Plain-text note previews (`makeSnippet`, `contentSnippet`) for lists/history/search. Mirrored by `makeSnippet` in `src/lib/note-utils.ts` — keep both in sync. |
 | `notes/images.go` | Image upload/list/read/delete + cross-folder & cross-vault migration on note move. Traversal-guarded. |
 | `notes/bookmarks.go` | `idList` (order-preserving ID set) backing per-user `Bookmarks` and `Shortcuts`; legacy-file adoption. |
@@ -170,8 +172,12 @@ pnpm dev                       # Next on :3000, proxies /api/* -> Go
 # run both locally:
 (cd backend && go run .) & (cd frontend && pnpm dev) & wait
 
-# Docker: the build context has no .git, so pass the version for Settings › About
-NEXOTE_VERSION=$(git describe --tags --abbrev=0) NEXOTE_COMMIT=$(git rev-parse --short HEAD) docker compose build
+# Docker: CI publishes ghcr.io/2tap2b/nexote (docker-compose.yml pulls it). Local
+# builds have no .git, so pass the version for Settings › About:
+NEXOTE_VERSION=$(git describe --tags --abbrev=0) NEXOTE_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
+
+# docs site (from docs/): Rspress, published to GitHub Pages by .github/workflows/docs.yml
+pnpm install && pnpm dev
 ```
 Dev proxy: `frontend/next.config.mjs` rewrites `/api/* → NEXOTE_BACKEND_URL ||
 http://localhost:8080`. Prod = reverse proxy in front of both, or the Docker build.
@@ -179,6 +185,12 @@ http://localhost:8080`. Prod = reverse proxy in front of both, or the Docker bui
 open: passkeys are bound to its host (https + a domain, or localhost) and the
 backend refuses changing requests from other origins. In Docker set it in a
 `.env` next to `docker-compose.yml`; recovery: `docker exec nexote nexote-backend recover <username>`.
+
+Releases: every push to `main` runs `.github/workflows/release.yml`, which tags the
+next patch version (`v0.1.1`, `v0.1.2`, …), creates the GitHub release with the
+commits since the last tag, and pushes the multi-arch image to GHCR. Bump the
+minor/major version by tagging the commit yourself before pushing. User docs live
+in `docs/` (https://2tap2b.github.io/nexote/) — update them with user-visible changes.
 
 ## Roadmap
 Current backlog (trash, new-note location, templates, wikilinks, editor

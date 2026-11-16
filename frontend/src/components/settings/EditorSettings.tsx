@@ -141,7 +141,7 @@ function DateFormatSetting() {
     <>
       <DropdownSetting
         name="Date format"
-        description="What the date button in the editor toolbar (and “Today's date” in the / menu) inserts."
+        description="What the date button in the mobile editor toolbar (and “Today's date” in the / menu) inserts."
         value={customOpen ? CUSTOM : settings.dateFormat}
         options={[
           ...DATE_PRESETS.map((p) => ({ value: p, label: formatTitle(p, now) })),

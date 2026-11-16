@@ -18,7 +18,8 @@ type ChatMessage = { role: "system" | "user"; content: string };
 
 // Streams an OpenAI-compatible chat completion through the local backend
 // (/api/ai/chat → Go proxy). The browser never talks to the upstream API
-// directly, which avoids CORS failures and keeps the API key server-side.
+// directly, which avoids CORS failures. The key is stored per device and sent
+// with each request; the backend forwards it upstream without storing it.
 export async function streamAIChat(
   config: AIConfig,
   messages: ChatMessage[],

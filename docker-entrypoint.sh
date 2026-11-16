@@ -14,11 +14,12 @@ echo "[nexote] backend: home=$NEXOTE_HOME port=$NEXOTE_PORT"
 /usr/local/bin/nexote-backend &
 BACKEND_PID=$!
 
-# Wait until the backend answers before starting the frontend, so the first
-# page load doesn't hit proxying errors. Backoff of 30s max.
+# Wait until the backend accepts connections before starting the frontend, so
+# the first page load doesn't hit proxying errors. Backoff of 30s max. A port
+# check, not an HTTP request: every API route requires a login (401).
 READY=0
 for _ in $(seq 1 60); do
-  if wget -q -O /dev/null "http://127.0.0.1:${NEXOTE_PORT}/api/vaults"; then
+  if nc -z 127.0.0.1 "$NEXOTE_PORT" 2>/dev/null; then
     READY=1
     break
   fi

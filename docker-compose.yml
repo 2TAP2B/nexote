@@ -1,13 +1,17 @@
 services:
   nexote:
+    # Prebuilt multi-arch image from GitHub (every release is published).
+    # Pin a version with NEXOTE_TAG in .env (e.g. NEXOTE_TAG=0.1.0).
+    # Update: docker compose pull && docker compose up -d
+    image: ghcr.io/2tap2b/nexote:${NEXOTE_TAG:-latest}
+    # Building from source instead: docker compose up -d --build
+    # Version shown in Settings › About (the build context has no .git):
+    #   NEXOTE_VERSION=$(git describe --tags --abbrev=0) NEXOTE_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build
     build:
       context: .
-      # Version shown in Settings › About (the build context has no .git):
-      #   NEXOTE_VERSION=$(git describe --tags --abbrev=0) NEXOTE_COMMIT=$(git rev-parse --short HEAD) docker compose build
       args:
         NEXOTE_VERSION: ${NEXOTE_VERSION:-}
         NEXOTE_COMMIT: ${NEXOTE_COMMIT:-}
-    image: nexote:latest
     container_name: nexote
     ports:
       # Single public port — Next proxies /api/* to the backend inside the

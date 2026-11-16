@@ -1,0 +1,5 @@
+[
+  { "type": "dir-section-header", "name": "guide", "label": "Guide" },
+  { "type": "dir-section-header", "name": "features", "label": "Features" },
+  { "type": "dir-section-header", "name": "reference", "label": "Reference" }
+]

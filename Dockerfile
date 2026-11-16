@@ -1,14 +1,17 @@
 # syntax=docker/dockerfile:1
 
 # ---------- Stage 1: build the Go backend ----------
-# CGO_ENABLED=0 produces a fully static binary so it runs on any base image
-# (no libc/glibc dependency).
-FROM golang:1.25-alpine AS backend-build
+# Runs on the build machine's platform and cross-compiles for the target
+# (multi-arch images build arm64 without emulating the Go compiler).
+# CGO_ENABLED=0 produces a fully static binary so it runs on any base image.
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS backend-build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/nexote-backend .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/nexote-backend .
 
 # ---------- Stage 2: build the Next.js frontend ----------
 FROM node:22-alpine AS frontend-build
@@ -37,6 +40,9 @@ FROM node:22-alpine
 # tini forwards signals properly so `docker stop` shuts both processes down.
 RUN apk add --no-cache tini
 WORKDIR /app
+LABEL org.opencontainers.image.source="https://github.com/2TAP2B/nexote" \
+      org.opencontainers.image.description="Self-hosted, mobile-first markdown editor" \
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 
 ENV NODE_ENV=production
 ENV NEXOTE_HOME=/data/nexote

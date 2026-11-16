@@ -26,6 +26,8 @@
 
             # Tooling
             ripgrep
+            # GitHub CLI (releases, repo admin)
+            gh
           ];
 
           shellHook = ''

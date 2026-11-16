@@ -14,7 +14,7 @@ import (
 // History is stored as full per-version snapshot files under a hidden
 // ".history" directory inside the store root:
 //
-//	<store>/.history/<noteId>/<unix-ms>.md
+//	<store>/.history/<noteId>/<unix-nanos>.md   (<unix-nanos>-<n>.md on collision)
 //
 // Each snapshot is a complete, restorable copy of the note (frontmatter +
 // body) at the moment before an update. Keeping every version means a note can
