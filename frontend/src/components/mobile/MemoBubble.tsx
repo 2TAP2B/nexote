@@ -94,9 +94,8 @@ export function MemoBubble({
         else onToggleSelect();
       }}
       className={
-        "max-w-[85%] select-none overflow-hidden rounded-2xl rounded-br-md text-[15px] leading-snug transition-[box-shadow,opacity]" +
-        (editing || selected ? " ring-2 ring-primary ring-offset-2 ring-offset-background" : "") +
-        (selecting && !selected ? " opacity-60" : "")
+        "max-w-[85%] select-none overflow-hidden rounded-2xl rounded-br-md text-[15px] leading-snug transition-shadow" +
+        (editing || selected ? " ring-2 ring-primary ring-offset-2 ring-offset-background" : "")
       }
       style={{ background: "var(--mob-accent)", color: "#fff", WebkitTouchCallout: "none" }}
     >

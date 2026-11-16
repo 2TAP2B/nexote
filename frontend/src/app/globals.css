@@ -903,17 +903,19 @@ html:has(.mob-shell-root) body {
   50% { opacity: 0.45; }
 }
 
-/* Command palette — the mobile shell always uses the inset sheet layout,
- * regardless of screen width: landscape phones (like folded tablets) exceed
- * the md: breakpoint, where the Tailwind classes would switch it back to
- * the small desktop card with dead space below. */
+/* Command palette — the mobile shell always uses the bottom-sheet layout
+ * (edge to edge, rounded top, grab handle), regardless of screen width:
+ * landscape phones (like folded tablets) exceed the md: breakpoint, where
+ * the Tailwind classes would switch it to the small desktop card. */
 .mob-shell-root [data-command-palette-backdrop] {
   align-items: stretch;
-  padding: 12px;
+  padding: 40px 0 0;
 }
 .mob-shell-root [data-command-palette] {
   height: 100%;
   max-width: none;
+  border: 0;
+  border-radius: 20px 20px 0 0;
 }
 
 /* ── Sidebar tree row states ─────────────────────────────────────────

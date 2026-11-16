@@ -11,10 +11,12 @@ import {
   Sparkles,
   SquareArrowOutUpRight,
   Star,
+  TextCursor,
   Trash2,
 } from "lucide-react";
 
 import { generateNoteTitle } from "@/lib/ai";
+import { SELECT_ALL_NOTE_EVENT } from "@/lib/editor-events";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { useNotes } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -95,6 +97,8 @@ export default function MobileOverflowMenu({
       },
     ],
     [
+      // Selects the body (not the title) in the editor, ready to copy.
+      { label: "Select all", icon: <TextCursor size={19} />, onClick: () => window.dispatchEvent(new Event(SELECT_ALL_NOTE_EVENT)) },
       { label: "Open in new tab", icon: <SquareArrowOutUpRight size={19} />, onClick: () => void openTab(noteId) },
       { label: "Table of contents", icon: <ListTree size={19} />, onClick: onToc },
       { label: "Note history", icon: <History size={19} />, onClick: () => onHistory(noteId) },

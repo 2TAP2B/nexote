@@ -4,11 +4,12 @@ import {
   Bookmark,
   CalendarDays,
   Clock,
-  Database,
   FilePlus,
   FileStack,
+  FileText,
   Hash,
   Keyboard,
+  Layers,
   LayoutDashboard,
   ListTodo,
   PanelLeftClose,
@@ -23,7 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
-import { api, isCollectionsVault, type SearchHit } from "@/lib/api";
+import { api, type SearchHit } from "@/lib/api";
 import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
 import { useCanEdit } from "@/components/useCanEdit";
 
@@ -44,11 +45,11 @@ type Item =
   | { kind: "command"; cmd: Command }
   | { kind: "note"; id: string; title: string; path?: string; vaultId?: string; vaultName?: string; snippet?: string }
   | { kind: "create"; label: string; title: string }
-  | { kind: "vault"; id: string; name: string }
+  | { kind: "space"; id: string; name: string }
   | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, switchVault, activeVault, tagsByVault, settings, activeSpaceId } = useNotes();
+  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, spaces, switchSpace, activeVault, tagsByVault, settings, activeSpaceId } = useNotes();
   const { canEditSpace } = useCanEdit();
   const { theme, setTheme } = useTheme();
   // Track the visual viewport: when the touch keyboard opens (iOS keeps the
@@ -265,13 +266,10 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       result.push({ kind: "command", cmd });
     }
 
-    // Then vaults (if query matches or empty)
-    const matchedVaults = q
-      ? vaults.filter((v) => !isCollectionsVault(v) && v.name.toLowerCase().includes(q))
-      : vaults.filter((v) => !isCollectionsVault(v));
-    for (const v of matchedVaults) {
-      if (v.id !== activeVault?.id) {
-        result.push({ kind: "vault", id: v.id, name: v.name });
+    // Then the other spaces (if the query matches or is empty).
+    for (const s of spaces) {
+      if (s.id !== activeSpaceId && (!q || s.name.toLowerCase().includes(q))) {
+        result.push({ kind: "space", id: s.id, name: s.name });
       }
     }
 
@@ -323,7 +321,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, vaults, activeVault, tagsByVault, query, settings, canEditSpace]);
+  }, [commands, notes, spaces, activeSpaceId, activeVault, tagsByVault, query, settings, canEditSpace]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));
@@ -348,8 +346,8 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       case "create":
         void create({ title: item.title });
         break;
-      case "vault":
-        switchVault(item.id);
+      case "space":
+        switchSpace(item.id);
         break;
       case "tag":
         window.dispatchEvent(
@@ -374,15 +372,28 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
   };
 
-  // Group items for rendering with section headers
-  let lastKind: string | null = null;
+  // Consecutive items of one kind form a group (a rounded card).
+  const groups: { kind: Item["kind"]; rows: { item: Item; i: number }[] }[] = [];
+  items.forEach((item, i) => {
+    const last = groups[groups.length - 1];
+    if (last?.kind === item.kind) last.rows.push({ item, i });
+    else groups.push({ kind: item.kind, rows: [{ item, i }] });
+  });
+  const GROUP_LABEL: Record<Item["kind"], string> = {
+    command: "Commands",
+    space: "Switch space",
+    note: "Notes",
+    tag: "Tags",
+    create: "Create",
+  };
 
+  // Same look as the mobile action sheets: a bottom sheet with a grab handle
+  // on mobile, a centered card on desktop; results in rounded groups.
   return (
     <div
       data-command-palette-backdrop
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-3 backdrop-blur-sm md:items-start md:p-4 md:pt-[15vh]"
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 pt-10 md:items-start md:p-4 md:pt-[15vh]"
       style={{
-        paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
         // Keyboard-open only, and only inside the mobile shell: anchor the
         // sheet's bottom edge to the top of the touch keyboard (the layout
         // viewport moves via visualViewport). The shell check keeps touch-
@@ -398,134 +409,106 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         aria-modal="true"
         aria-label="Command palette"
         data-command-palette
-        className="flex h-full max-h-full w-full flex-1 flex-col overflow-hidden rounded-2xl border-2 bg-background shadow-xl md:h-auto md:max-w-lg md:flex-none"
-        style={{ borderColor: "color-mix(in srgb, var(--primary) 55%, transparent)" }}
+        className="flex h-full max-h-full w-full flex-1 flex-col overflow-hidden rounded-t-[20px] bg-background text-foreground shadow-2xl md:h-auto md:max-w-lg md:flex-none md:rounded-2xl md:border md:border-border"
+        style={{ paddingBottom: vv.isKeyboardOpen ? 0 : "env(safe-area-inset-bottom, 0px)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Search input */}
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-          <Search
-            className="shrink-0 text-muted-foreground"
-            size={16}
-          />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Type a command or search notes…"
-            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-          <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground md:block">
-            Esc
-          </kbd>
-          {/* Always-visible close affordance — on touch devices there is no
-              Escape key, and the backdrop strips are too small to tap
-              reliably with the keyboard-open sheet layout. */}
+        <span aria-hidden className="mx-auto mt-2.5 h-1 w-9 shrink-0 rounded-full bg-muted-foreground/35 md:hidden" />
+        {/* Search field */}
+        <div className="flex shrink-0 items-center gap-2 px-3 pb-1 pt-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-muted/60 px-3 py-2.5">
+            <Search className="shrink-0 text-muted-foreground" size={16} />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Type a command or search notes…"
+              className="min-w-0 flex-1 bg-transparent text-[16px] text-foreground outline-none placeholder:text-muted-foreground md:text-sm"
+            />
+            <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground md:block">
+              Esc
+            </kbd>
+          </div>
+          {/* Always-visible close affordance — touch devices have no Escape. */}
           <button
             type="button"
             aria-label="Close palette"
             title="Close"
             onClick={onClose}
-            className="flex shrink-0 touch-manipulation items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-95"
-            style={{ width: 36, height: 36, marginRight: -8 }}
+            className="flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-full bg-muted/60 text-muted-foreground transition-colors hover:text-foreground active:scale-95"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Results — full height sheet on mobile, capped box on desktop. */}
-        <ul className="min-h-0 flex-1 overflow-y-auto py-1 md:max-h-96 md:flex-none">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 md:max-h-[28rem] md:flex-none">
           {items.length === 0 ? (
-            <li className="px-3 py-3 text-sm text-muted-foreground">
-              No results found.
-            </li>
+            <p className="px-1 py-3 text-sm text-muted-foreground">No results found.</p>
           ) : (
-            items.map((item, i) => {
-              const showHeader =
-                item.kind !== lastKind;
-              lastKind = item.kind;
-
-              return (
-                <li key={i}>
-                  {showHeader && (
-                    <div className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
-                      {item.kind === "command"
-                        ? "Commands"
-                        : item.kind === "vault"
-                          ? "Switch vault"
-                          : item.kind === "note"
-                            ? "Notes"
-                            : item.kind === "tag"
-                              ? "Tags"
-                              : "Create"}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => execute(item)}
-                    onMouseEnter={() => setIndex(i)}
-                    className={[
-                      "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
-                      i === index
-                        ? "bg-primary/15 text-foreground"
-                        : "text-foreground/80 hover:bg-muted",
-                    ].join(" ")}
-                  >
-                    {item.kind === "command" && item.cmd.icon}
-                    {item.kind === "create" && (
-                      <FilePlus className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    {item.kind === "vault" && (
-                      <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    {item.kind === "note" && (
-                      <span className="h-4 w-4 shrink-0 text-muted-foreground/50">
-                        ●
-                      </span>
-                    )}
-                    {item.kind === "tag" && (
-                      <Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    {item.kind === "note" && item.snippet !== undefined && item.snippet !== "" ? (
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate">{item.title || "Untitled"}</span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {item.snippet}
+            groups.map((group, g) => (
+              <section key={`${group.kind}-${g}`} className="mt-3">
+                <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {GROUP_LABEL[group.kind]}
+                </h3>
+                <ul className="overflow-hidden rounded-xl bg-muted/60">
+                  {group.rows.map(({ item, i }, j) => (
+                    <li key={i}>
+                      {j > 0 && <div aria-hidden className="ml-[52px] border-t border-border/70" />}
+                      <button
+                        type="button"
+                        onClick={() => execute(item)}
+                        onMouseEnter={() => setIndex(i)}
+                        className={
+                          "flex w-full items-center gap-4 px-4 py-3 text-left text-[15px] transition-colors active:bg-muted md:py-2 md:text-sm" +
+                          (i === index ? " bg-primary/10" : "")
+                        }
+                      >
+                        <span className="flex w-5 shrink-0 justify-center text-muted-foreground [&_svg]:h-[18px] [&_svg]:w-[18px]">
+                          {item.kind === "command" && item.cmd.icon}
+                          {item.kind === "create" && <FilePlus />}
+                          {item.kind === "space" && <Layers />}
+                          {item.kind === "note" && <FileText />}
+                          {item.kind === "tag" && <Hash />}
                         </span>
-                      </span>
-                    ) : (
-                      <span className="truncate">
-                        {item.kind === "command"
-                          ? item.cmd.label
-                          : item.kind === "vault"
-                            ? item.name
-                            : item.kind === "note"
-                              ? item.title || "Untitled"
-                              : item.kind === "tag"
-                                ? `#${item.name}`
-                                : item.label}
-                      </span>
-                    )}
-                    {item.kind === "command" && item.cmd.hint && (
-                      <kbd className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
-                        {item.cmd.hint}
-                      </kbd>
-                    )}
-                    {item.kind === "note" && item.path && (
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        {item.path}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })
+                        {item.kind === "note" && item.snippet ? (
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate">{item.title || "Untitled"}</span>
+                            <span className="truncate text-xs text-muted-foreground">{item.snippet}</span>
+                          </span>
+                        ) : (
+                          <span className="min-w-0 flex-1 truncate">
+                            {item.kind === "command"
+                              ? item.cmd.label
+                              : item.kind === "space"
+                                ? item.name
+                                : item.kind === "note"
+                                  ? item.title || "Untitled"
+                                  : item.kind === "tag"
+                                    ? `#${item.name}`
+                                    : item.label}
+                          </span>
+                        )}
+                        {item.kind === "command" && item.cmd.hint && (
+                          <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground md:block">
+                            {item.cmd.hint}
+                          </kbd>
+                        )}
+                        {item.kind === "note" && item.path && (
+                          <span className="max-w-[40%] shrink-0 truncate text-xs text-muted-foreground">{item.path}</span>
+                        )}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
           )}
-        </ul>
+        </div>
 
-        {/* Footer with hints */}
-        <div className="kbd-hints flex items-center gap-3 border-t border-border px-3 py-2 text-xs text-muted-foreground/70">
+        {/* Footer with hints (desktop) */}
+        <div className="kbd-hints flex shrink-0 items-center gap-3 border-t border-border px-4 py-2 text-xs text-muted-foreground/70">
           <span className="flex items-center gap-1">
             <kbd className="rounded border border-border px-1 py-0.5">↑↓</kbd>
             navigate

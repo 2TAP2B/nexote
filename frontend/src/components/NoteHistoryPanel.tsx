@@ -94,36 +94,45 @@ export default function NoteHistoryPanel({
     }
   };
 
+  // Same look as the mobile action sheets: a bottom sheet with a grab handle
+  // on mobile (a side panel on desktop), versions in one rounded group.
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-end bg-black/40 md:items-stretch md:justify-end"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Note history"
-        className="flex h-full w-full max-w-sm flex-col border-l border-border bg-background shadow-xl"
+        className="flex max-h-[85vh] w-full flex-col rounded-t-[20px] bg-background text-foreground shadow-2xl md:h-full md:max-h-none md:max-w-sm md:rounded-none md:border-l md:border-border"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
         onClick={(e) => e.stopPropagation()}
       >
+        <span aria-hidden className="mx-auto mt-2.5 h-1 w-9 shrink-0 rounded-full bg-muted-foreground/35 md:hidden" />
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <History className="h-4 w-4 text-muted-foreground" />
-          <h2 className="flex-1 text-sm font-semibold text-foreground">
-            Note history
-          </h2>
+        <div className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-3">
+          <span className="w-9 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1 text-center">
+            <h2 className="text-[15px] font-semibold">Note history</h2>
+            {!loading && versions.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {versions.length} saved version{versions.length === 1 ? "" : "s"}
+              </p>
+            )}
+          </div>
           <button
             type="button"
             aria-label="Close history"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/60 text-muted-foreground hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -140,44 +149,37 @@ export default function NoteHistoryPanel({
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {versions.map((v) => (
-                <div
-                  key={v.timestamp}
-                  className="flex items-start gap-2 rounded-xl border border-border p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-foreground">
-                      {formatTime(v.timestamp)}
-                    </p>
-                    {v.snippet ? (
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                        {v.snippet}
+            <ul className="overflow-hidden rounded-xl bg-muted/60">
+              {versions.map((v, i) => (
+                <li key={v.timestamp}>
+                  {i > 0 && <div aria-hidden className="ml-[52px] border-t border-border/70" />}
+                  <div className="flex items-center gap-4 px-4 py-3">
+                    <History className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[15px] md:text-sm">{formatTime(v.timestamp)}</p>
+                      <p className={"mt-0.5 line-clamp-2 text-xs " + (v.snippet ? "text-muted-foreground" : "text-muted-foreground/50")}>
+                        {v.snippet || "(empty)"}
                       </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-muted-foreground/50">
-                        (empty)
-                      </p>
+                    </div>
+                    {canRestore && (
+                      <button
+                        type="button"
+                        onClick={() => void restore(v.timestamp)}
+                        disabled={restoring === v.timestamp}
+                        className="flex shrink-0 items-center gap-1.5 rounded-full bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        {restoring === v.timestamp ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-3 w-3" />
+                        )}
+                        Restore
+                      </button>
                     )}
                   </div>
-                  {canRestore && (
-                    <button
-                      type="button"
-                      onClick={() => void restore(v.timestamp)}
-                      disabled={restoring === v.timestamp}
-                      className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                    >
-                      {restoring === v.timestamp ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <RotateCcw className="h-3 w-3" />
-                      )}
-                      Restore
-                    </button>
-                  )}
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </div>
       </div>

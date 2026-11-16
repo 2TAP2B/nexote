@@ -6,3 +6,6 @@ export const OPEN_WIKILINK_EVENT = "nexote:open-wikilink";
 
 /** Fired with true/false when block selection mode starts/ends; the mobile nav pill hides meanwhile. */
 export const BLOCK_SELECT_EVENT = "nexote:block-select";
+
+/** Asks the open note's editor to select everything except the title heading. */
+export const SELECT_ALL_NOTE_EVENT = "nexote:select-all-note";

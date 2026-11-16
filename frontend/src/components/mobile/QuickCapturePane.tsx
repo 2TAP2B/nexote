@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, FilePlus, Pencil, Trash2, X } from "lucide-react";
+import { Check, CircleCheck, Copy, FilePlus, Pencil, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -88,6 +88,8 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   const transcribeAbort = useRef<AbortController | null>(null);
   const recorder = useVoiceRecorder({ maxMs: MAX_RECORDING_MS, onLimit: () => void stopVoice() });
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
+  // Selection circles show only in selection mode (header button or long press).
+  const [selectMode, setSelectMode] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -137,19 +139,25 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   }, [focused, locVault, locFolder]);
 
   useEffect(() => {
-    if (!focused) setSelectedKeys(new Set());
+    if (!focused) clearSelection();
   }, [focused]);
 
   const entries = useMemo(() => parseNotepad(body), [body]);
   const selected = useMemo(() => entries.filter((e) => selectedKeys.has(memoKey(e))), [entries, selectedKeys]);
-  const toggleSelected = (entry: NotepadEntry) =>
+  // Selecting toggles a memo; it also starts selection mode (long press).
+  const toggleSelected = (entry: NotepadEntry) => {
+    setSelectMode(true);
     setSelectedKeys((prev) => {
       const next = new Set(prev);
       const key = memoKey(entry);
       if (!next.delete(key)) next.add(key);
       return next;
     });
-  const clearSelection = () => setSelectedKeys(new Set());
+  };
+  function clearSelection() {
+    setSelectedKeys(new Set());
+    setSelectMode(false);
+  }
 
   // Newest entry at the bottom, like a chat.
   useEffect(() => {
@@ -567,13 +575,13 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
             borderBottom: "1px solid var(--mob-surface)",
           }}
         >
-          {selected.length > 0 ? (
+          {selectMode ? (
             <>
               <HeaderButton label="Cancel selection" onClick={clearSelection}>
                 <X size={20} />
               </HeaderButton>
               <span className="min-w-0 flex-1 truncate text-lg font-semibold" style={{ color: "var(--mob-text)" }}>
-                {selected.length} selected
+                {selected.length ? `${selected.length} selected` : "Select memos"}
               </span>
               {selected.length === 1 && (
                 <HeaderButton label="Edit" onClick={onSelection((list) => startEdit(list[0]))}>
@@ -582,6 +590,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
               )}
               <HeaderButton
                 label="Copy"
+                disabled={selected.length === 0}
                 onClick={onSelection((list) => {
                   void copyText(list.map((e) => e.text).join("\n\n")).then((ok) =>
                     showToast(ok ? "Copied" : "Couldn't copy"),
@@ -590,10 +599,15 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
               >
                 <Copy size={18} />
               </HeaderButton>
-              <HeaderButton label="Make note" onClick={onSelection(makeNote)}>
+              <HeaderButton label="Make note" disabled={selected.length === 0} onClick={onSelection(makeNote)}>
                 <FilePlus size={18} />
               </HeaderButton>
-              <HeaderButton label="Delete" danger onClick={onSelection((list) => void deleteMemos(list))}>
+              <HeaderButton
+                label="Delete"
+                danger
+                disabled={selected.length === 0}
+                onClick={onSelection((list) => void deleteMemos(list))}
+              >
                 <Trash2 size={18} />
               </HeaderButton>
             </>
@@ -608,7 +622,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
               >
                 <X size={20} />
               </HeaderButton>
-              <span className="flex min-w-0 flex-col">
+              <span className="flex min-w-0 flex-1 flex-col">
                 <span className="text-lg font-semibold leading-tight" style={{ color: "var(--mob-text)" }}>
                   Quick notes
                 </span>
@@ -616,6 +630,11 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                   Saved to your &quot;{NOTEPAD_TITLE}&quot; note
                 </span>
               </span>
+              {entries.length > 0 && (
+                <HeaderButton label="Select memos" onClick={() => setSelectMode(true)}>
+                  <CircleCheck size={19} />
+                </HeaderButton>
+              )}
             </>
           )}
         </div>
@@ -652,16 +671,18 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                     </span>
                   )}
                   <div className="flex items-center gap-2">
-                    <SelectCircle
-                      selected={selectedKeys.has(memoKey(entry))}
-                      onToggle={() => toggleSelected(entry)}
-                    />
+                    {selectMode && (
+                      <SelectCircle
+                        selected={selectedKeys.has(memoKey(entry))}
+                        onToggle={() => toggleSelected(entry)}
+                      />
+                    )}
                     <div className="flex min-w-0 flex-1 flex-col items-end">
                       <MemoBubble
                         entry={entry}
                         editing={editing?.start === entry.start && editing.day === entry.day}
                         selected={selectedKeys.has(memoKey(entry))}
-                        selecting={selected.length > 0}
+                        selecting={selectMode}
                         resolve={resolve}
                         onOpenNote={openNote}
                         onOpenImage={setViewer}
@@ -776,11 +797,13 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
 function HeaderButton({
   label,
   danger = false,
+  disabled = false,
   onClick,
   children,
 }: {
   label: string;
   danger?: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -789,9 +812,10 @@ function HeaderButton({
       type="button"
       aria-label={label}
       title={label}
+      disabled={disabled}
       onClick={onClick}
       className={
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95" +
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 disabled:opacity-40" +
         (danger ? " text-red-600 dark:text-red-400" : "")
       }
       style={{ background: "var(--mob-surface)", color: danger ? undefined : "var(--mob-text)" }}

@@ -32,6 +32,7 @@ import { createPortal } from "react-dom";
 import {
   AtSign,
   CalendarDays,
+  Code,
   Code2,
   Copy,
   FilePlus,
@@ -52,7 +53,7 @@ import {
 
 import { api } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { BLOCK_SELECT_EVENT, OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
+import { BLOCK_SELECT_EVENT, OPEN_WIKILINK_EVENT, SELECT_ALL_NOTE_EVENT } from "@/lib/editor-events";
 import { cacheImage } from "@/lib/image-cache";
 import { formatTitle, useNotes } from "@/lib/notes-context";
 import {
@@ -64,6 +65,7 @@ import {
   type BlockSelectState,
 } from "./editor/blockSelect";
 import { computeMention, insertMention, mentionCandidates, mentionPlugin, type MentionState } from "./editor/mention";
+import { inlineCodeTypingPlugin, startInlineCode } from "./editor/inlineCode";
 import { wikilinkPlugins } from "./editor/wikilink";
 import { useVisualViewport } from "./mobile/useVirtualKeyboardInset";
 
@@ -366,6 +368,8 @@ export type MilkdownEditorHandle = {
   startMention: () => void;
   /** Switches block selection mode on or off. */
   toggleBlockSelect: () => void;
+  /** Selects the whole note except its title heading. */
+  selectAllBody: () => void;
 };
 
 export type FormatAction =
@@ -379,6 +383,7 @@ export type FormatAction =
   | "ordered-list"
   | "task-list"
   | "quote"
+  | "code"
   | "code-block"
   | "table";
 
@@ -436,6 +441,7 @@ const SLASH_ITEMS: SlashItem[] = [
   { id: "ordered-list", label: "Ordered list", hint: "1. item", icon: ListOrdered, keywords: "list ordered ol numbered" },
   { id: "task-list", label: "Task list", hint: "- [ ] item", icon: ListTodo, keywords: "task todo checkbox checklist" },
   { id: "quote", label: "Quote", hint: "> ", icon: TextQuote, keywords: "quote blockquote" },
+  { id: "code", label: "Code", hint: "`code`", icon: Code, keywords: "code inline monospace" },
   { id: "code-block", label: "Code block", hint: "```", icon: Code2, keywords: "code block" },
   { id: "table", label: "Table", hint: "| a | b |", icon: Table, keywords: "table grid" },
   { id: "image", label: "Image", hint: "![alt](url)", icon: ImageIcon, keywords: "image img picture" },
@@ -492,6 +498,9 @@ function runFormatAction(ctx: Ctx, action: Exclude<FormatAction, "image">) {
       commands.call(setBlockTypeCommand.key, {
         nodeType: codeBlockSchema.type(ctx),
       });
+      break;
+    case "code":
+      startInlineCode(ctx.get(editorViewCtx));
       break;
     case "table":
       commands.call(insertTableCommand.key, { row: 3, col: 2 });
@@ -807,6 +816,24 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         view.dispatch(view.state.tr.insertText(`${leadingSpace(view)}@`));
         view.focus();
       });
+
+    // Everything but the title heading (the first block when it's a heading).
+    const selectAllBody = () =>
+      withView((view) => {
+        const { doc } = view.state;
+        const first = doc.firstChild;
+        const from = first?.type.name === "heading" && doc.childCount > 1 ? first.nodeSize : 0;
+        view.dispatch(
+          view.state.tr.setSelection(TextSelection.between(doc.resolve(from), doc.resolve(doc.content.size))),
+        );
+        view.focus();
+      });
+    // The note's ⋮ menus (mobile overflow sheet, desktop header menu).
+    useEffect(() => {
+      const onSelectAll = () => selectAllBody();
+      window.addEventListener(SELECT_ALL_NOTE_EVENT, onSelectAll);
+      return () => window.removeEventListener(SELECT_ALL_NOTE_EVENT, onSelectAll);
+    });
 
     // "@" / "[[" note picker. The plugin reports the live trigger; Escape
     // dismisses it until the trigger text changes.
@@ -1428,6 +1455,8 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
 
       // [[Wikilinks]]: parse/serialize them and render chips.
       crepe.editor.use(wikilinkPlugins);
+      // "Code" at a bare caret: typing there becomes inline code.
+      crepe.editor.use($prose(() => inlineCodeTypingPlugin));
       // "@" / "[[" note picker.
       crepe.editor.use($prose(() => mentionPlugin({ onChange: applyMention, onKey: onMentionKey })));
       // Block selection mode (toolbar button).
@@ -1444,8 +1473,10 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           view: (_view) => {
             // Scroll doesn't bubble, but capture-phase on window sees every
             // container's scroll, which reads/taps a floating sheet should
-            // dismiss. Close only if actually open to avoid re-render churn.
-            const onScroll = () => {
+            // dismiss — except scrolling the sheet itself (long command
+            // lists on small screens). Close only if actually open.
+            const onScroll = (e: Event) => {
+              if (e.target instanceof Element && e.target.closest("[data-editor-popup]")) return;
               if (slashRef.current) applySlash(null);
             };
             window.addEventListener("scroll", onScroll, true);
@@ -1700,6 +1731,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         insertDate: insertDateNow,
         startMention: startMentionNow,
         toggleBlockSelect: toggleBlockSelectNow,
+        selectAllBody,
         askAI: () => {
           // Open our custom AI command panel (preset actions + custom prompt)
           // instead of Crepe's floating instruction tooltip, which positions
@@ -1889,6 +1921,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             // viewport and can end up outside the visible area entirely.
             createPortal(
               <div
+                data-editor-popup
                 className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-3 mob-shell-root"
                 style={{
                   bottom: slashBottom,

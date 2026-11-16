@@ -260,13 +260,13 @@ export function MemoComposer({
 
   return (
     <div
-      className={fullscreen ? "absolute inset-0 z-20 flex flex-col" : "shrink-0 px-3 pt-2"}
+      className={fullscreen ? "absolute inset-0 z-20 flex flex-col" : "shrink-0 px-2 pt-1.5"}
       style={
         fullscreen
           ? { background: "var(--mob-bg)" }
           : {
-              borderTop: "1px solid var(--mob-surface)",
-              paddingBottom: keyboardOpen ? 8 : "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+              background: "var(--mob-bg)",
+              paddingBottom: keyboardOpen ? 6 : "calc(env(safe-area-inset-bottom, 0px) + 8px)",
             }
       }
     >
@@ -379,9 +379,19 @@ export function MemoComposer({
 
       {!fullscreen && attachmentStrip}
 
-      <div className={fullscreen ? "flex min-h-0 flex-1 flex-col" : "relative flex items-end gap-2"}>
-        {!fullscreen && imageButton}
-        <div className={fullscreen ? "relative min-h-0 flex-1" : "relative min-w-0 flex-1"}>
+      {/* Messenger layout (Signal-like): one rounded pill holds the image
+          button, the text, full screen and (while empty) the mic; the round
+          send button sits next to it. */}
+      <div className={fullscreen ? "flex min-h-0 flex-1 flex-col" : "relative flex items-end gap-1.5"}>
+        <div
+          className={fullscreen ? "relative min-h-0 flex-1" : "relative flex min-w-0 flex-1 items-end rounded-[22px] px-1"}
+          style={fullscreen ? undefined : { background: "var(--mob-surface)", minHeight: 44 }}
+        >
+          {!fullscreen && (
+            <PillIcon label="Add images" onClick={() => fileRef.current?.click()}>
+              <ImagePlus size={21} />
+            </PillIcon>
+          )}
           <textarea
             ref={inputRef}
             value={value}
@@ -428,34 +438,28 @@ export function MemoComposer({
             className={
               fullscreen
                 ? "block h-full w-full resize-none bg-transparent px-4 py-3 text-[16px] leading-relaxed outline-none"
-                : "block min-h-[42px] w-full resize-none rounded-2xl border py-2.5 pl-3.5 pr-10 text-[15px] outline-none"
+                : "block min-h-[44px] min-w-0 flex-1 resize-none bg-transparent px-1 py-[11px] text-[16px] leading-[22px] outline-none"
             }
-            style={
-              fullscreen
-                ? { color: "var(--mob-text)" }
-                : { background: "var(--mob-card)", color: "var(--mob-text)", borderColor: "var(--mob-surface)" }
-            }
+            style={{ color: "var(--mob-text)" }}
           />
           {!fullscreen && (
-            <button
-              type="button"
-              aria-label="Write in full screen"
-              {...tap(() => setFullscreen(true))}
-              className="absolute bottom-[5px] right-1 flex h-8 w-8 items-center justify-center rounded-full"
-              style={{ color: "var(--mob-muted)" }}
-            >
-              <Maximize2 size={16} />
-            </button>
+            <PillIcon label="Write in full screen" tapHandlers={tap(() => setFullscreen(true))}>
+              <Maximize2 size={18} />
+            </PillIcon>
+          )}
+          {!fullscreen && showMic && (
+            <PillIcon label="Record a voice memo" onClick={voice.onStart}>
+              <Mic size={21} />
+            </PillIcon>
           )}
         </div>
-        {!fullscreen && showMic && micButton}
         {!fullscreen && (
           <button
             type="button"
             aria-label={sendLabel}
             {...tap(send)}
             disabled={sendDisabled}
-            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
+            className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full transition-opacity disabled:opacity-40"
             style={{ background: "var(--mob-accent)", color: "#fff" }}
           >
             {sendIcon}
@@ -491,5 +495,31 @@ export function MemoComposer({
         </div>
       )}
     </div>
+  );
+}
+
+// An icon button inside the composer pill (no background of its own).
+function PillIcon({
+  label,
+  onClick,
+  tapHandlers,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  tapHandlers?: Record<string, unknown>;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      {...tapHandlers}
+      className="mb-[4px] flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+      style={{ color: "var(--mob-muted)" }}
+    >
+      {children}
+    </button>
   );
 }

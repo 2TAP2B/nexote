@@ -17,6 +17,7 @@ import {
   Loader2,
   Sparkles,
   SquareArrowOutUpRight,
+  TextCursor,
   TextSelect,
   X,
 } from "lucide-react";
@@ -531,6 +532,13 @@ export default function EditorPane({
               icon: <SquareArrowOutUpRight className="h-4 w-4" />,
               onClick: () => void openTab(activeNote.id),
             },
+            ...(rawMode
+              ? []
+              : [{
+                  label: "Select all",
+                  icon: <TextCursor className="h-4 w-4" />,
+                  onClick: () => editorRef.current?.selectAllBody(),
+                }]),
             { label: "", onClick: () => {}, separator: true },
             // A copy lands in the note's own vault, so viewers can't make one.
             ...(canEditSpace && !readOnly
