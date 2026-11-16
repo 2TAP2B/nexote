@@ -1026,10 +1026,12 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       applySlash(null);
     };
 
-    // Some mobile browsers swallow the click that follows a preventDefault'd
-    // pointerdown (and a blur can tear the sheet down between the two), so the
-    // sheet items act on pointerdown. The guard stops a late/inherited click
-    // from running the same item twice.
+    // Sheet rows act on a tap — pointerup close to where the finger went
+    // down — not on pointerdown: a swipe that scrolls the sheet must not pick
+    // the row it started on (the browser cancels the pointer when it scrolls).
+    // pointerdown stays preventDefault'd so the editor keeps focus and the
+    // keyboard stays up; some mobile browsers then swallow the click, hence
+    // pointerup instead of onClick. The guard stops a double run.
     const slashActingRef = useRef(false);
     const runSlashItem = (item: SlashItem) => {
       if (slashActingRef.current) return;
@@ -1039,6 +1041,23 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       }, 250);
       selectSlashItem(item);
     };
+    const tapStart = useRef<{ x: number; y: number } | null>(null);
+    const tapProps = (run: () => void) => ({
+      onPointerDown: (e: React.PointerEvent) => {
+        e.preventDefault();
+        tapStart.current = { x: e.clientX, y: e.clientY };
+      },
+      onPointerCancel: () => {
+        tapStart.current = null;
+      },
+      onPointerUp: (e: React.PointerEvent) => {
+        const start = tapStart.current;
+        tapStart.current = null;
+        if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) return;
+        e.preventDefault();
+        run();
+      },
+    });
 
     useEditor((root) => {
       const baseUrl = aiConfig.baseUrl
@@ -1751,10 +1770,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                       <button
                         key={`${entry.create}-${entry.title}`}
                         type="button"
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          pickMention(entry);
-                        }}
+                        {...tapProps(() => pickMention(entry))}
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left"
                         style={i === mentionIndex ? { background: "color-mix(in srgb, var(--mob-text) 8%, transparent)" } : undefined}
                       >
@@ -1908,14 +1924,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   <button
                     key={item.id}
                     type="button"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      runSlashItem(item);
-                    }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      runSlashItem(item);
-                    }}
+                    {...tapProps(() => runSlashItem(item))}
                     className="flex w-full shrink-0 items-center gap-3 rounded-xl px-3 py-2 text-left transition-opacity active:opacity-70"
                   >
                     <span

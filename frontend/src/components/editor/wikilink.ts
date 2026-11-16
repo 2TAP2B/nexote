@@ -5,7 +5,7 @@
 
 import { InputRule } from "@milkdown/kit/prose/inputrules";
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
-import { $inputRule, $node, $remark } from "@milkdown/kit/utils";
+import { $inputRule, $node, $remark, $view } from "@milkdown/kit/utils";
 
 const WIKILINK_RE = /\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]/g;
 
@@ -102,4 +102,19 @@ export const wikilinkInputRule = $inputRule((ctx) =>
   }),
 );
 
-export const wikilinkPlugins = [wikilinkRemark, wikilinkNode, wikilinkInputRule].flat();
+// In the editor the chip has no text node: the name is drawn by CSS from
+// data-label. Phone keyboards (iOS, Android) backspacing next to a
+// non-editable inline element otherwise keep a copy of its text, which the
+// editor reads back — the name doubled on every delete. toDOM above (with
+// text) still serves the HTML clipboard.
+export const wikilinkView = $view(wikilinkNode, () => (node) => {
+  const dom = document.createElement("span");
+  dom.className = "nexote-wikilink";
+  dom.dataset.wikilink = node.attrs.target;
+  dom.dataset.label = node.attrs.label || node.attrs.target;
+  dom.title = node.attrs.target;
+  dom.contentEditable = "false";
+  return { dom, ignoreMutation: () => true };
+});
+
+export const wikilinkPlugins = [wikilinkRemark, wikilinkNode, wikilinkView, wikilinkInputRule].flat();

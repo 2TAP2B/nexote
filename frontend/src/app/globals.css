@@ -596,6 +596,10 @@ body {
 .milkdown .ProseMirror .nexote-wikilink:hover {
   background: color-mix(in oklab, var(--crepe-color-primary) 12%, transparent);
 }
+/* The editor's chip has no text node (see editor/wikilink.ts wikilinkView). */
+.milkdown .ProseMirror .nexote-wikilink::after {
+  content: attr(data-label);
+}
 .milkdown .ProseMirror .nexote-wikilink.ProseMirror-selectednode {
   outline: 2px solid color-mix(in oklab, var(--crepe-color-primary) 50%, transparent);
 }
