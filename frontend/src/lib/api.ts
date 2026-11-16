@@ -281,6 +281,12 @@ export type SearchHit = {
   vaultName: string;
 };
 
+/** A note id like the server's (16 base64url characters). */
+export function newNoteId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_");
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -419,10 +425,12 @@ export const api = {
     request<void>(`/api/journal/notes/${id}`, {
       method: "DELETE",
     }),
+  // The id is chosen here so a note created offline keeps it after the sync
+  // (later edits address it; a replayed create is recognized, not doubled).
   create: (vaultId: string, input: NoteInput) =>
     request<Note>(`${vaultBase(vaultId)}/notes`, {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify({ id: newNoteId(), ...input }),
     }),
   copy: (vaultId: string, id: string) =>
     request<Note>(`${vaultBase(vaultId)}/notes/copy`, {

@@ -63,6 +63,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const resume = useCallback(
     async (next: AuthUser) => {
       if (next.id !== userRef.current?.id) {
+        // Changes the previous account queued offline can't be synced by
+        // this one and go with its data.
+        const pending = await offlineOutboxCount().catch(() => 0);
+        if (
+          pending > 0 &&
+          !window.confirm(
+            `${pending} offline ${pending === 1 ? "change" : "changes"} of ${userRef.current?.displayName || "the previous account"} haven't synced yet and will be lost. Continue as ${next.displayName || next.username}?`,
+          )
+        ) {
+          await api.logout().catch(() => {});
+          return;
+        }
         await wipeUserData({ personalSettings: true });
         rememberUser(next);
         window.location.reload();

@@ -5,9 +5,11 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Nexote",
     short_name: "Nexote",
     description: "A markdown note-taking app powered by Milkdown.",
-    start_url: "/m",
+    id: "/",
+    scope: "/",
+    // Phones are sent on to /m by the start page; desktops stay on /.
+    start_url: "/",
     display: "standalone",
-    orientation: "portrait",
     background_color: "#1a1d29",
     theme_color: "#1a1d29",
     icons: [

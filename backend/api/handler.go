@@ -657,7 +657,14 @@ func (h *Handler) createNote(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	doc, err := store.Create(in)
-	if err != nil {
+	switch {
+	case errors.Is(err, notes.ErrInvalidID):
+		writeError(w, http.StatusBadRequest, err)
+		return
+	case errors.Is(err, notes.ErrExists):
+		writeError(w, http.StatusConflict, err)
+		return
+	case err != nil:
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

@@ -67,7 +67,7 @@ Nexote runs on your own server and keeps your notes as plain markdown files with
 
 **Sync and offline**
 - Live updates in every open tab over server-sent events.
-- Installable PWA with an offline cache and a queue that replays changes on reconnect.
+- Installable PWA that works offline: edit, create and delete notes without a connection; changes sync in order on reconnect, and a conflicting offline edit is kept as a copy instead of being lost.
 - Optional git sync of the whole data directory, with push and pull to a remote.
 
 **AI**

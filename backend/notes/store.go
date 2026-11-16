@@ -22,6 +22,14 @@ var ErrNotFound = errors.New("note not found")
 // than silently overwriting a concurrent edit.
 var ErrConflict = errors.New("note changed since read")
 
+// ErrExists is returned by Create when a caller-chosen id is already taken
+// (an offline-created note replayed twice: the first replay created it).
+var ErrExists = errors.New("note already exists")
+
+// ErrInvalidID is returned by Create for a caller-chosen id that isn't a
+// NewID-style id (16 base64url characters).
+var ErrInvalidID = errors.New("invalid note id")
+
 // Store is a filesystem-backed collection of notes. Notes may live in nested
 // folders under Dir; each note is a markdown file named after its title (see
 // filenames.go) whose frontmatter records its id, path (the folder, relative
@@ -285,12 +293,29 @@ func (s *Store) Copy(id string) (Document, error) {
 
 // CreateInput is the optional body for creating a note.
 type CreateInput struct {
+	// ID is optional: clients pick one for notes created offline, so later
+	// edits (queued before the create reached the server) address the same
+	// note and a replayed create can't make a duplicate. Empty = NewID().
+	ID    string `json:"id,omitempty"`
 	Title string `json:"title"`
 	Path  string `json:"path"`
 	// Body seeds the note content. Empty = the default title heading
 	// ("## <title>"); the frontend's headingOnNewNote=off passes "\n" so the
 	// note starts as a plain blank paragraph (classic Obsidian look).
 	Body string `json:"body,omitempty"`
+}
+
+// validID reports whether id looks like a NewID() id.
+func validID(id string) bool {
+	if len(id) != 16 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // Create writes a new note file with a fresh id and empty body, returning the
@@ -306,13 +331,23 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 	}
 	notePath := sanitizePath(in.Path)
 	now := time.Now().UTC()
+	id := NewID()
+	if in.ID != "" {
+		if !validID(in.ID) {
+			return Document{}, ErrInvalidID
+		}
+		if _, err := s.read(in.ID); err == nil {
+			return Document{}, ErrExists
+		}
+		id = in.ID
+	}
 	body := fmt.Sprintf("## %s\n\n", title)
 	if in.Body != "" {
 		body = in.Body
 	}
 	doc := Document{
 		Meta: Meta{
-			ID:        NewID(),
+			ID:        id,
 			Title:     title,
 			Path:      notePath,
 			CreatedAt: now,
@@ -469,18 +504,15 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	}
 	oldPath := doc.Meta.Path
 
+	// Optimistic concurrency: if the caller expected a specific updatedAt and
+	// the note has since changed, refuse to overwrite the newer content.
+	if in.ExpectedUpdatedAt != nil && *in.ExpectedUpdatedAt != "" && !sameVersion(doc.Meta.UpdatedAt, *in.ExpectedUpdatedAt) {
+		return Document{}, ErrConflict
+	}
+
 	// Snapshot the pre-update version so the note's history is preserved.
 	// Best-effort: a history write failure must not block the save itself.
 	_, _ = s.snapshotHistory(doc)
-
-	// Optimistic concurrency: if the caller expected a specific updatedAt and
-	// the note has since changed, refuse to overwrite the newer content.
-	if in.ExpectedUpdatedAt != nil && *in.ExpectedUpdatedAt != "" {
-		if doc.Meta.UpdatedAt.Format(time.RFC3339Nano) != *in.ExpectedUpdatedAt &&
-			doc.Meta.UpdatedAt.Format(time.RFC3339) != *in.ExpectedUpdatedAt {
-			return Document{}, ErrConflict
-		}
-	}
 
 	// Never let a blank body wipe a note that has content. A save that sends
 	// an empty body (e.g. a race or a transient editor state) must not destroy
@@ -554,6 +586,27 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 		return Document{}, err
 	}
 	return doc, nil
+}
+
+// sameVersion reports whether seen, an updatedAt a client got from the API,
+// names the version stamped updatedAt. Clients echo whatever precision they
+// were served (notes go out with milliseconds, the file keeps nanoseconds),
+// so both are compared at seen's precision.
+func sameVersion(updatedAt time.Time, seen string) bool {
+	t, err := time.Parse(time.RFC3339Nano, seen)
+	if err != nil {
+		return false
+	}
+	precision := time.Second
+	if dot := strings.IndexByte(seen, '.'); dot >= 0 {
+		for _, c := range seen[dot+1:] {
+			if c < '0' || c > '9' || precision == time.Nanosecond {
+				break
+			}
+			precision /= 10
+		}
+	}
+	return updatedAt.Truncate(precision).Equal(t.Truncate(precision))
 }
 
 // inlineTagRe matches #hashtags in the body. Milkdown escapes # at the start

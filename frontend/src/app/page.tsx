@@ -15,7 +15,7 @@ import {
   SquareStack,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import { AuthGate } from "@/components/auth/AuthProvider";
 import CommandPalette from "@/components/CommandPalette";
@@ -37,7 +37,6 @@ import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
 // Redirect mobile visitors to the dedicated /m mobile UI, unless the user
 // has explicitly chosen "View desktop" (nexote-force-desktop in localStorage).
 function MobileRedirect() {
-  const router = useRouter();
   const pathname = usePathname();
   useEffect(() => {
     try {
@@ -48,10 +47,12 @@ function MobileRedirect() {
     const ua = navigator.userAgent;
     const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
     if (!isMobile) return;
-    // Preserve deep links: /note/<v>/<n> -> /m/note/<v>/<n>, etc.
+    // Preserve deep links: /note/<v>/<n> -> /m/note/<v>/<n>, etc. A full page
+    // load, not router.replace: offline the service worker can answer it
+    // from the cached /m shell, a client navigation would need server data.
     const mobilePath = pathname === "/" ? "/m" : `/m${pathname}`;
-    router.replace(mobilePath);
-  }, [router, pathname]);
+    window.location.replace(mobilePath + window.location.search + window.location.hash);
+  }, [pathname]);
   return null;
 }
 

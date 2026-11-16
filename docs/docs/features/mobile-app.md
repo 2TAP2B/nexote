@@ -84,4 +84,4 @@ The mobile dashboard has collapsible sections: quick actions (New note, Today, S
 
 ## Installing
 
-Nexote provides a web app manifest, so the browser's "Add to Home Screen" or "Install app" installs it as a standalone app that opens at `/m`. See [Sync and offline](./sync-and-offline) for what works without a connection.
+Nexote provides a web app manifest, so the browser's "Add to Home Screen" or "Install app" installs it as a standalone app. On a phone it opens the mobile interface (`/m`), also offline. See [Sync and offline](./sync-and-offline) for what works without a connection.

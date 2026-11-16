@@ -14,34 +14,49 @@ Every open Nexote tab keeps a server-sent event connection to `/api/events`. The
 
 Events only go to people who can see the vault or space; changes to your journal and personal Notepad go only to you. If the connection drops, the browser reconnects after a few seconds.
 
-Saves are protected against overwriting: each save carries the time the note was last loaded, and the server rejects it if the note has changed since.
-
 A reverse proxy in front of Nexote must not buffer this stream. See [Reverse proxy and https](../guide/getting-started#reverse-proxy-and-https).
 
 ## Offline use
 
-Production builds register a service worker and store data in the browser's IndexedDB.
+Nexote installs as an app (PWA) and keeps working without a connection. "Offline" includes the case where the network is fine but the Nexote server can't be reached. Production builds register a service worker; data is kept in the browser's IndexedDB.
 
 **What is available offline:**
 
-- The app itself (`/` and `/m`), its icons and manifest.
-- The vault list, each vault's note list, bookmarks, shortcuts, tags, collections and the journal list. These are saved in the background after the app loads.
-- Notes you have opened at least once while online. Note contents are not downloaded in advance.
-- Images you have viewed or uploaded on that device.
+- The whole app (desktop `/` and mobile `/m`, including the editor), cached when the service worker installs. Each new version replaces the cache.
+- Spaces, the vault list, each vault's note list and folders, bookmarks, shortcuts, tags, collections and the journal list, saved in the background while you're online.
+- Note contents: notes you've opened, plus open tabs, bookmarked notes, the Notepad and the 50 most recently edited notes, which are downloaded in advance.
+- Today's journal, if you opened it once while online.
+- Images you've viewed or uploaded on that device.
 
-If the server cannot be reached when the app starts, it opens for the account that was last signed in on that device.
+If the server can't be reached when the app starts, it opens for the account that was last signed in on that device.
 
-**Changes made offline:**
+**What you can change offline:**
 
-- Edits and other changes that fail because there is no connection are queued in IndexedDB, and the app continues as if they had been saved.
-- A status indicator shows "Offline — changes will sync when back online", the number of pending changes, and "Syncing..." while the queue is sent.
-- When the server is reachable again, the queue is sent in order.
+| Works offline (queued) | Needs a connection |
+| --- | --- |
+| Edit notes and journal entries, Notepad and quick notes | Move or copy notes, rename or delete folders |
+| Create and delete notes | Image uploads and attachments |
+| Bookmarks and shortcuts | Restoring a note from history, task changes from the task list |
+| Create folders | Vault, space, collection and tag management, settings |
+
+An action that needs a connection fails with "You're offline. This change needs a connection to the server." A note that isn't saved on the device shows "You're offline and this isn't saved on this device yet."
+
+**How syncing works:**
+
+- Queued changes are shown right away in the app, also after a reload, and survive closing the browser.
+- Several edits of the same note are combined into one change.
+- The indicator at the top shows "Offline" with the number of waiting changes, then "Syncing…".
+- The app checks every 15 seconds whether the server is back, and also when the browser reports a connection or the app comes to the front. On Android, Chrome also syncs after the app was closed.
+- Changes are sent in the order they were made. Notes created offline keep their id, so a change sent twice never creates a duplicate.
 - If the session has expired, sending stops and the queue is kept until you sign in again.
-- A queued change that conflicts with a newer version on the server is dropped, and the app reports that some offline changes were not applied.
+
+**Conflicts never lose text.** Each queued edit remembers which version of the note it started from. If the note was changed on another device in the meantime, the server version stays and your offline text is saved as a new note "*Title* (offline copy)" next to it. The same happens if the note was deleted meanwhile. A notice tells you which notes this affected. Edits made while online are saved directly; the last save wins.
 
 Requests to the AI, git, account and admin endpoints are never cached or queued.
 
-Signing out warns about changes that have not been sent yet, then clears the cached data and the queue on that device.
+Signing out warns about changes that haven't been sent yet, then clears the cached data and the queue on that device (the app itself stays cached). Signing in as a different account warns the same way.
+
+**Limits:** a daily journal for a day you haven't opened online can't be created offline.
 
 ## Git sync
 

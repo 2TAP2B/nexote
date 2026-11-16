@@ -11,12 +11,14 @@ import {
 } from "react";
 
 import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
-import { offlinePrecache } from "@/lib/offline-db";
 import { localDateKey } from "@/lib/note-utils";
-import { NOTEPAD_TITLE } from "@/lib/notepad";
+import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
 
 type Draft = { title: string; body: string };
+
+// When note bodies were last requested for the offline copy (per page load).
+let lastBodyPrecache = 0;
 
 export type AppSettings = {
   // New-note title; date/time codes are filled in by formatTitle. Empty
@@ -738,52 +740,62 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Precache the full dataset into IndexedDB (offline mirror) and react to
-  // sync events from the service worker / offline indicator.
+  // Offline copy: request every list and the notes most likely to be opened
+  // (open tabs, bookmarks, the Notepad, the most recently edited) once while
+  // online; the service worker stores each response. Only with an active
+  // worker (production; on a first visit it takes control after load), and
+  // the bodies at most every 10 minutes.
   useEffect(() => {
+    const sw = typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
+    if (!allVaults.length || !sw) return;
     let cancelled = false;
     const precache = async () => {
-      try {
-        if (!allVaults.length) return;
-        // Build the lists payload: vaults + per-vault note/folder lists +
-        // marks + tags + each space's collections + journal list.
-        const lists: Record<string, unknown> = {
-          "/api/vaults": { vaults: allVaults },
-        };
-        for (const s of spaces) {
-          try {
-            lists[`/api/collections?space=${s.id}`] = await api.listCollections(s.id);
-          } catch {}
-        }
-        for (const v of allVaults) {
-          try {
-            const res = await api.list(v.id);
-            lists[`/api/vaults/${v.id}/notes`] = res;
-          } catch {}
-          try {
-            const [bm, sc] = await Promise.all([
-              api.listBookmarks(v.id),
-              api.listShortcuts(v.id),
-            ]);
-            lists[`/api/vaults/${v.id}/bookmarks`] = bm;
-            lists[`/api/vaults/${v.id}/shortcuts`] = sc;
-          } catch {}
-          try {
-            lists[`/api/vaults/${v.id}/tags`] = await api.listTags(v.id);
-          } catch {}
-        }
-        try {
-          lists["/api/journal/notes"] = await api.journalList();
-        } catch {}
+      const ok = <T,>(p: Promise<T>) => p.catch(() => undefined);
+      await ok(api.listSpaces());
+      await ok(api.listVaults());
+      for (const s of spaces) await ok(api.listCollections(s.id));
+      const wanted: Array<[string, string]> = [];
+      const recent: Array<[string, NoteMeta]> = [];
+      // The personal store (Notepad, quick notes) is in no vault list.
+      for (const vid of [HOME_VAULT, ...allVaults.map((v) => v.id)]) {
         if (cancelled) return;
-        await offlinePrecache({ lists, notes: {} });
-      } catch {
-        // Best-effort; the SW also caches GETs as they happen.
+        const [list, bm] = await Promise.all([
+          ok(api.list(vid)),
+          ok(api.listBookmarks(vid)),
+          ok(api.listShortcuts(vid)),
+          ok(api.listTags(vid)),
+        ]);
+        for (const n of list?.notes ?? []) {
+          recent.push([vid, n]);
+          if (n.title === NOTEPAD_TITLE) wanted.push([vid, n.id]);
+        }
+        for (const id of bm?.bookmarks ?? []) wanted.push([vid, id]);
       }
+      await ok(api.journalList());
+      if (Date.now() - lastBodyPrecache < 10 * 60_000) return;
+      lastBodyPrecache = Date.now();
+      for (const id of openTabsRef.current) {
+        const vid = noteVaultMapRef.current[id];
+        if (vid) wanted.push([vid, id]);
+      }
+      recent.sort((a, b) => b[1].updatedAt.localeCompare(a[1].updatedAt));
+      for (const [vid, n] of recent.slice(0, 50)) wanted.push([vid, n.id]);
+      const queue = [...new Map(wanted.map(([vid, id]) => [`${vid}/${id}`, [vid, id] as const])).values()];
+      // A few at a time: don't flood the server on a big vault.
+      await Promise.all(
+        Array.from({ length: 4 }, async () => {
+          for (let next = queue.shift(); next && !cancelled; next = queue.shift()) {
+            await ok(api.get(next[0], next[1]));
+          }
+        }),
+      );
     };
-    void precache();
+    const onControl = () => void precache();
+    if (sw.controller) void precache();
+    else sw.addEventListener("controllerchange", onControl, { once: true });
     return () => {
       cancelled = true;
+      sw.removeEventListener("controllerchange", onControl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allVaults, spaces]);
@@ -1503,26 +1515,17 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(OPEN_WIKILINK_EVENT, onOpen);
   }, []);
 
-  // React to offline-sync completions and conflicts from the service worker.
+  // Offline sync finished (or the live connection came back): reload every
+  // vault tree, marks and the journal.
   useEffect(() => {
     const onRefresh = () => {
       void refresh();
+      for (const v of allVaultsRef.current) void refreshVaultTreeRef.current(v.id);
       void refreshAllMarks();
       void refreshJournal();
     };
-    const onConflicts = (e: Event) => {
-      const urls = (e as CustomEvent).detail as string[] | undefined;
-      if (!urls || urls.length === 0) return;
-      setError(
-        "Some offline changes were not applied because those notes were edited elsewhere.",
-      );
-    };
     window.addEventListener("nexote:refresh-data", onRefresh);
-    window.addEventListener("nexote:sync-conflicts", onConflicts as EventListener);
-    return () => {
-      window.removeEventListener("nexote:refresh-data", onRefresh);
-      window.removeEventListener("nexote:sync-conflicts", onConflicts as EventListener);
-    };
+    return () => window.removeEventListener("nexote:refresh-data", onRefresh);
   }, [refresh, refreshAllMarks, refreshJournal]);
 
   // Live sync: subscribe to the backend's Server-Sent Events stream and, when
@@ -1538,6 +1541,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     let es: EventSource | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
+    let disconnected = false;
     // Bulk operations send a burst of tree-change events; refetch once per vault.
     const treeTimers = new Map<string, number>();
 
@@ -1606,7 +1610,30 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         void refreshSpacesRef.current().catch(() => {});
         window.dispatchEvent(new Event("nexote:refresh-data"));
       });
+      // Reconnected after a drop: events sent meanwhile are lost, so reload
+      // the trees and the open notes that changed.
+      es.onopen = () => {
+        if (!disconnected) return;
+        disconnected = false;
+        window.dispatchEvent(new Event("nexote:refresh-data"));
+        void refreshSpacesRef.current().catch(() => {});
+        for (const [id, cached] of Object.entries(notesByIdRef.current)) {
+          const vaultId = journalIdsRef.current.has(id) ? "journal" : noteVaultMapRef.current[id];
+          if (!vaultId || id === activeIdRef.current && Date.now() - lastEditAtRef.current < 1500) continue;
+          void (vaultId === "journal" ? api.journalGet(id) : api.get(vaultId, id))
+            .then((fresh) => {
+              if (Date.parse(fresh.updatedAt) <= Date.parse(cached.updatedAt)) return;
+              setNotesById((prev) => {
+                const cur = prev[id];
+                if (!cur || Date.parse(cur.updatedAt) >= Date.parse(fresh.updatedAt)) return prev;
+                return { ...prev, [id]: fresh };
+              });
+            })
+            .catch(() => {});
+        }
+      };
       es.onerror = () => {
+        disconnected = true;
         es?.close();
         if (retry) clearTimeout(retry);
         retry = setTimeout(connect, 3000);
@@ -1797,7 +1824,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const save = useCallback(
     async (id: string, input: Draft) => {
       const isJournal = journalIdsRef.current.has(id);
-      if (!activeVaultId && !isJournal) return;
+      // The note's own vault: an open tab can belong to another vault.
+      const vaultId = noteVaultMapRef.current[id] ?? activeVaultId;
+      if (!vaultId && !isJournal) return;
       // Never let a blank body wipe a note that has content. A save that
       // sends an empty body (e.g. a race or transient editor state) must not
       // destroy the existing text.
@@ -1832,9 +1861,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
             // Refresh tasks since the body may have changed checkbox states.
             void refreshTasks();
           } else {
-            const updated = await api.update(activeVaultId!, id, input);
-            await refresh();
-            void refreshTags(activeVaultId!);
+            const updated = await api.update(vaultId!, id, input);
+            if (vaultId === activeVaultId) await refresh();
+            else await refreshVaultTreeRef.current(vaultId!);
+            void refreshTags(vaultId!);
             setNotesById((prev) => {
               const n = prev[id];
               if (!n) return prev;

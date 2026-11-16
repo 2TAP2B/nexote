@@ -82,8 +82,9 @@ export function rememberUser(user: AuthUser): void {
   }
 }
 
-/** Removes the account's data from this device: service-worker caches, the
- *  offline database and per-account localStorage keys. `personalSettings`
+/** Removes the account's data from this device: cached images and data, the
+ *  offline database and per-account localStorage keys. The app-shell cache
+ *  (no account data) stays, so the app still starts offline. `personalSettings`
  *  also drops the AI credentials (another person is signing in). */
 export async function wipeUserData({ personalSettings }: { personalSettings: boolean }): Promise<void> {
   try {
@@ -106,7 +107,9 @@ export async function wipeUserData({ personalSettings }: { personalSettings: boo
   await Promise.all([
     typeof caches === "undefined"
       ? undefined
-      : caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))),
+      : caches
+          .keys()
+          .then((keys) => Promise.all(keys.filter((k) => !k.startsWith("nexote-shell-")).map((k) => caches.delete(k)))),
     typeof indexedDB === "undefined" ? undefined : offlineClearAll(),
   ]).catch(() => {
     // Best effort: a browser without storage access has nothing cached.

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -368,5 +369,60 @@ func TestCreateIndexesInlineTags(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("tag index %v lacks work", idx)
+	}
+}
+
+func TestCreateWithClientID(t *testing.T) {
+	s := newTestStore(t)
+
+	doc, err := s.Create(CreateInput{ID: "offlineNote_0001", Title: "Offline"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if doc.Meta.ID != "offlineNote_0001" {
+		t.Fatalf("id = %q, want the client's", doc.Meta.ID)
+	}
+	// A replayed create must not make a second note.
+	if _, err := s.Create(CreateInput{ID: "offlineNote_0001", Title: "Offline"}); !errors.Is(err, ErrExists) {
+		t.Fatalf("second create err = %v, want ErrExists", err)
+	}
+	list, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list.Notes) != 1 {
+		t.Fatalf("notes = %d, want 1", len(list.Notes))
+	}
+	for _, bad := range []string{"short", "has/slash_000000", "../../etc/passwd0"} {
+		if _, err := s.Create(CreateInput{ID: bad, Title: "Bad"}); !errors.Is(err, ErrInvalidID) {
+			t.Fatalf("Create(id=%q) err = %v, want ErrInvalidID", bad, err)
+		}
+	}
+}
+
+// The API serves updatedAt with milliseconds while the file keeps
+// nanoseconds: echoing the served value must count as "unchanged", and an
+// older value must still be refused.
+func TestUpdateExpectedUpdatedAtServedPrecision(t *testing.T) {
+	s := newTestStore(t)
+	doc, err := s.Create(CreateInput{Title: "Base", Body: "v1"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	served := doc.Meta.UpdatedAt.Format("2006-01-02T15:04:05.000Z07:00")
+	time.Sleep(2 * time.Millisecond)
+	updated, err := s.Update(doc.Meta.ID, UpdateInput{Title: "Base", Body: "v2", ExpectedUpdatedAt: &served})
+	if err != nil {
+		t.Fatalf("Update with served updatedAt: %v", err)
+	}
+	if _, err := s.Update(doc.Meta.ID, UpdateInput{Title: "Base", Body: "v3", ExpectedUpdatedAt: &served}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Update with stale updatedAt err = %v, want ErrConflict", err)
+	}
+	got, err := s.Get(doc.Meta.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Body != "v2" || !got.Meta.UpdatedAt.Equal(updated.Meta.UpdatedAt) {
+		t.Fatalf("body = %q, want v2 kept after the refused update", got.Body)
 	}
 }

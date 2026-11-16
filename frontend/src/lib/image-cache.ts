@@ -6,9 +6,9 @@
 // so an image survives a reload even if the note body hasn't been flushed to
 // the server yet or the backend is unreachable (offline PWA).
 //
-// This cache name must be kept in sync with the one in public/sw.js — bump
-// both together when invalidating the app shell.
-const IMAGE_CACHE = "nexote-v4";
+// Must match IMAGE_CACHE in public/sw.js. Unlike the app shell, this cache
+// is not versioned: it holds user content and survives releases.
+const IMAGE_CACHE = "nexote-images";
 
 export async function cacheImage(url: string, data: Blob): Promise<void> {
   if (typeof caches === "undefined" || !url) return;
