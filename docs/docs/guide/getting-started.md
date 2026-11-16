@@ -35,6 +35,17 @@ Nexote ships as a single container that runs both the Go backend and the Next.js
 
    The container listens on port 3000. The Next.js server forwards `/api/*` to the backend inside the container, so no other port needs to be published.
 
+   If port 3000 is already taken on the host, don't edit `docker-compose.yml` (the next `git pull` would collide with your change). Put the port in a `docker-compose.override.yml` next to it instead. Compose reads it automatically, and git ignores it:
+
+   ```yaml
+   services:
+     nexote:
+       ports: !override
+         - "3001:3000"
+   ```
+
+   `!override` replaces the port list instead of adding to it (Docker Compose 2.24 or later). Point your reverse proxy at the new port.
+
 4. Read the setup code from the log:
 
    ```bash

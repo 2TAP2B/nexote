@@ -29,9 +29,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# env
+# env and local server settings (never overwritten by git pull)
 .env
 .env*.local
+docker-compose.override.yml
 
 # os
 .DS_Store
