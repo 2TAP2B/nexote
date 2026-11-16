@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 
 import { EDITOR_FONTS } from "@/lib/editor-fonts";
 import { formatTitle, useNotes } from "@/lib/notes-context";
@@ -18,6 +18,10 @@ import {
 
 // Codes understood by formatTitle, shown with today's value as a cheat sheet.
 const TITLE_CODES = ["YYYY", "YY", "MMM", "MM", "DD", "DDD", "DAY", "HH", "mm", "ss"] as const;
+
+// Ready-made formats for the toolbar's date button; anything else is custom.
+const DATE_PRESETS = ["YYYY-MM-DD", "DD.MM.YYYY", "DD/MM/YYYY", "MM/DD/YYYY", "DDD, DD MMM YYYY", "DAY, DD.MM.YYYY"];
+const CUSTOM = "custom";
 
 export function EditorSettings() {
   const { settings, updateSettings } = useNotes();
@@ -83,6 +87,10 @@ export function EditorSettings() {
           onChange={(v) => updateSettings({ headingOnNewNote: v })}
         />
       </SettingGroup>
+
+      <SettingGroup heading="Insert date">
+        <DateFormatSetting />
+      </SettingGroup>
     </SettingsPage>
   );
 }
@@ -121,5 +129,48 @@ function TitleTemplateSetting() {
         ))}
       </div>
     </SettingItem>
+  );
+}
+
+function DateFormatSetting() {
+  const { settings, updateSettings } = useNotes();
+  const id = useId();
+  const now = new Date();
+  const [customOpen, setCustomOpen] = useState(() => !DATE_PRESETS.includes(settings.dateFormat));
+  return (
+    <>
+      <DropdownSetting
+        name="Date format"
+        description="What the date button in the editor toolbar (and “Today's date” in the / menu) inserts."
+        value={customOpen ? CUSTOM : settings.dateFormat}
+        options={[
+          ...DATE_PRESETS.map((p) => ({ value: p, label: formatTitle(p, now) })),
+          { value: CUSTOM, label: "Custom…" },
+        ]}
+        onChange={(v) => {
+          setCustomOpen(v === CUSTOM);
+          if (v !== CUSTOM) updateSettings({ dateFormat: v });
+        }}
+      />
+      {customOpen && (
+        <SettingItem
+          stacked
+          htmlFor={id}
+          name="Custom format"
+          description="Same codes as the note title: YYYY, MM, DD, DDD, DAY, HH, mm, …"
+        >
+          <TextInput
+            id={id}
+            full
+            value={settings.dateFormat}
+            placeholder="YYYY-MM-DD"
+            onChange={(v) => updateSettings({ dateFormat: v })}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Inserts <span className="font-medium text-foreground">{formatTitle(settings.dateFormat.trim() || "YYYY-MM-DD", now)}</span>
+          </p>
+        </SettingItem>
+      )}
+    </>
   );
 }

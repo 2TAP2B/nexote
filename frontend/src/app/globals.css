@@ -584,6 +584,36 @@ body {
   background: color-mix(in oklab, var(--crepe-color-primary) 22%, transparent);
 }
 
+/* [[Wikilinks]] — Obsidian-style internal link (clickable → opens the note) */
+.milkdown .ProseMirror .nexote-wikilink {
+  color: var(--crepe-color-primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--crepe-color-primary) 45%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.milkdown .ProseMirror .nexote-wikilink:hover {
+  background: color-mix(in oklab, var(--crepe-color-primary) 12%, transparent);
+}
+.milkdown .ProseMirror .nexote-wikilink.ProseMirror-selectednode {
+  outline: 2px solid color-mix(in oklab, var(--crepe-color-primary) 50%, transparent);
+}
+
+/* Block selection mode: taps pick whole blocks (list items one by one). */
+.milkdown .ProseMirror.nexote-block-select-mode {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  caret-color: transparent;
+}
+.milkdown .ProseMirror .nexote-block-selected {
+  background: color-mix(in oklab, var(--crepe-color-primary) 16%, transparent);
+  outline: 2px solid color-mix(in oklab, var(--crepe-color-primary) 45%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .milkdown .ProseMirror h1 {
   font-size: 38px;
   font-weight: 700;

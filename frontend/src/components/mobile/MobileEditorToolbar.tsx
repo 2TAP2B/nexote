@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  AtSign,
   Bold,
+  CalendarDays,
   Code2,
   Heading1,
   Heading2,
@@ -16,6 +18,7 @@ import {
   Strikethrough,
   Table,
   TextQuote,
+  TextSelect,
 } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 
@@ -131,6 +134,16 @@ export default function MobileEditorToolbar({
         >
           <BarButton label="Insert / slash commands" onClick={openSlash} accent>
             <Plus size={20} />
+          </BarButton>
+          <BarDivider />
+          <BarButton label="Link to note" onClick={() => editorRef.current?.startMention()}>
+            <AtSign size={20} />
+          </BarButton>
+          <BarButton label="Insert date" onClick={() => editorRef.current?.insertDate()}>
+            <CalendarDays size={20} />
+          </BarButton>
+          <BarButton label="Select blocks" onClick={() => editorRef.current?.toggleBlockSelect()}>
+            <TextSelect size={20} />
           </BarButton>
           <BarDivider />
           <BarButton label="Bold" onClick={run("bold")}>

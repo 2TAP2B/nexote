@@ -14,6 +14,7 @@ import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type Git
 import { offlinePrecache } from "@/lib/offline-db";
 import { localDateKey } from "@/lib/note-utils";
 import { NOTEPAD_TITLE } from "@/lib/notepad";
+import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
 
 type Draft = { title: string; body: string };
 
@@ -60,6 +61,8 @@ export type AppSettings = {
   dashBookmarks: boolean;
   dashTasks: boolean;
   dashTags: boolean;
+  // Format of the toolbar's "insert date" (formatTitle codes).
+  dateFormat: string;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -90,6 +93,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dashBookmarks: true,
   dashTasks: true,
   dashTags: true,
+  dateFormat: "YYYY-MM-DD",
 };
 
 type NotesContextValue = {
@@ -136,7 +140,7 @@ type NotesContextValue = {
 
   openTab: (id: string) => Promise<void>;
   closeTab: (id: string) => void;
-  create: (input?: { title?: string; path?: string; vaultId?: string }) => Promise<void>;
+  create: (input?: { title?: string; path?: string; vaultId?: string; rename?: boolean }) => Promise<void>;
   copyNote: (id: string) => Promise<void>;
   moveNoteToVault: (noteId: string, dstVaultId: string, dstPath?: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
@@ -1179,7 +1183,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [noteVaultMap]);
 
   const create = useCallback(
-    async (input?: { title?: string; path?: string; vaultId?: string }) => {
+    async (input?: { title?: string; path?: string; vaultId?: string; rename?: boolean }) => {
       if (!activeVaultId) return;
       setCreating(true);
       try {
@@ -1226,7 +1230,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         if (vaultId !== activeVaultId) switchVault(vaultId);
         setActiveId(note.id);
         pushNoteUrl(note.id, vaultId, false);
-        window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
+        if (input?.rename !== false) window.dispatchEvent(new CustomEvent("nexote:rename-new-note"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to create note");
       } finally {
@@ -1463,6 +1467,41 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshJournal();
   }, [refreshJournal]);
+
+  // [[Link]] chips in the editor open the note with that title: the active
+  // space first, then any space, then the journal. A missing note is created
+  // next to the current one (like Obsidian). "[[Note#Heading]]" opens Note.
+  const openWikilinkRef = useRef<(target: string) => void>(() => {});
+  openWikilinkRef.current = (target: string) => {
+    const title = target.split("#")[0].trim();
+    if (!title) return;
+    const key = title.toLowerCase();
+    const find = (list: VaultMeta[]) => {
+      for (const v of list) {
+        const note = allVaultData[v.id]?.notes.find((n) => !n.collection && n.title.toLowerCase() === key);
+        if (note) return { vaultId: v.id, id: note.id };
+      }
+      return null;
+    };
+    const hit = find(vaults) ?? find(allVaults);
+    if (hit) {
+      void openNoteInVault(hit.vaultId, hit.id);
+      return;
+    }
+    const journal = journalNotes.find((n) => n.title.toLowerCase() === key);
+    if (journal) {
+      void openJournalNote(journal.id);
+      return;
+    }
+    void create({ title, rename: false });
+  };
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      if (e instanceof CustomEvent && typeof e.detail === "string") openWikilinkRef.current(e.detail);
+    };
+    window.addEventListener(OPEN_WIKILINK_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_WIKILINK_EVENT, onOpen);
+  }, []);
 
   // React to offline-sync completions and conflicts from the service worker.
   useEffect(() => {

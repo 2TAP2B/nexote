@@ -14,7 +14,9 @@ import {
   SlidersHorizontal,
   SquareStack,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { BLOCK_SELECT_EVENT } from "@/lib/editor-events";
 
 import { MobileActionSheet } from "./MobileActionSheet";
 import { useScrollHideChrome } from "./useScrollHideChrome";
@@ -64,7 +66,16 @@ export default function MobileBottomPill({
 }: Props) {
   const scrollVisible = useScrollHideChrome(autoHideKey);
   const vv = useVisualViewport();
-  const shown = (scrollVisible || autoHideKey === undefined) && !vv.isKeyboardOpen;
+  // Block selection mode puts its own bar where the pill sits.
+  const [blockSelecting, setBlockSelecting] = useState(false);
+  useEffect(() => {
+    const onMode = (e: Event) => {
+      if (e instanceof CustomEvent && typeof e.detail === "boolean") setBlockSelecting(e.detail);
+    };
+    window.addEventListener(BLOCK_SELECT_EVENT, onMode);
+    return () => window.removeEventListener(BLOCK_SELECT_EVENT, onMode);
+  }, []);
+  const shown = (scrollVisible || autoHideKey === undefined) && !vv.isKeyboardOpen && !blockSelecting;
   const [menuOpen, setMenuOpen] = useState(false);
 
   const menuSections = [

@@ -17,6 +17,7 @@ import {
   Loader2,
   Sparkles,
   SquareArrowOutUpRight,
+  TextSelect,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -221,6 +222,8 @@ export default function EditorPane({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      // An editor popup (the "@" note picker) closes first.
+      if (document.querySelector("[data-editor-popup]")) return;
       // Only act when the editor (or something inside it) is focused.
       const el = document.activeElement as HTMLElement | null;
       if (!el) return;
@@ -470,6 +473,17 @@ export default function EditorPane({
           >
             {rawMode ? <BookOpen size={15} /> : <Braces size={15} />}
           </button>
+          {!rawMode && (
+            <button
+              type="button"
+              aria-label="Select blocks"
+              title="Select blocks"
+              onClick={() => editorRef.current?.toggleBlockSelect()}
+              className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
+            >
+              <TextSelect size={15} />
+            </button>
+          )}
           <button
             type="button"
             aria-label="Note history"

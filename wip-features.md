@@ -121,11 +121,11 @@ disappear from storage.
    (`titleTemplate`, codes handled by `formatTitle`). Add a template folder, a
    template for new notes and one for journal notes, reusing the same codes.
 6. **Internal links and backlinks.** Obsidian: `[[wikilinks]]`, "Automatically
-   update internal links" on rename, Backlinks pane. Quick notes already write
-   `[[Title]]` links and open them from the memo bubbles; the editor still shows
-   them as plain text, and previews strip them (`snippet.go`, `note-utils.ts`).
-   Files are named after their titles now, so the title is a natural link
-   target.
+   update internal links" on rename, Backlinks pane. Done: the editor renders
+   `[[Title]]` as clickable chips, writes them back unescaped, opens or creates
+   the note on click, and "@"/"[[" picks a note (`components/editor/`). Open:
+   updating links on rename and a Backlinks pane. Previews strip them
+   (`snippet.go`, `note-utils.ts`).
 7. **Editor behavior.** Obsidian Editor › Behavior: spellcheck (+ languages),
    auto-pair brackets, auto-pair markdown syntax, smart lists (continue a list
    on Enter), indent with Tab / tab size, strict line breaks. Today none are

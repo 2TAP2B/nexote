@@ -30,7 +30,12 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type Comp
 import { createPortal } from "react-dom";
 
 import {
+  AtSign,
+  CalendarDays,
   Code2,
+  Copy,
+  FilePlus,
+  FileText,
   Heading1,
   Heading2,
   Heading3,
@@ -38,16 +43,34 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Scissors,
   Table,
   TextQuote,
+  Trash2,
+  X,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
+import { BLOCK_SELECT_EVENT, OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
 import { cacheImage } from "@/lib/image-cache";
+import { formatTitle, useNotes } from "@/lib/notes-context";
+import {
+  blockSelectPlugin,
+  blockSelectState,
+  deleteSelectedBlocks,
+  selectedBlocksDoc,
+  setBlockSelectMode,
+  type BlockSelectState,
+} from "./editor/blockSelect";
+import { computeMention, insertMention, mentionCandidates, mentionPlugin, type MentionState } from "./editor/mention";
+import { wikilinkPlugins } from "./editor/wikilink";
 import { useVisualViewport } from "./mobile/useVirtualKeyboardInset";
 
 import {
+  atIcon,
   bulletListIcon,
+  calendarIcon,
   codeBlockIcon,
   h1Icon,
   h2Icon,
@@ -337,6 +360,12 @@ export type MilkdownEditorHandle = {
   insertImageFile: (file: File) => void;
   askAI: () => void;
   runAI: (instruction: string, label?: string) => void;
+  /** Inserts today's date (Settings › Editor format) at the caret. */
+  insertDate: () => void;
+  /** Types "@" at the caret, opening the note picker. */
+  startMention: () => void;
+  /** Switches block selection mode on or off. */
+  toggleBlockSelect: () => void;
 };
 
 export type FormatAction =
@@ -390,7 +419,7 @@ function computeSlashState(view: EditorView): SlashState | null {
 }
 
 type SlashItem = {
-  id: FormatAction | "image";
+  id: FormatAction | "image" | "date" | "mention";
   label: string;
   hint: string;
   icon: ComponentType<{ size?: number }>;
@@ -398,6 +427,8 @@ type SlashItem = {
 };
 
 const SLASH_ITEMS: SlashItem[] = [
+  { id: "date", label: "Today's date", hint: "", icon: CalendarDays, keywords: "date today time" },
+  { id: "mention", label: "Link to note", hint: "@", icon: AtSign, keywords: "link mention note wikilink" },
   { id: "h1", label: "Heading 1", hint: "## ", icon: Heading1, keywords: "heading h1 title" },
   { id: "h2", label: "Heading 2", hint: "### ", icon: Heading2, keywords: "heading h2" },
   { id: "h3", label: "Heading 3", hint: "#### ", icon: Heading3, keywords: "heading h3" },
@@ -748,6 +779,158 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     const slashImageRef = useRef<HTMLInputElement | null>(null);
     const vv = useVisualViewport();
 
+    // Runs fn on the live editor view (no-op before the editor exists).
+    const withView = (fn: (view: EditorView, ctx: Ctx) => void) => {
+      crepeRef.current?.editor.action((ctx) => fn(ctx.get(editorViewCtx), ctx));
+    };
+
+    // Date format and note titles come from the provider; editor callbacks
+    // are built once per note, so they read the date format from a ref.
+    const { settings, vaults, allVaultData } = useNotes();
+    const dateFormatRef = useRef(settings.dateFormat);
+    dateFormatRef.current = settings.dateFormat;
+
+    // Space before the date/@ when the caret follows text directly.
+    const leadingSpace = (view: EditorView) => {
+      const { $from } = view.state.selection;
+      const before = $from.parent.textBetween(0, $from.parentOffset, undefined, "\ufffc");
+      return before && !/\s$/.test(before) ? " " : "";
+    };
+    const insertDateNow = () =>
+      withView((view) => {
+        const text = leadingSpace(view) + formatTitle(dateFormatRef.current.trim() || "YYYY-MM-DD");
+        view.dispatch(view.state.tr.insertText(text).scrollIntoView());
+        view.focus();
+      });
+    const startMentionNow = () =>
+      withView((view) => {
+        view.dispatch(view.state.tr.insertText(`${leadingSpace(view)}@`));
+        view.focus();
+      });
+
+    // "@" / "[[" note picker. The plugin reports the live trigger; Escape
+    // dismisses it until the trigger text changes.
+    type MentionView = MentionState & { left: number; top: number; bottom: number };
+    type MentionEntry = { title: string; create: boolean };
+    const [mention, setMention] = useState<MentionView | null>(null);
+    const mentionRef = useRef<MentionView | null>(null);
+    const [mentionIndex, setMentionIndex] = useState(0);
+    const mentionIndexRef = useRef(0);
+    const mentionEntriesRef = useRef<MentionEntry[]>([]);
+    const dismissedMentionRef = useRef<number | null>(null);
+    const setMentionIdx = (i: number) => {
+      mentionIndexRef.current = i;
+      setMentionIndex(i);
+    };
+    const applyMention = (m: MentionState | null, view: EditorView) => {
+      if (!m) dismissedMentionRef.current = null;
+      const next = m && m.from !== dismissedMentionRef.current ? m : null;
+      const prev = mentionRef.current;
+      if (prev?.from === next?.from && prev?.to === next?.to && prev?.query === next?.query) return;
+      let shown: MentionView | null = null;
+      if (next) {
+        const c = view.coordsAtPos(next.from);
+        shown = { ...next, left: c.left, top: c.top, bottom: c.bottom };
+      }
+      if (prev?.query !== shown?.query) setMentionIdx(0);
+      mentionRef.current = shown;
+      setMention(shown);
+    };
+    const noteTitles = vaults.flatMap((v) =>
+      (allVaultData[v.id]?.notes ?? []).filter((n) => !n.collection && n.id !== noteId).map((n) => n.title),
+    );
+    const mentionEntries: MentionEntry[] = mention
+      ? (() => {
+          const titles = mentionCandidates(noteTitles, mention.query);
+          const q = mention.query.trim();
+          const exact = titles.some((t) => t.toLowerCase() === q.toLowerCase());
+          return [
+            ...titles.map((title) => ({ title, create: false })),
+            ...(q && !exact ? [{ title: q, create: true }] : []),
+          ];
+        })()
+      : [];
+    mentionEntriesRef.current = mentionEntries;
+    const pickMention = (entry: MentionEntry) => {
+      withView((view) => {
+        const live = computeMention(view) ?? mentionRef.current;
+        if (live) insertMention(view, live, entry.title);
+      });
+    };
+    const onMentionKey = (e: KeyboardEvent): boolean => {
+      const m = mentionRef.current;
+      if (!m) return false;
+      if (e.key === "Escape") {
+        dismissedMentionRef.current = m.from;
+        mentionRef.current = null;
+        setMention(null);
+        return true;
+      }
+      const entries = mentionEntriesRef.current;
+      if (entries.length === 0) return false;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        setMentionIdx((mentionIndexRef.current + step + entries.length) % entries.length);
+        return true;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && !e.isComposing) {
+        pickMention(entries[Math.min(mentionIndexRef.current, entries.length - 1)]);
+        return true;
+      }
+      return false;
+    };
+
+    // Block selection mode: the plugin owns the state; the bar mirrors it.
+    const [blockSel, setBlockSel] = useState<BlockSelectState>({ active: false, selected: [] });
+    const [blockNotice, setBlockNotice] = useState<string | null>(null);
+    const blockNoticeTimer = useRef(0);
+    const flashBlockNotice = (text: string) => {
+      setBlockNotice(text);
+      window.clearTimeout(blockNoticeTimer.current);
+      blockNoticeTimer.current = window.setTimeout(() => setBlockNotice(null), 1600);
+    };
+    const toggleBlockSelectNow = () =>
+      withView((view) => {
+        const on = !blockSelectState(view.state).active;
+        // Close the touch keyboard: taps select blocks now, they don't type.
+        if (on && document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        setBlockSelectMode(view, on);
+      });
+    const copyBlocks = (cut: boolean) =>
+      withView((view, ctx) => {
+        const doc = selectedBlocksDoc(view.state);
+        if (!doc) return;
+        const plain = clipboardPlainText(ctx.get(serializerCtx)(doc));
+        const holder = document.createElement("div");
+        holder.appendChild(DOMSerializer.fromSchema(view.state.schema).serializeFragment(doc.content));
+        if (window.isSecureContext && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+          const item = new ClipboardItem({
+            "text/plain": new Blob([plain], { type: "text/plain" }),
+            "text/html": new Blob([holder.innerHTML], { type: "text/html" }),
+          });
+          void navigator.clipboard.write([item]).catch(() => copyText(plain));
+        } else {
+          void copyText(plain);
+        }
+        if (cut) {
+          const tr = deleteSelectedBlocks(view.state);
+          if (tr) view.dispatch(tr);
+        }
+        flashBlockNotice(cut ? "Cut" : "Copied");
+      });
+    const deleteBlocks = () =>
+      withView((view) => {
+        const tr = deleteSelectedBlocks(view.state);
+        if (tr) view.dispatch(tr);
+      });
+
+    // The mobile nav pill sits where the selection bar goes: it hides while
+    // the mode is on (MobileBottomPill listens).
+    const blockModeActive = blockSel.active;
+    useEffect(() => {
+      window.dispatchEvent(new CustomEvent(BLOCK_SELECT_EVENT, { detail: blockModeActive }));
+    }, [blockModeActive]);
+
     const applySlash = (s: SlashState | null) => {
       slashRef.current = s;
       setSlash(s);
@@ -813,6 +996,17 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       const editor = crepeRef.current?.editor;
       if (!editor) return;
       const action = item.id;
+      if (action === "date" || action === "mention") {
+        editor.action((ctx) => {
+          const view = ctx.get(editorViewCtx);
+          const range = computeSlashState(view);
+          if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
+        });
+        applySlash(null);
+        if (action === "date") insertDateNow();
+        else startMentionNow();
+        return;
+      }
       if (action === "image") {
         applySlash(null);
         slashImageRef.current?.click();
@@ -886,6 +1080,35 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         },
         [Crepe.Feature.LinkTooltip]: {
           inputPlaceholder: "Paste a link…",
+        },
+        [Crepe.Feature.BlockEdit]: {
+          // Desktop "/" menu: date and note link next to the block types.
+          buildMenu(builder) {
+            const clearSlash = (view: EditorView) => {
+              const range = computeSlashState(view);
+              if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
+            };
+            builder
+              .addGroup("nexote-insert", "Insert")
+              .addItem("date", {
+                label: "Today's date",
+                icon: calendarIcon,
+                onRun: (ctx: Ctx) => {
+                  const view = ctx.get(editorViewCtx);
+                  clearSlash(view);
+                  view.dispatch(view.state.tr.insertText(formatTitle(dateFormatRef.current.trim() || "YYYY-MM-DD")));
+                },
+              })
+              .addItem("mention", {
+                label: "Link to note",
+                icon: atIcon,
+                onRun: (ctx: Ctx) => {
+                  const view = ctx.get(editorViewCtx);
+                  clearSlash(view);
+                  view.dispatch(view.state.tr.insertText("@"));
+                },
+              });
+          },
         },
         [Crepe.Feature.Placeholder]: {
           text: "Start writing, or type / for commands…",
@@ -1184,6 +1407,13 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       // Mirror the document's top-level headings to the TOC pane.
       crepe.editor.use(makeTocWatchPlugin(noteId));
 
+      // [[Wikilinks]]: parse/serialize them and render chips.
+      crepe.editor.use(wikilinkPlugins);
+      // "@" / "[[" note picker.
+      crepe.editor.use($prose(() => mentionPlugin({ onChange: applyMention, onKey: onMentionKey })));
+      // Block selection mode (toolbar button).
+      crepe.editor.use($prose(() => blockSelectPlugin(setBlockSel)));
+
       // Mobile slash commands: track when the caret types "/query" and surface
       // it to React (falling back to null when the trigger is gone), so the
       // sheet can be rendered and dismissed from the same source of truth.
@@ -1233,6 +1463,13 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       const onRootClick = (e: MouseEvent) => {
         const t = e.target as Node | null;
         const el = t instanceof Element ? t : t?.parentElement ?? null;
+        // A [[link]] chip opens its note (NotesProvider resolves the title).
+        const link = el?.closest?.(".nexote-wikilink");
+        if (link) {
+          const target = link.getAttribute("data-wikilink");
+          if (target) window.dispatchEvent(new CustomEvent(OPEN_WIKILINK_EVENT, { detail: target }));
+          return;
+        }
         const pill = el?.closest?.(".nexote-tag");
         if (!pill) return;
         const raw = pill.textContent ?? "";
@@ -1441,6 +1678,9 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         insertImageFile: (file: File) => {
           uploadImageFile(file);
         },
+        insertDate: insertDateNow,
+        startMention: startMentionNow,
+        toggleBlockSelect: toggleBlockSelectNow,
         askAI: () => {
           // Open our custom AI command panel (preset actions + custom prompt)
           // instead of Crepe's floating instruction tooltip, which positions
@@ -1482,6 +1722,149 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       return (
         <>
           <Milkdown />
+          {mention &&
+            mentionEntries.length > 0 &&
+            createPortal(
+              mobile ? (
+                <div
+                  data-editor-popup
+                  className="pointer-events-none fixed inset-x-0 z-50 flex justify-center px-3 mob-shell-root"
+                  style={{ bottom: slashBottom }}
+                >
+                  <div
+                    onPointerDown={(e) => e.preventDefault()}
+                    className="pointer-events-auto no-scrollbar w-full max-w-2xl overflow-y-auto rounded-2xl border px-1 py-1"
+                    style={{
+                      maxHeight: slashMaxHeight,
+                      background: "var(--mob-surface)",
+                      boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+                      borderColor: "color-mix(in srgb, var(--mob-text) 14%, transparent)",
+                    }}
+                  >
+                    <div
+                      className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider"
+                      style={{ color: "var(--mob-muted)" }}
+                    >
+                      Link to note
+                    </div>
+                    {mentionEntries.map((entry, i) => (
+                      <button
+                        key={`${entry.create}-${entry.title}`}
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          pickMention(entry);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left"
+                        style={i === mentionIndex ? { background: "color-mix(in srgb, var(--mob-text) 8%, transparent)" } : undefined}
+                      >
+                        <span style={{ color: "var(--mob-accent)" }}>
+                          {entry.create ? <FilePlus size={18} /> : <FileText size={18} />}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[14px]" style={{ color: "var(--mob-text)" }}>
+                          {entry.create ? `Link “${entry.title}” (new note)` : entry.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  data-editor-popup
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="fixed z-50 w-72 overflow-hidden rounded-lg border border-border bg-popover py-1 text-popover-foreground shadow-lg"
+                  style={
+                    mention.bottom + 280 > window.innerHeight
+                      ? { left: mention.left, bottom: window.innerHeight - mention.top + 4 }
+                      : { left: mention.left, top: mention.bottom + 4 }
+                  }
+                >
+                  {mentionEntries.map((entry, i) => (
+                    <button
+                      key={`${entry.create}-${entry.title}`}
+                      type="button"
+                      onMouseEnter={() => setMentionIdx(i)}
+                      onClick={() => pickMention(entry)}
+                      className={
+                        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm" +
+                        (i === mentionIndex ? " bg-muted" : "")
+                      }
+                    >
+                      {entry.create ? (
+                        <FilePlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate">{entry.create ? `Link “${entry.title}” (new note)` : entry.title}</span>
+                    </button>
+                  ))}
+                </div>
+              ),
+              document.body,
+            )}
+          {blockSel.active &&
+            createPortal(
+              <div
+                className={
+                  "pointer-events-none fixed inset-x-0 z-[45] flex justify-center px-3" + (mobile ? " mob-shell-root" : "")
+                }
+                style={{ bottom: mobile ? "calc(env(safe-area-inset-bottom, 0px) + 12px)" : 24 }}
+              >
+                <div
+                  role="toolbar"
+                  aria-label="Block selection"
+                  className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-background px-2 py-1.5 text-foreground shadow-xl"
+                >
+                  <button
+                    type="button"
+                    aria-label="Done selecting"
+                    title="Done (Esc)"
+                    onClick={toggleBlockSelectNow}
+                    className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-muted"
+                  >
+                    <X size={18} />
+                  </button>
+                  <span className="min-w-[7.5rem] px-1 text-center text-sm font-medium">
+                    {blockNotice ?? (blockSel.selected.length ? `${blockSel.selected.length} selected` : "Tap blocks to select")}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Copy blocks"
+                    title="Copy"
+                    disabled={blockSel.selected.length === 0}
+                    onClick={() => copyBlocks(false)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-muted disabled:opacity-40"
+                  >
+                    <Copy size={18} />
+                  </button>
+                  {!readOnly && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Cut blocks"
+                        title="Cut"
+                        disabled={blockSel.selected.length === 0}
+                        onClick={() => copyBlocks(true)}
+                        className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-muted disabled:opacity-40"
+                      >
+                        <Scissors size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Delete blocks"
+                        title="Delete"
+                        disabled={blockSel.selected.length === 0}
+                        onClick={deleteBlocks}
+                        className="flex h-10 w-10 items-center justify-center rounded-full text-red-600 hover:bg-muted disabled:opacity-40 dark:text-red-400"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>,
+              document.body,
+            )}
           {mobile &&
             slash &&
             // Portaled to document.body: same reason as the AI command panel —
