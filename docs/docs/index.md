@@ -23,8 +23,8 @@ features:
   - title: Editor with wikilinks
     details: A rendered and a raw markdown view, [[wikilinks]], @ mentions, slash commands, tags, tasks and per-note history.
     link: /features/editor
-  - title: Separate mobile app
-    details: A touch-first app at /m with swipeable panes, bottom sheets, a scroll-hiding toolbar and haptic feedback.
+  - title: Touch app for phones and tablets
+    details: A touch-first interface with swipeable panes, bottom sheets, a scroll-hiding toolbar and haptic feedback, picked automatically per device.
     link: /features/mobile-app
   - title: Quick notes
     details: A messenger-style Notepad for short memos, with images, note links and voice memos transcribed by your AI endpoint.

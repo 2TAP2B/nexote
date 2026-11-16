@@ -96,7 +96,7 @@ The backend uses only the Go standard library for HTTP, with method-pattern rout
 
 ### Frontend
 
-- **Two shells, one state.** The desktop shell (`app/page.tsx`) and the mobile app (`app/m/`) both wrap their UI in `AuthGate` and `NotesProvider`. `NotesProvider` holds all application state (spaces, vaults, notes, tabs, collections, tasks, bookmarks) and every create, update and delete action; components use it through `useNotes()`.
+- **Two shells, one state.** `app/page.tsx` is the only app page. When it starts it picks the touch shell (`components/mobile/MobileApp`) or the desktop shell with `lib/shell.ts` (touch screen without a mouse, or a window under 768 px, gets touch; Settings › General › Interface overrides it). Both wrap their UI in `AuthGate` and `NotesProvider`. `NotesProvider` holds all application state (spaces, vaults, notes, tabs, collections, tasks, bookmarks) and every create, update and delete action; components use it through `useNotes()`.
 - **Editor.** `MilkdownEditor.tsx` configures Milkdown Crepe and adds Nexote's plugins from `editor/`: wikilink chips, the `@`/`[[` picker, block selection and inline code handling. Saves are debounced and serialized per note.
 - **API client.** `lib/api.ts` mirrors the Go routes and holds the shared types. A route change touches both `backend/api/handler.go` and `frontend/src/lib/api.ts`.
 - **Live updates.** `NotesProvider` listens on `/api/events` and reloads what changed.

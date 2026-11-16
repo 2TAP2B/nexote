@@ -16,7 +16,7 @@ A self-hosted, mobile-first markdown editor, heavily influenced by Obsidian.
 
 ## What it is
 
-Nexote runs on your own server and keeps your notes as plain markdown files with YAML frontmatter. There is no database: a note is a `.md` file named after its title, in a folder of a vault, and you can read, back up or move it with any tool. A small Go backend serves the files; a Next.js frontend with a Milkdown editor provides a desktop interface and a separate touch-first app for phones at `/m`. Several people can share one server, sign in with passkeys and work together in shared spaces.
+Nexote runs on your own server and keeps your notes as plain markdown files with YAML frontmatter. There is no database: a note is a `.md` file named after its title, in a folder of a vault, and you can read, back up or move it with any tool. A small Go backend serves the files; a Next.js frontend with a Milkdown editor provides a desktop interface and a touch-first interface for phones and tablets, chosen per device. Several people can share one server, sign in with passkeys and work together in shared spaces.
 
 ## Screenshots
 
@@ -44,8 +44,8 @@ Nexote runs on your own server and keeps your notes as plain markdown files with
 - Inline `#tags`, `- [ ]` tasks collected across vaults, and a full history of every note with restore.
 - Daily journal, command palette with full-text search, tabs, bookmarks, table of contents, color schemes.
 
-**Mobile app**
-- Separate app at `/m`; phones are redirected automatically.
+**Mobile and tablet app**
+- Touch interface for phones and tablets at the same address as the desktop one, chosen per device (switchable in Settings › General).
 - Four swipeable panes: spaces, note tree, note, and table of contents or quick notes.
 - Bottom pill navigation, bottom sheets, a toolbar above the keyboard, chrome that hides while scrolling, haptic feedback.
 

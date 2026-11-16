@@ -14,6 +14,7 @@ import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type Git
 import { localDateKey } from "@/lib/note-utils";
 import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
+import type { InterfaceMode } from "@/lib/shell";
 
 type Draft = { title: string; body: string };
 
@@ -65,6 +66,8 @@ export type AppSettings = {
   dashTags: boolean;
   // Format of the toolbar's "insert date" (formatTitle codes).
   dateFormat: string;
+  // Touch or desktop interface on this device (Settings › General).
+  interface: InterfaceMode;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -96,6 +99,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dashTasks: true,
   dashTags: true,
   dateFormat: "YYYY-MM-DD",
+  interface: "auto",
 };
 
 type NotesContextValue = {
@@ -291,7 +295,8 @@ export function formatTitle(template: string, date = new Date()): string {
 
 // Parse the current URL into { kind, vaultId?, noteId? } or null for the root.
 function parseNoteUrl(pathname: string): { kind: "note" | "journal" | "dashboard"; vaultId?: string; noteId?: string } | null {
-  // Strip a leading /m (mobile prefix) — routing logic is identical.
+  // Old /m/... links (before both interfaces shared one address) still
+  // resolve: the server redirects them, offline the worker serves the shell.
   const p = pathname.replace(/^\/m(\/|$)/, "/");
   if (p === "/" || p === "/dashboard") return { kind: "dashboard" };
   const noteM = p.match(/^\/note\/([^/]+)\/([^/]+)\/?$/);
@@ -302,18 +307,16 @@ function parseNoteUrl(pathname: string): { kind: "note" | "journal" | "dashboard
 }
 
 // Build the URL path for a given note id + vault context.
-function noteUrlPath(id: string, vaultId: string | null, isJournal: boolean, mobile: boolean): string {
-  const prefix = mobile ? "/m" : "";
-  if (id === DASHBOARD_ID) return `${prefix}/dashboard`;
-  if (isJournal) return `${prefix}/journal/${id}`;
-  return `${prefix}/note/${vaultId ?? ""}/${id}`;
+function noteUrlPath(id: string, vaultId: string | null, isJournal: boolean): string {
+  if (id === DASHBOARD_ID) return "/dashboard";
+  if (isJournal) return `/journal/${id}`;
+  return `/note/${vaultId ?? ""}/${id}`;
 }
 
 // Push a new history entry for the active note (user navigation — back works).
 function pushNoteUrl(id: string, vaultId: string | null, isJournal: boolean) {
   if (typeof window === "undefined") return;
-  const mobile = window.location.pathname.startsWith("/m");
-  const path = noteUrlPath(id, vaultId, isJournal, mobile);
+  const path = noteUrlPath(id, vaultId, isJournal);
   if (window.location.pathname === path) return;
   window.history.pushState({ nexoteId: id }, "", path);
 }
@@ -322,8 +325,7 @@ function pushNoteUrl(id: string, vaultId: string | null, isJournal: boolean) {
 // the closed note).
 function replaceNoteUrl(id: string, vaultId: string | null, isJournal: boolean) {
   if (typeof window === "undefined") return;
-  const mobile = window.location.pathname.startsWith("/m");
-  const path = noteUrlPath(id, vaultId, isJournal, mobile);
+  const path = noteUrlPath(id, vaultId, isJournal);
   if (window.location.pathname === path) return;
   window.history.replaceState({ nexoteId: id }, "", path);
 }

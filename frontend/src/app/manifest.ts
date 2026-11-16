@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "A markdown note-taking app powered by Milkdown.",
     id: "/",
     scope: "/",
-    // Phones are sent on to /m by the start page; desktops stay on /.
+    // One address for every device; the start page picks touch or desktop.
     start_url: "/",
     display: "standalone",
     background_color: "#1a1d29",

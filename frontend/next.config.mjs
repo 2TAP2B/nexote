@@ -36,7 +36,7 @@ const nextConfig = {
   // gzip saves little anyway.
   compress: false,
   // Allow LAN access to the dev server (HMR/websocket) from the machine's
-  // local IP and Tailscale IP so mobile devices can load /m.
+  // local IP and Tailscale IP so phones on the LAN can load the dev server.
   allowedDevOrigins: ["192.168.178.94", "100.64.0.26"],
   // Emit a self-contained server bundle (`.next/standalone`) so the app can
   // ship inside a single Docker container alongside the Go backend.
@@ -63,9 +63,14 @@ const nextConfig = {
       { source: "/note/:vaultId/:noteId", destination: "/" },
       { source: "/journal/:noteId", destination: "/" },
       { source: "/dashboard", destination: "/" },
-      { source: "/m/note/:vaultId/:noteId", destination: "/m" },
-      { source: "/m/journal/:noteId", destination: "/m" },
-      { source: "/m/dashboard", destination: "/m" },
+    ];
+  },
+  // The touch interface used to live under /m; both share one address now.
+  // Old links and home-screen icons land on the same page without the prefix.
+  async redirects() {
+    return [
+      { source: "/m", destination: "/", permanent: false },
+      { source: "/m/:path*", destination: "/:path*", permanent: false },
     ];
   },
 };

@@ -1,8 +1,13 @@
 # Mobile app
 
-Nexote has a separate interface for phones at `/m`. It uses the same server, account and notes as the desktop interface, but its layout is built for touch and one-handed use.
+Nexote has a touch interface for phones and tablets. It uses the same server, account, notes and address as the desktop interface, but its layout is built for touch and one-handed use.
 
-Phones are sent to `/m` automatically: the desktop page checks the browser's user agent (Android, iPhone, iPad, iPod, Windows Phone or "Mobile") and switches to the mobile app, keeping the path of a linked note.
+Which interface opens is decided when the app starts, per device:
+
+- **Touch interface:** a touch screen without a mouse or trackpad (phones, tablets including the iPad), or a browser window narrower than 768 pixels.
+- **Desktop interface:** everything else, for example a laptop, or a tablet with a trackpad attached.
+
+**Settings › General › Interface on this device** overrides this with *Touch* or *Desktop*; the app reloads into the chosen interface. Links to notes (`/note/…`, `/journal/…`) open in either interface. Old links starting with `/m` still work and lead to the same page.
 
 | Dashboard | Note | Quick notes | Menu |
 | --- | --- | --- | --- |
@@ -84,4 +89,4 @@ The mobile dashboard has collapsible sections: quick actions (New note, Today, S
 
 ## Installing
 
-Nexote provides a web app manifest, so the browser's "Add to Home Screen" or "Install app" installs it as a standalone app. On a phone it opens the mobile interface (`/m`), also offline. See [Sync and offline](./sync-and-offline) for what works without a connection.
+Nexote provides a web app manifest, so the browser's "Add to Home Screen" or "Install app" installs it as a standalone app that opens the interface that fits the device, also offline. See [Sync and offline](./sync-and-offline) for what works without a connection.

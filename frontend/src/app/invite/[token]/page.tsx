@@ -128,7 +128,7 @@ function Redeem({ token, info, origin }: { token: string; info: InviteInfo; orig
           api.inviteBegin(token, signup ? { username: username.trim(), displayName: displayName.trim() } : {}),
         (input) => api.inviteFinish(token, input),
       );
-      // Full load: the app's gate takes over (and phones go on to /m).
+      // Full load: the app's gate takes over.
       window.location.assign("/");
     } catch (e) {
       setError(passkeyErrorMessage(e));

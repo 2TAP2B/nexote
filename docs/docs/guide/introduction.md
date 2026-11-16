@@ -1,6 +1,6 @@
 # Introduction
 
-Nexote is a self-hosted, mobile-first markdown editor, heavily influenced by Obsidian. It runs on your own server as a small Go backend and a Next.js frontend. You use it in a browser: a desktop interface on larger screens, and a separate touch-first app at `/m` on phones.
+Nexote is a self-hosted, mobile-first markdown editor, heavily influenced by Obsidian. It runs on your own server as a small Go backend and a Next.js frontend. You use it in a browser: a desktop interface with mouse and keyboard, and a touch-first interface on phones and tablets, at the same address.
 
 ![The desktop editor](/screenshots/desktop-editor.png)
 

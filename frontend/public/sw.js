@@ -22,7 +22,7 @@
 const VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
 const SHELL_CACHE = `nexote-shell-${VERSION}`;
 const IMAGE_CACHE = "nexote-images"; // survives releases (user content)
-const SHELL = ["/", "/m", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
+const SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 const DB_NAME = "nexote-offline";
 const DB_VERSION = 2;
@@ -604,26 +604,20 @@ async function handleImage(req) {
   }
 }
 
-// Pages are cached per shell (desktop "/" and mobile "/m"): every deep link
-// renders the same shell HTML.
-function shellKey(pathname) {
-  return pathname === "/m" || pathname.startsWith("/m/") ? "/m" : "/";
-}
-
+// Every app address (/, /note/…, /journal/…, old /m/… links) renders the
+// same shell page, cached under "/". Invite pages are their own page.
 async function handleNavigation(req, url) {
   const cache = await caches.open(SHELL_CACHE);
-  const cacheable = !url.pathname.startsWith("/invite/");
+  const isShell = !url.pathname.startsWith("/invite/");
   try {
     const res = await fetch(req);
-    if (cacheable && res.ok && res.headers.get("Content-Type")?.includes("text/html")) {
-      cache.put(shellKey(url.pathname), res.clone()).catch(() => {});
+    if (isShell && res.ok && res.headers.get("Content-Type")?.includes("text/html")) {
+      cache.put("/", res.clone()).catch(() => {});
     }
     return res;
   } catch {
     return (
-      (await cache.match(shellKey(url.pathname))) ||
-      (await cache.match("/m")) ||
-      (await cache.match("/")) ||
+      (isShell && (await cache.match("/"))) ||
       new Response("Offline", { status: 503, headers: { "Content-Type": "text/plain" } })
     );
   }

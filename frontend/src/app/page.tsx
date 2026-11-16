@@ -14,8 +14,7 @@ import {
   Search,
   SquareStack,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { AuthGate } from "@/components/auth/AuthProvider";
 import CommandPalette from "@/components/CommandPalette";
@@ -30,43 +29,49 @@ import Shortcuts from "@/components/Shortcuts";
 import TopBar from "@/components/TopBar";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
+import MobileApp from "@/components/mobile/MobileApp";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
+import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
 
-// Redirect mobile visitors to the dedicated /m mobile UI, unless the user
-// has explicitly chosen "View desktop" (nexote-force-desktop in localStorage).
-function MobileRedirect() {
-  const pathname = usePathname();
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("nexote:force-desktop") === "1") return;
-    } catch {
-      // localStorage unavailable — skip redirect
-    }
-    const ua = navigator.userAgent;
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua);
-    if (!isMobile) return;
-    // Preserve deep links: /note/<v>/<n> -> /m/note/<v>/<n>, etc. A full page
-    // load, not router.replace: offline the service worker can answer it
-    // from the cached /m shell, a client navigation would need server data.
-    const mobilePath = pathname === "/" ? "/m" : `/m${pathname}`;
-    window.location.replace(mobilePath + window.location.search + window.location.hash);
-  }, [pathname]);
-  return null;
+// One address for every device: the touch interface (phones, tablets, narrow
+// windows) or the desktop one, chosen once when the app starts (Settings ›
+// General › Interface). Not switched on resize or rotation, which would
+// remount the editor mid-typing. The server renders neither (the choice
+// needs the device), so nothing mismatches on hydration.
+const startShell = { current: null as Shell | null };
+function useStartShell(): Shell | null {
+  return useSyncExternalStore(
+    () => () => {},
+    () => (startShell.current ??= pickShell(savedInterfaceMode())),
+    () => null,
+  );
 }
 
 export default function Page() {
+  const shell = useStartShell();
+  if (!shell) return null;
   return (
-    <>
-      <MobileRedirect />
-      <AuthGate>
-        <NotesProvider>
-          <AppShell />
-        </NotesProvider>
-      </AuthGate>
-    </>
+    <AuthGate>
+      <NotesProvider>
+        <ShellSwitch shell={shell} />
+        {shell === "touch" ? <MobileApp /> : <AppShell />}
+      </NotesProvider>
+    </AuthGate>
   );
+}
+
+// Settings › General › Interface changed to a mode that picks the other
+// shell: reload into it. Reads the saved value, not settings.interface:
+// NotesProvider starts with the defaults before it loads the saved settings,
+// and that first "auto" must not count as a change.
+function ShellSwitch({ shell }: { shell: Shell }) {
+  const { settings } = useNotes();
+  useEffect(() => {
+    if (pickShell(savedInterfaceMode()) !== shell) window.location.reload();
+  }, [settings.interface, shell]);
+  return null;
 }
 
 function AppShell() {

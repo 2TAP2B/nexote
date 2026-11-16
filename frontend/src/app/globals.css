@@ -737,10 +737,10 @@ body {
 }
 
 /*
- * Mobile shell — /m route. The editor background must match the mobile shell
+ * Touch shell (MobileApp). The editor background must match the touch shell
  * background (--mob-bg) instead of the desktop theme's --background, so the
  * editor and the chrome feel seamless. These overrides are scoped to the
- * .mob-shell-root ancestor so they never affect the desktop / route.
+ * .mob-shell-root ancestor so they never affect the desktop shell.
  */
 .mob-shell-root {
   /* Derive the mobile palette from the standard theme variables so color

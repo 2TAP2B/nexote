@@ -22,7 +22,7 @@ Nexote installs as an app (PWA) and keeps working without a connection. "Offline
 
 **What is available offline:**
 
-- The whole app (desktop `/` and mobile `/m`, including the editor), cached when the service worker installs. Each new version replaces the cache.
+- The whole app (desktop and touch interface, including the editor), cached when the service worker installs. Each new version replaces the cache.
 - Spaces, the vault list, each vault's note list and folders, bookmarks, shortcuts, tags, collections and the journal list, saved in the background while you're online.
 - Note contents: notes you've opened, plus open tabs, bookmarked notes, the Notepad and the 50 most recently edited notes, which are downloaded in advance.
 - Today's journal, if you opened it once while online.
