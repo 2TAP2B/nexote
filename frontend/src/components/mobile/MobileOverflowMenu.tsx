@@ -14,15 +14,13 @@ import {
   Trash2,
 } from "lucide-react";
 
-import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
 import { generateNoteTitle } from "@/lib/ai";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { useNotes } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
+import { MobileActionSheet, type SheetAction } from "./MobileActionSheet";
 
 type Props = {
-  x: number;
-  y: number;
   noteId: string;
   onClose: () => void;
   onDelete: (id: string) => void;
@@ -32,11 +30,10 @@ type Props = {
   onToc: () => void;
 };
 
-// The ⋮ overflow menu for the currently open note. Mirrors the desktop
-// note-row context menu, dispatching to the same NotesProvider actions.
+// The ⋮ menu for the open note, as an Obsidian-style bottom sheet. Mirrors
+// the desktop note-row context menu, dispatching to the same NotesProvider
+// actions.
 export default function MobileOverflowMenu({
-  x,
-  y,
   noteId,
   onClose,
   onDelete,
@@ -83,73 +80,44 @@ export default function MobileOverflowMenu({
   const hasAI = Boolean(settings.aiBaseUrl.trim());
   const canEdit = useCanEdit().canEditNote(noteId);
 
-  const items: MenuItem[] = [
-    {
-      label: "Open in new tab",
-      icon: <SquareArrowOutUpRight className="h-4 w-4" />,
-      onClick: () => void openTab(noteId),
-    },
-    { label: "", onClick: () => {}, separator: true },
-    ...(canEdit
-      ? [{
-          label: "Make a copy",
-          icon: <Copy className="h-4 w-4" />,
-          onClick: () => void copyNote(noteId),
-        }]
-      : []),
-    {
-      label: "Note history",
-      icon: <History className="h-4 w-4" />,
-      onClick: () => onHistory(noteId),
-    },
-    {
-      label: "Table of contents",
-      icon: <ListTree className="h-4 w-4" />,
-      onClick: onToc,
-    },
-    ...(hasAI && canEdit
-      ? [{
-          label: "Generate AI title",
-          icon: <Sparkles className="h-4 w-4" />,
-          onClick: () => void handleGenerateTitle(),
-        }]
-      : []),
-    ...(canEdit
-      ? [{
-          label: "Move to…",
-          icon: <FolderInput className="h-4 w-4" />,
-          onClick: () => onMoveTo(noteId),
-        }]
-      : []),
-    {
-      label: isShortcut ? "Remove shortcut" : "Add shortcut",
-      icon: isShortcut ? <BookmarkCheck className="h-4 w-4" /> : <Star className="h-4 w-4" />,
-      onClick: () => toggleShortcut(noteId),
-    },
-    {
-      label: isBookmarked ? "Remove from bookmarks" : "Add to bookmarks",
-      icon: <Bookmark className="h-4 w-4" />,
-      onClick: () => toggleBookmark(noteId),
-    },
-    ...(canEdit
+  const note = notesById[noteId];
+  const sections: SheetAction[][] = [
+    [
+      {
+        label: isBookmarked ? "Remove from bookmarks" : "Add to bookmarks",
+        icon: isBookmarked ? <BookmarkCheck size={19} /> : <Bookmark size={19} />,
+        onClick: () => toggleBookmark(noteId),
+      },
+      {
+        label: isShortcut ? "Remove shortcut" : "Add shortcut",
+        icon: <Star size={19} />,
+        onClick: () => toggleShortcut(noteId),
+      },
+    ],
+    [
+      { label: "Open in new tab", icon: <SquareArrowOutUpRight size={19} />, onClick: () => void openTab(noteId) },
+      { label: "Table of contents", icon: <ListTree size={19} />, onClick: onToc },
+      { label: "Note history", icon: <History size={19} />, onClick: () => onHistory(noteId) },
+    ],
+    canEdit
       ? [
-          { label: "", onClick: () => {}, separator: true },
-          {
-            label: "Rename",
-            icon: <Edit3 className="h-4 w-4" />,
-            onClick: () => onRename(noteId),
-          },
-          {
-            label: "Delete",
-            icon: <Trash2 className="h-4 w-4" />,
-            danger: true,
-            onClick: () => onDelete(noteId),
-          },
+          { label: "Rename", icon: <Edit3 size={19} />, onClick: () => onRename(noteId) },
+          { label: "Move to…", icon: <FolderInput size={19} />, onClick: () => onMoveTo(noteId) },
+          { label: "Make a copy", icon: <Copy size={19} />, onClick: () => void copyNote(noteId) },
+          ...(hasAI
+            ? [{ label: "Generate AI title", icon: <Sparkles size={19} />, onClick: () => void handleGenerateTitle() }]
+            : []),
         ]
-      : []),
+      : [],
+    canEdit ? [{ label: "Delete", icon: <Trash2 size={19} />, danger: true, onClick: () => onDelete(noteId) }] : [],
   ];
 
   return (
-    <ContextMenu x={x} y={y} items={items} onClose={onClose} />
+    <MobileActionSheet
+      title={note?.title || "Untitled"}
+      subtitle={note ? note.path || "No folder" : undefined}
+      sections={sections}
+      onClose={onClose}
+    />
   );
 }

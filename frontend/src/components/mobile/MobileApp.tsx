@@ -73,7 +73,6 @@ export default function MobileApp() {
   const [tabSwitcherOpen, setTabSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [overflowPos, setOverflowPos] = useState<{ x: number; y: number } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [collectionFormOpen, setCollectionFormOpen] = useState(false);
@@ -318,10 +317,7 @@ export default function MobileApp() {
             activeNote={activeNote}
             isDashboard={activeId === DASHBOARD_ID}
             onOpenSidebar={() => setPagerFocus("sidebar")}
-            onOverflow={(x, y) => {
-              setOverflowPos({ x, y });
-              setOverflowOpen(true);
-            }}
+            onOverflow={() => setOverflowOpen(true)}
             onSearch={() => setPaletteOpen(true)}
             onNewNote={handleNewNote}
             onOpenSettings={() => setSettingsOpen(true)}
@@ -340,6 +336,7 @@ export default function MobileApp() {
           />
 
           <MobileBottomPill
+            autoHideKey={activeId === DASHBOARD_ID || !activeNote ? undefined : activeNote.id}
             canGoBack={canGoBack}
             canGoForward={canGoForward}
             onBack={goToPrevTab}
@@ -380,10 +377,8 @@ export default function MobileApp() {
         />
       )}
 
-      {overflowOpen && overflowPos && activeNote && (
+      {overflowOpen && activeNote && (
         <MobileOverflowMenu
-          x={overflowPos.x}
-          y={overflowPos.y}
           noteId={activeNote.id}
           onClose={() => setOverflowOpen(false)}
           onDelete={(id) => {

@@ -2,50 +2,37 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Tracks scroll on the mobile editor container (`.mob-editor-scroll`) and
-// reports whether the chrome (top bar / bottom pill) should be visible.
-// Hides on scroll-down past a threshold, reappears on scroll-up or at the top.
-// Standard mobile "hide on scroll" pattern.
-export function useScrollHideChrome(): boolean {
+const DELTA_PX = 8;
+const TOP_PX = 40;
+
+// Whether the note chrome (top bar buttons, bottom pill, format bar) should
+// show: hides on scroll-down in the note editor (`.mob-editor-scroll`),
+// reappears on scroll-up or near the top — the Obsidian mobile pattern.
+// Listens at the document (scroll events don't bubble, but capture), so it
+// follows whichever editor scroller is mounted. A new resetKey (the open
+// note) shows the chrome again.
+export function useScrollHideChrome(resetKey?: string): boolean {
   const [visible, setVisible] = useState(true);
-  const lastScrollY = useRef(0);
+  const last = useRef<{ el: EventTarget | null; y: number }>({ el: null, y: 0 });
 
   useEffect(() => {
-    let el: HTMLElement | null = null;
-    const onScroll = () => {
-      if (!el) return;
+    setVisible(true);
+    last.current = { el: null, y: 0 };
+  }, [resetKey]);
+
+  useEffect(() => {
+    const onScroll = (e: Event) => {
+      const el = e.target;
+      if (!(el instanceof HTMLElement) || !el.classList.contains("mob-editor-scroll")) return;
       const y = el.scrollTop;
-      const delta = y - lastScrollY.current;
-      if (delta > 8 && y > 40) {
-        setVisible(false);
-      } else if (delta < -8 || y <= 40) {
-        setVisible(true);
-      }
-      lastScrollY.current = y;
+      if (last.current.el !== el) last.current = { el, y };
+      const delta = y - last.current.y;
+      if (delta > DELTA_PX && y > TOP_PX) setVisible(false);
+      else if (delta < -DELTA_PX || y <= TOP_PX) setVisible(true);
+      if (Math.abs(delta) > DELTA_PX || y <= TOP_PX) last.current.y = y;
     };
-
-    const attach = () => {
-      el = document.querySelector<HTMLElement>(".mob-editor-scroll");
-      if (el) {
-        el.addEventListener("scroll", onScroll, { passive: true });
-        return true;
-      }
-      return false;
-    };
-
-    if (!attach()) {
-      const obs = new MutationObserver(() => {
-        if (attach()) obs.disconnect();
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
-      return () => {
-        obs.disconnect();
-        el?.removeEventListener("scroll", onScroll);
-      };
-    }
-    return () => {
-      el?.removeEventListener("scroll", onScroll);
-    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => document.removeEventListener("scroll", onScroll, { capture: true });
   }, []);
 
   return visible;

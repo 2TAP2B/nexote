@@ -96,6 +96,11 @@ export function removeNotepadEntry(body: string, target: Pick<NotepadEntry, "day
   return lines.join("\n").replace(/\n+$/, "\n");
 }
 
+/** Takes several entries out; the body is unchanged when none exists anymore. */
+export function removeNotepadEntries(body: string, targets: Pick<NotepadEntry, "day" | "time" | "text">[]): string {
+  return targets.reduce((next, target) => removeNotepadEntry(next, target) ?? next, body);
+}
+
 function findNotepadEntry(entries: NotepadEntry[], target: Pick<NotepadEntry, "day" | "time" | "text">) {
   return entries.find((e) => e.day === target.day && e.time === target.time && e.text === target.text);
 }

@@ -1,10 +1,9 @@
 "use client";
 
-import { Copy, FilePlus, Pencil, X } from "lucide-react";
+import { Check, Copy, FilePlus, Pencil, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import ContextMenu from "@/components/ContextMenu";
 import { api, isCollectionsVault } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { cacheImage } from "@/lib/image-cache";
@@ -17,7 +16,7 @@ import {
   NOTEPAD_TITLE,
   notepadLocation,
   parseNotepad,
-  removeNotepadEntry,
+  removeNotepadEntries,
   replaceNotepadEntry,
   splitMemo,
   type NotepadEntry,
@@ -35,11 +34,15 @@ import { useVoiceRecorder, VoiceError, type VoiceClip } from "./useVoiceRecorder
 // first post or image — without leaving the dashboard. "@" links a note, the
 // image button (or pasting) attaches images, the mic records a voice memo that
 // the AI endpoint transcribes into the text, and the expand button writes in
-// full screen. Long-press a memo to copy or edit it, or to make it a note of
-// its own.
+// full screen. Tap the circle next to a memo (or long-press it) to select it;
+// the bar on top then copies, edits, makes a note of or deletes the selection.
 
 type Target = { vaultId: string; id: string };
 type Toast = { text: string; action?: { label: string; run: () => void } };
+
+// Selection survives reloads and posts: entries are matched by content, not
+// by their (shifting) line numbers.
+const memoKey = (e: NotepadEntry) => `${e.day}\n${e.time}\n${e.text}`;
 
 const MAX_RECORDING_MS = 10 * 60_000;
 
@@ -77,14 +80,14 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
-  // The memo waiting for the first-time notebook choice.
-  const [picking, setPicking] = useState<NotepadEntry | null>(null);
+  // The memos waiting for the first-time notebook choice.
+  const [picking, setPicking] = useState<NotepadEntry[] | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   // A recording whose transcription failed, kept for "Retry".
   const [failedClip, setFailedClip] = useState<VoiceClip | null>(null);
   const transcribeAbort = useRef<AbortController | null>(null);
   const recorder = useVoiceRecorder({ maxMs: MAX_RECORDING_MS, onLimit: () => void stopVoice() });
-  const [menu, setMenu] = useState<{ entry: NotepadEntry; x: number; y: number } | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
   const [viewer, setViewer] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -134,10 +137,19 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   }, [focused, locVault, locFolder]);
 
   useEffect(() => {
-    if (!focused) setMenu(null);
+    if (!focused) setSelectedKeys(new Set());
   }, [focused]);
 
   const entries = useMemo(() => parseNotepad(body), [body]);
+  const selected = useMemo(() => entries.filter((e) => selectedKeys.has(memoKey(e))), [entries, selectedKeys]);
+  const toggleSelected = (entry: NotepadEntry) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      const key = memoKey(entry);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  const clearSelection = () => setSelectedKeys(new Set());
 
   // Newest entry at the bottom, like a chat.
   useEffect(() => {
@@ -417,21 +429,27 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
 
   const voiceState = recorder.recording ? "recording" : transcribing ? "transcribing" : "idle";
 
-  // "Make note": the memo becomes a note in the default notebook (asked for
-  // the first time), then leaves the notepad — moved, not copied.
-  const makeNote = (entry: NotepadEntry) => {
+  // "Make note": the memos become one note in the default notebook (asked for
+  // the first time), then leave the notepad — moved, not copied.
+  const makeNote = (list: NotepadEntry[]) => {
     // The default notebook may be in any space; viewer-only vaults can't take notes.
     const vault = allVaults.find(
       (v) => v.id === settings.memoNoteVault && !isCollectionsVault(v) && v.role !== "viewer",
     );
-    if (vault) void moveToNote(entry, { vaultId: vault.id, folder: settings.memoNoteFolder });
-    else setPicking(entry);
+    if (vault) void moveToNote(list, { vaultId: vault.id, folder: settings.memoNoteFolder });
+    else setPicking(list);
   };
 
-  const moveToNote = async (entry: NotepadEntry, notebook: Pick<Notebook, "vaultId" | "folder">) => {
+  const isEditing = (list: NotepadEntry[]) =>
+    editing !== null && list.some((e) => e.day === editing.day && e.start === editing.start);
+
+  const moveToNote = async (list: NotepadEntry[], notebook: Pick<Notebook, "vaultId" | "folder">) => {
+    if (list.length === 0) return;
     setError(null);
-    if (editing?.day === entry.day && editing.start === entry.start) cancelEdit();
-    const draft = memoToNote(entry, settings.headingOnNewNote);
+    if (isEditing(list)) cancelEdit();
+    // Several memos: one note, the first memo naming it, in pad order.
+    const merged = list.length === 1 ? list[0] : { ...list[0], text: list.map((e) => e.text).join("\n\n") };
+    const draft = memoToNote(merged, settings.headingOnNewNote);
     let created;
     try {
       created = await api.create(notebook.vaultId, {
@@ -452,13 +470,14 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
       },
     };
     void refresh();
-    // Only now take the memo out, from the notepad's latest version.
+    // Only now take the memos out, from the notepad's latest version.
     try {
       const target = targetRef.current;
       if (!target) throw new Error("The notepad note is gone");
-      const next = removeNotepadEntry((await api.get(target.vaultId, target.id)).body, entry);
-      if (next === null) {
-        showToast(`Saved as “${created.title}” — the memo changed elsewhere, so it stays`, open);
+      const latest = (await api.get(target.vaultId, target.id)).body;
+      const next = removeNotepadEntries(latest, list);
+      if (next === latest) {
+        showToast(`Saved as “${created.title}” — the memos changed elsewhere, so they stay`, open);
         return;
       }
       setBody(next);
@@ -467,8 +486,55 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
       showToast(`Moved to “${created.title}”`, open);
     } catch (e) {
       showToast(`Saved as “${created.title}”`, open);
-      setError(errorText(e, "Couldn't remove the memo from the notepad"));
+      setError(errorText(e, "Couldn't remove the memos from the notepad"));
     }
+  };
+
+  // Deletes memos from the notepad's latest version; Undo puts that version
+  // back unless the notepad changed again since.
+  const deleteMemos = async (list: NotepadEntry[]) => {
+    const target = targetRef.current;
+    if (!target || list.length === 0) return;
+    setError(null);
+    if (isEditing(list)) cancelEdit();
+    try {
+      const before = (await api.get(target.vaultId, target.id)).body;
+      const after = removeNotepadEntries(before, list);
+      if (after === before) {
+        showToast("Those memos changed elsewhere");
+        return;
+      }
+      setBody(after);
+      await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: after });
+      void refreshNoteBody(target.id);
+      showToast(list.length === 1 ? "Memo deleted" : `${list.length} memos deleted`, {
+        label: "Undo",
+        run: () => void restoreNotepad(target, before, after),
+      });
+    } catch (e) {
+      setError(errorText(e, "Couldn't delete"));
+    }
+  };
+
+  const restoreNotepad = async (target: Target, before: string, after: string) => {
+    try {
+      if ((await api.get(target.vaultId, target.id)).body !== after) {
+        showToast("The notepad changed since — can't undo");
+        return;
+      }
+      setBody(before);
+      await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: before });
+      void refreshNoteBody(target.id);
+    } catch (e) {
+      setError(errorText(e, "Couldn't undo"));
+    }
+  };
+
+  // Runs a selection action, leaving selection mode.
+  const onSelection = (action: (list: NotepadEntry[]) => void) => () => {
+    const list = selected;
+    clearSelection();
+    action(list);
   };
 
   return (
@@ -501,26 +567,57 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
             borderBottom: "1px solid var(--mob-surface)",
           }}
         >
-          <button
-            type="button"
-            aria-label="Close quick notes"
-            onClick={() => {
-              if (Date.now() - fullscreenClosedAt.current < 600) return;
-              onBack();
-            }}
-            className="flex items-center justify-center rounded-full transition-transform active:scale-95"
-            style={{ width: 40, height: 40, background: "var(--mob-surface)", color: "var(--mob-text)" }}
-          >
-            <X size={20} />
-          </button>
-          <span className="flex min-w-0 flex-col">
-            <span className="text-lg font-semibold leading-tight" style={{ color: "var(--mob-text)" }}>
-              Quick notes
-            </span>
-            <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>
-              Saved to your &quot;{NOTEPAD_TITLE}&quot; note
-            </span>
-          </span>
+          {selected.length > 0 ? (
+            <>
+              <HeaderButton label="Cancel selection" onClick={clearSelection}>
+                <X size={20} />
+              </HeaderButton>
+              <span className="min-w-0 flex-1 truncate text-lg font-semibold" style={{ color: "var(--mob-text)" }}>
+                {selected.length} selected
+              </span>
+              {selected.length === 1 && (
+                <HeaderButton label="Edit" onClick={onSelection((list) => startEdit(list[0]))}>
+                  <Pencil size={18} />
+                </HeaderButton>
+              )}
+              <HeaderButton
+                label="Copy"
+                onClick={onSelection((list) => {
+                  void copyText(list.map((e) => e.text).join("\n\n")).then((ok) =>
+                    showToast(ok ? "Copied" : "Couldn't copy"),
+                  );
+                })}
+              >
+                <Copy size={18} />
+              </HeaderButton>
+              <HeaderButton label="Make note" onClick={onSelection(makeNote)}>
+                <FilePlus size={18} />
+              </HeaderButton>
+              <HeaderButton label="Delete" danger onClick={onSelection((list) => void deleteMemos(list))}>
+                <Trash2 size={18} />
+              </HeaderButton>
+            </>
+          ) : (
+            <>
+              <HeaderButton
+                label="Close quick notes"
+                onClick={() => {
+                  if (Date.now() - fullscreenClosedAt.current < 600) return;
+                  onBack();
+                }}
+              >
+                <X size={20} />
+              </HeaderButton>
+              <span className="flex min-w-0 flex-col">
+                <span className="text-lg font-semibold leading-tight" style={{ color: "var(--mob-text)" }}>
+                  Quick notes
+                </span>
+                <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>
+                  Saved to your &quot;{NOTEPAD_TITLE}&quot; note
+                </span>
+              </span>
+            </>
+          )}
         </div>
 
         <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3" style={{ touchAction: "pan-y" }}>
@@ -537,7 +634,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           ) : (
             <ol className="flex flex-col gap-1.5">
               {entries.map((entry, i) => (
-                <li key={`${entry.day}-${entry.start}`} className="flex flex-col items-end">
+                <li key={`${entry.day}-${entry.start}`} className="flex flex-col">
                   {entry.day !== entries[i - 1]?.day && (
                     <span
                       className="my-2 self-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
@@ -554,17 +651,27 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                           : "Earlier"}
                     </span>
                   )}
-                  <MemoBubble
-                    entry={entry}
-                    editing={editing?.start === entry.start && editing.day === entry.day}
-                    resolve={resolve}
-                    onOpenNote={openNote}
-                    onOpenImage={setViewer}
-                    onMenu={(e, x, y) => setMenu({ entry: e, x, y })}
-                  />
-                  <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
-                    {entry.time}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <SelectCircle
+                      selected={selectedKeys.has(memoKey(entry))}
+                      onToggle={() => toggleSelected(entry)}
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col items-end">
+                      <MemoBubble
+                        entry={entry}
+                        editing={editing?.start === entry.start && editing.day === entry.day}
+                        selected={selectedKeys.has(memoKey(entry))}
+                        selecting={selected.length > 0}
+                        resolve={resolve}
+                        onOpenNote={openNote}
+                        onOpenImage={setViewer}
+                        onToggleSelect={() => toggleSelected(entry)}
+                      />
+                      <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                        {entry.time}
+                      </span>
+                    </div>
+                  </div>
                 </li>
               ))}
             </ol>
@@ -650,37 +757,72 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
         />
       </div>
 
-      {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            {
-              label: "Copy",
-              icon: <Copy size={15} />,
-              onClick: () => {
-                void copyText(menu.entry.text).then((ok) => showToast(ok ? "Copied" : "Couldn't copy"));
-              },
-            },
-            { label: "Edit", icon: <Pencil size={15} />, onClick: () => startEdit(menu.entry) },
-            { label: "Make note", icon: <FilePlus size={15} />, onClick: () => makeNote(menu.entry) },
-          ]}
-        />
-      )}
       {viewer && <ImageViewer url={viewer} onClose={() => setViewer(null)} />}
       {picking && (
         <NotebookPicker
           onClose={() => setPicking(null)}
           onPick={(notebook) => {
             updateSettings({ memoNoteVault: notebook.vaultId, memoNoteFolder: notebook.folder });
-            const entry = picking;
+            const list = picking;
             setPicking(null);
-            void moveToNote(entry, notebook);
+            void moveToNote(list, notebook);
           }}
         />
       )}
     </section>
+  );
+}
+
+function HeaderButton({
+  label,
+  danger = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95" +
+        (danger ? " text-red-600 dark:text-red-400" : "")
+      }
+      style={{ background: "var(--mob-surface)", color: danger ? undefined : "var(--mob-text)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// The circle left of a memo: tap to select it (several can be selected).
+function SelectCircle({ selected, onToggle }: { selected: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={selected}
+      aria-label="Select memo"
+      onClick={onToggle}
+      className="flex h-9 w-9 shrink-0 items-center justify-center"
+    >
+      <span
+        className="flex h-[22px] w-[22px] items-center justify-center rounded-full transition-colors"
+        style={
+          selected
+            ? { background: "var(--mob-accent)", color: "#fff" }
+            : { border: "2px solid color-mix(in srgb, var(--mob-muted) 55%, transparent)" }
+        }
+      >
+        {selected && <Check size={14} strokeWidth={3} />}
+      </span>
+    </button>
   );
 }
 

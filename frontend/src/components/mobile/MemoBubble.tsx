@@ -2,6 +2,7 @@
 
 import { useRef, type ReactNode } from "react";
 
+import { haptic } from "@/lib/haptics";
 import { MENTION_RE, splitMemo, type NotepadEntry } from "@/lib/notepad";
 
 /** A note a memo can link to ([[Title]]); journal notes have no vault. */
@@ -12,53 +13,59 @@ const MOVE_TOLERANCE_PX = 8;
 
 /**
  * One quick-capture memo: its images, then its text with linked notes as
- * tappable chips. A long press (touch) or right-click opens the memo menu.
+ * tappable chips. A long press (touch) or right-click selects it; while
+ * memos are selected, a tap toggles the selection instead of opening links.
  */
 export function MemoBubble({
   entry,
   editing,
+  selected,
+  selecting,
   resolve,
   onOpenNote,
   onOpenImage,
-  onMenu,
+  onToggleSelect,
 }: {
   entry: NotepadEntry;
   /** This memo is open in the composer. */
   editing: boolean;
+  selected: boolean;
+  /** Some memo is selected: taps select instead of opening. */
+  selecting: boolean;
   resolve: (title: string) => NoteRef | null;
   onOpenNote: (note: NoteRef) => void;
   onOpenImage: (url: string) => void;
-  onMenu: (entry: NotepadEntry, x: number, y: number) => void;
+  onToggleSelect: () => void;
 }) {
   const { text, images } = splitMemo(entry.text);
   const press = useRef<{ x: number; y: number; timer: number } | null>(null);
-  // The menu opened from this press: swallow the click that ends it.
-  const opened = useRef(false);
+  // This press selected the memo: swallow the click that ends it.
+  const pressed = useRef(false);
 
   const cancelPress = () => {
     if (!press.current) return;
     window.clearTimeout(press.current.timer);
     press.current = null;
   };
-  const openMenu = (x: number, y: number) => {
+  const longPress = () => {
     cancelPress();
-    opened.current = true;
-    onMenu(entry, x, y);
+    pressed.current = true;
+    onToggleSelect();
   };
 
   return (
     <div
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return;
-        opened.current = false;
+        pressed.current = false;
         cancelPress();
         const { clientX: x, clientY: y } = e;
         press.current = {
           x,
           y,
           timer: window.setTimeout(() => {
-            navigator.vibrate?.(10);
-            openMenu(x, y);
+            haptic();
+            longPress();
           }, LONG_PRESS_MS),
         };
       }}
@@ -72,22 +79,24 @@ export function MemoBubble({
       // Right-click on desktop; Android fires it for long presses too.
       onContextMenu={(e) => {
         e.preventDefault();
-        if (!opened.current) openMenu(e.clientX, e.clientY);
+        if (!pressed.current) longPress();
       }}
       // Lifting the finger after a long press would otherwise turn into a
-      // mousedown/click on the bubble, which closes the menu right away.
+      // click on the bubble (a link chip, an image).
       onTouchEnd={(e) => {
-        if (opened.current) e.preventDefault();
+        if (pressed.current) e.preventDefault();
       }}
       onClickCapture={(e) => {
-        if (!opened.current) return;
-        opened.current = false;
+        if (!pressed.current && !selecting) return;
         e.preventDefault();
         e.stopPropagation();
+        if (pressed.current) pressed.current = false;
+        else onToggleSelect();
       }}
       className={
-        "max-w-[85%] select-none overflow-hidden rounded-2xl rounded-br-md text-[15px] leading-snug transition-shadow" +
-        (editing ? " ring-2 ring-primary ring-offset-2 ring-offset-background" : "")
+        "max-w-[85%] select-none overflow-hidden rounded-2xl rounded-br-md text-[15px] leading-snug transition-[box-shadow,opacity]" +
+        (editing || selected ? " ring-2 ring-primary ring-offset-2 ring-offset-background" : "") +
+        (selecting && !selected ? " opacity-60" : "")
       }
       style={{ background: "var(--mob-accent)", color: "#fff", WebkitTouchCallout: "none" }}
     >

@@ -19,7 +19,7 @@ import {
   wrapInBlockTypeCommand,
 } from "@milkdown/kit/preset/commonmark";
 import { insertTableCommand, toggleStrikethroughCommand } from "@milkdown/kit/preset/gfm";
-import { DOMParser, DOMSerializer, type NodeType } from "@milkdown/kit/prose/model";
+import { DOMParser, DOMSerializer, type NodeType, type Slice } from "@milkdown/kit/prose/model";
 import { streamingPluginKey } from "@milkdown/kit/plugin/streaming";
 import { $prose, replaceAll } from "@milkdown/kit/utils";
 import { Milkdown, MilkdownProvider, useEditor } from "@milkdown/react";
@@ -294,6 +294,39 @@ function isPlainTextWrapper(html: string, text: string): boolean {
     if (!plainTextWrapperTags.has(n.tagName.toLowerCase())) return false;
   }
   return true;
+}
+
+// The plain-text clipboard (what mail and chat apps paste) is the selection
+// as markdown, minus how the editor stores line breaks: "<br />" lines (empty
+// paragraphs) become empty lines, hard breaks ("\" at a line end, inline
+// <br>) plain line breaks. Code blocks stay verbatim.
+function clipboardPlainText(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let fence: string | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence !== null) {
+      out.push(line);
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (marker) {
+      fence = marker;
+      out.push(line);
+      continue;
+    }
+    if (/^\s*<br\s*\/?>\s*$/i.test(line)) {
+      // One empty line per empty paragraph: drop the separator after it.
+      out.push("");
+      if (lines[i + 1] === "") i++;
+      continue;
+    }
+    const trailing = /\\+$/.exec(line)?.[0].length ?? 0;
+    out.push((trailing % 2 === 1 ? line.slice(0, -1) : line).replace(/<br\s*\/?>/gi, "\n"));
+  }
+  return out.join("\n").trimEnd();
 }
 
 export type MilkdownEditorHandle = {
@@ -973,6 +1006,21 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         const opts = ctx.get("editorViewOptions" as never) as Record<string, unknown>;
         ctx.set("editorViewOptions" as never, {
           ...opts,
+          // Copy: plain text without the editor's line-break markup (see
+          // clipboardPlainText). A selection inside one paragraph copies as
+          // its text, like milkdown's own serializer does.
+          clipboardTextSerializer: (slice: Slice) => {
+            const content = slice.content;
+            const only = content.childCount === 1 ? content.firstChild : null;
+            if (only?.type.name === "paragraph" && slice.openStart > 0) {
+              return content.textBetween(0, content.size, "\n\n", (leaf) =>
+                leaf.type.name === "hardbreak" ? "\n" : "",
+              );
+            }
+            const doc = ctx.get(schemaCtx).topNodeType.createAndFill(undefined, content);
+            if (!doc) return content.textBetween(0, content.size, "\n\n");
+            return clipboardPlainText(ctx.get(serializerCtx)(doc));
+          },
           handlePaste: (view: EditorView, event: ClipboardEvent) => {
             // OS-clipboard image paste: the clipboard plugin only handles
             // text, so intercept image files, upload them into the note's

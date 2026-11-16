@@ -35,7 +35,7 @@ type Props = {
   activeNote: Note | null;
   isDashboard: boolean;
   onOpenSidebar: () => void;
-  onOverflow: (x: number, y: number) => void;
+  onOverflow: () => void;
   onSearch: () => void;
   onNewNote: () => void;
   onOpenSettings: () => void;
@@ -67,6 +67,9 @@ export default function MobileNoteView({
   // viewport.
   const kbdInset = useVirtualKeyboardInset();
   const vv = useVisualViewport();
+  // Scrolling down hides the floating buttons with the rest of the chrome;
+  // with the keyboard open the raw toggle stays (it's an editing control).
+  const chromeVisible = useScrollHideChrome(activeId ?? undefined) || vv.isKeyboardOpen;
 
   const aiConfig = useMemo<AIConfig>(
     () => ({
@@ -323,6 +326,7 @@ export default function MobileNoteView({
         viewOnly={readOnly}
         isCollectionItem={activeNote?.type === "collection-item"}
         onCloseCollectionItem={onCloseCollectionItem}
+        noteId={activeNote.id}
       />
 
       {/* Editor — fullscreen, fills the entire area behind the top bar. The
@@ -387,13 +391,15 @@ export default function MobileNoteView({
 
       {/* Raw/rendered toggle — floating button at the bottom right, above the
        * keyboard (or above the bottom nav pill when the keyboard is closed).
-       * The top bar hides on scroll, so the toggle lives down here where it
-       * is always reachable while editing. */}
+       * Hides with the pill on scroll-down while reading. */}
       <div
-        className="pointer-events-auto absolute z-40"
+        className={"absolute z-40 " + (chromeVisible ? "pointer-events-auto" : "pointer-events-none")}
         style={{
           right: 16,
           top: `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - 132px)`,
+          opacity: chromeVisible ? 1 : 0,
+          transform: chromeVisible ? "translateY(0)" : "translateY(24px)",
+          transition: "transform 0.25s ease, opacity 0.2s ease",
         }}
       >
         <CircleButton
@@ -424,17 +430,20 @@ function MobileTopBar({
   showThemeToggle = false,
   isCollectionItem = false,
   onCloseCollectionItem,
+  noteId,
 }: {
   onOpenSidebar: () => void;
-  onOverflow: (x: number, y: number) => void;
+  onOverflow: () => void;
   onOpenSettings?: () => void;
   rawMode?: boolean;
   viewOnly?: boolean;
   showThemeToggle?: boolean;
   isCollectionItem?: boolean;
   onCloseCollectionItem?: () => void;
+  /** The open note: opening another one shows the bar again. */
+  noteId?: string;
 }) {
-  const hideChrome = useScrollHideChrome();
+  const hideChrome = useScrollHideChrome(noteId);
   const visible = rawMode || hideChrome;
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -502,13 +511,7 @@ function MobileTopBar({
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </CircleButton>
           ) : (
-            <CircleButton
-              ariaLabel="More actions"
-              onClick={(e) => {
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                onOverflow(r.right, r.bottom + 8);
-              }}
-            >
+            <CircleButton ariaLabel="More actions" onClick={onOverflow}>
               <Ellipsis size={20} />
             </CircleButton>
           )}
