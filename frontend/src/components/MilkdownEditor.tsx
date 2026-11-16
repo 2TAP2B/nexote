@@ -1508,6 +1508,29 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         crepe.editor.use($prose(() => slashWatchPlugin));
       }
 
+      // Tag pills and [[link]] chips act on click without focusing the
+      // editor: on a phone the focus would open the keyboard, and the browser
+      // then scrolls the pager towards the editor pane while it slides away
+      // (half sidebar, half note). Handled before ProseMirror's own mousedown,
+      // which would place the caret.
+      crepe.editor.use(
+        $prose(
+          () =>
+            new Plugin({
+              key: new PluginKey("nexote-chip-press"),
+              props: {
+                handleDOMEvents: {
+                  mousedown: (_view, e) => {
+                    if (!(e.target instanceof Element) || !e.target.closest(".nexote-tag, .nexote-wikilink")) return false;
+                    e.preventDefault();
+                    return true;
+                  },
+                },
+              },
+            }),
+        ),
+      );
+
       // Clicking a highlighted tag pill opens the Tags view with that tag
       // selected (the sidebar listens for this event and switches views).
       const onRootClick = (e: MouseEvent) => {

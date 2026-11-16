@@ -194,15 +194,23 @@ export default function MobileApp() {
   // On mobile: set the sidebar view/tag FIRST, then open the sidebar so the
   // correct view is already showing when the panel slides in.
   useEffect(() => {
+    // Leaving the note for the sidebar: drop editor focus first, or the touch
+    // keyboard stays up for a field that is sliding off screen.
+    const blurPagerField = () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.closest(".mob-pager")) active.blur();
+    };
     const onSelectView = (e: Event) => {
       const detail = (e as CustomEvent).detail as SidebarView;
       if (detail) setSidebarView(detail);
+      blurPagerField();
       setPagerFocus("sidebar");
     };
     const onSelectTag = (e: Event) => {
       const detail = (e as CustomEvent).detail as string;
       if (detail) setSelectedTag(detail);
       setSidebarView("tags");
+      blurPagerField();
       setPagerFocus("sidebar");
     };
     const onToggleSidebar = () =>
@@ -278,8 +286,24 @@ export default function MobileApp() {
     };
   }, []);
 
+  // The pager pans with transforms only; the shell never scrolls sideways.
+  // When the browser scrolls it anyway to reveal a focused field in a pane
+  // that's off screen (the touch keyboard opening), two half panes show:
+  // undo that scroll right away.
+  const shellRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const reset = () => {
+      if (shell.scrollLeft !== 0) shell.scrollLeft = 0;
+    };
+    shell.addEventListener("scroll", reset, { passive: true });
+    return () => shell.removeEventListener("scroll", reset);
+  }, []);
+
   return (
     <div
+      ref={shellRef}
       className="mob-shell-root flex h-[100dvh] w-full flex-col overflow-hidden"
       data-pager-focus={pagerFocus}
       style={
