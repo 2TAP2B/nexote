@@ -137,6 +137,22 @@ History is kept indefinitely; there is no retention limit yet.
 
 Each account has a personal journal with one note per day, titled `YYYY-MM-DD`. Open today's note with Ctrl/Cmd+D, the dashboard's **Today's journal** action or **Daily notes** in the ribbon. A calendar on the desktop dashboard and in the Daily notes view marks days that have a note; clicking another day creates its note.
 
+## Note tree
+
+The sidebar lists the vaults of the active space with their folders and notes. Folders come first (A–Z) and show how many notes they hold, subfolders included; thin guide lines show what belongs to an open folder.
+
+The buttons above the tree, from left to right:
+
+| Button | Does |
+| --- | --- |
+| New note, New folder | Create one in the active vault (editors only). Hovering a folder shows a **+** that creates a note right in that folder. |
+| Sort notes | Name (A–Z), Last edited or Created (newest first). |
+| Card view | Shows each note as a small card: title, a two-line preview, when it was last edited and its first tags. Click again for compact rows. |
+| Show current note | Opens the vault and folders of the open note, scrolls to it and highlights it briefly. |
+| Collapse all / Expand all | Closes every folder and vault down to the vault names, or opens everything. |
+
+The tree follows the open note: opening a note (from search, a link or the dashboard) opens its folders so it is visible. Sort order, card view and which folders are open are remembered per device; folders with the same name in different vaults open and close independently.
+
 ## Navigation
 
 - **Command palette** (Ctrl/Cmd+P or Ctrl/Cmd+Shift+F): runs commands, switches spaces, and searches notes. Title matches in the active vault appear immediately; after two characters a full-text search over the active space and your journal is added. Editors can create a note from the typed text.

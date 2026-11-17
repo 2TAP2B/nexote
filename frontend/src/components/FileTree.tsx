@@ -39,11 +39,14 @@ import {
   Trash2,
   X,
   Zap,
+  Plus,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 
-import { useNotes } from "@/lib/notes-context";
+import { useNotes, type TreeSort } from "@/lib/notes-context";
+import { haptic } from "@/lib/haptics";
+import { MobileActionSheet, type SheetAction } from "./mobile/MobileActionSheet";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
 import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
@@ -76,13 +79,47 @@ import FolderCreateDialog from "./FolderCreateDialog";
 import JournalCalendar from "./JournalCalendar";
 import { useCanEdit } from "./useCanEdit";
 
+type TreeNote = {
+  id: string;
+  title: string;
+  updatedAt?: string;
+  createdAt?: string;
+  /** Plain-text preview (card view). */
+  snippet?: string;
+  tags?: string[];
+};
+
 type TreeNode = {
   name: string;
   path: string;
   children: Map<string, TreeNode>;
-  notes: { id: string; title: string; updatedAt?: string }[];
+  notes: TreeNote[];
   label?: string;
 };
+
+const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+
+/** Names of the note orders (sort menus on desktop and phone). */
+export const TREE_SORT_LABELS: Record<TreeSort, string> = {
+  name: "Name (A–Z)",
+  modified: "Last edited",
+  created: "Created",
+};
+
+/** Note order within a folder (Settings: tree sort). Folders always come
+ *  first, A–Z. Deterministic, so refreshes never reorder rows. */
+function noteOrder(sort: TreeSort): (a: TreeNote, b: TreeNote) => number {
+  if (sort === "created") return (a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || byName(a.title, b.title);
+  if (sort === "modified") return (a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "") || byName(a.title, b.title);
+  return (a, b) => byName(a.title, b.title);
+}
+
+/** Notes in a folder and all its subfolders. */
+function noteCount(node: TreeNode): number {
+  let n = node.notes.length;
+  for (const child of node.children.values()) n += noteCount(child);
+  return n;
+}
 
 function emptyTree(): TreeNode {
   return { name: "", path: "", children: new Map(), notes: [] };
@@ -97,7 +134,7 @@ const isCoarsePointer =
   window.matchMedia("(pointer: coarse)").matches;
 
 function buildTree(
-  notes: { id: string; title: string; path: string; updatedAt?: string }[],
+  notes: { id: string; title: string; path: string; updatedAt?: string; createdAt?: string; snippet?: string; tags?: string[] }[],
   folders: { path: string; name: string; label?: string }[],
 ): TreeNode {
   const root = emptyTree();
@@ -131,7 +168,14 @@ function buildTree(
         node = child;
       }
     }
-    node.notes.push({ id: n.id, title: n.title, updatedAt: n.updatedAt });
+    node.notes.push({
+      id: n.id,
+      title: n.title,
+      updatedAt: n.updatedAt,
+      createdAt: n.createdAt,
+      snippet: n.snippet,
+      tags: n.tags,
+    });
   }
   return root;
 }
@@ -148,14 +192,12 @@ function allFolderPaths(node: TreeNode, acc: string[] = []): string[] {
 }
 
 export type TreeControls = {
-  expandAll: () => void;
-  collapseAll: () => void;
-  toggleSort: () => void;
-  sorted: boolean;
+  /** Every folder and section open (vaults, shortcuts, recent, journal). */
   allExpanded: boolean;
+  /** Collapses everything to the vault headers, or opens everything. */
   toggleExpandCollapse: () => void;
-  allSectionsExpanded: boolean;
-  toggleSectionsCollapse: () => void;
+  /** Shows the open note in the tree: opens its vault and folders, scrolls to it. */
+  revealActive: () => void;
 };
 
 type FileTreeProps = {
@@ -165,11 +207,14 @@ type FileTreeProps = {
   onSelectTagConsumed?: () => void;
   onControlsReady?: (c: TreeControls) => void;
   onSelectView?: (view: SidebarView) => void;
+  /** Touch shell: bigger rows, long press opens an action sheet. */
+  touch?: boolean;
 };
 
-export default function FileTree({ collapsed, view = "tree", selectedTag, onSelectTagConsumed, onControlsReady, onSelectView }: FileTreeProps) {
+export default function FileTree({ collapsed, view = "tree", selectedTag, onSelectTagConsumed, onControlsReady, onSelectView, touch = false }: FileTreeProps) {
   const {
     notes,
+    settings,
     folders,
     bookmarks,
     shortcuts,
@@ -387,22 +432,16 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       .map((n) => ({ type: "note", id: n.id }) as NavItem);
   }, [journalNotes]);
 
-  // Default: notes sorted A–Z (stable). The sidebar toggle switches to
-  // "recently updated first". Both are deterministic, independent of the
-  // server's filesystem walk order — otherwise refreshes visibly reorder rows.
-  const [sorted, setSorted] = useState(true);
+  // Note order: Settings › tree sort (name, last edited, created).
+  const sort = settings.treeSort;
 
   // Vault tree nav list (notes + folders) — mirrors TreeChildren ordering
-  // (folders A–Z, notes A–Z or recent-first per the `sorted` toggle).
+  // (folders A–Z, then notes in the chosen order).
   const vaultNavItems = useMemo(() => {
     const items: NavItem[] = [];
     const walk = (node: TreeNode) => {
       const folders = [...node.children.values()].sort((a, b) => cmpName(a.name, b.name));
-      const notes = [...node.notes].sort(
-        sorted
-          ? (a, b) => cmpName(a.title, b.title)
-          : (a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),
-      );
+      const notes = [...node.notes].sort(noteOrder(sort));
       for (const child of folders) {
         items.push({ type: "folder", path: child.path });
         if (isFolderOpen(activeVault?.id ?? "", child.path)) walk(child);
@@ -422,7 +461,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       }
     }
     return items;
-  }, [notes, activeVault, allVaultData, isFolderOpen, stripCollectionFolders, sorted]);
+  }, [activeVault, allVaultData, isFolderOpen, stripCollectionFolders, sort]);
 
   // Map note id → folder path, for ArrowLeft "go to parent folder" in the
   // vault tree. Built from the active vault's notes (or simple-mode notes).
@@ -536,6 +575,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     x: number;
     y: number;
     items: MenuItem[];
+    /** Heading of the phone's action sheet (note or folder name). */
+    title?: string;
   } | null>(null);
 
   // Folder-create dialog state.
@@ -723,7 +764,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [treeSelectedNav]);
 
-  // Collapse / expand all: the folders of every vault in the sidebar.
+  // Collapse / expand all: every folder of every vault in the sidebar plus
+  // the sections (vaults, shortcuts, recent, journal).
   const sidebarFolderKeys = useMemo(
     () =>
       vaults
@@ -736,49 +778,25 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         }),
     [vaults, allVaultData, stripCollectionFolders],
   );
-  const setAllFolders = useCallback(
-    (open: boolean) =>
-      setOpenMap((prev) => {
-        const next = { ...prev };
-        for (const key of sidebarFolderKeys) next[key] = open;
-        return next;
-      }),
-    [sidebarFolderKeys],
-  );
-  const expandAll = useCallback(() => setAllFolders(true), [setAllFolders]);
-  const collapseAll = useCallback(() => setAllFolders(false), [setAllFolders]);
-
-  const toggleSort = useCallback(() => setSorted((v) => !v), []);
-
-  const allExpanded = sidebarFolderKeys.every((key) => openMap[key] ?? true);
-
-  const toggleExpandCollapse = useCallback(() => {
-    if (allExpanded) collapseAll();
-    else expandAll();
-  }, [allExpanded, collapseAll, expandAll]);
-
-  // Section collapse state: Shortcuts, Recent, Journal, and all vault sections.
-  const allSectionsExpanded =
+  const allExpanded =
     shortcutsExpanded &&
     recentExpanded &&
     journalExpanded &&
-    vaults.every((v) => vaultExpandedMap[v.id] ?? true);
+    vaults.every((v) => vaultExpandedMap[v.id] ?? true) &&
+    sidebarFolderKeys.every((key) => openMap[key] ?? true);
 
-  const setAllSections = useCallback(
-    (expanded: boolean) => {
-      setShortcutsExpanded(expanded);
-      setRecentExpanded(expanded);
-      setJournalExpanded(expanded);
-      setVaultExpandedMap(
-        Object.fromEntries(vaults.map((v) => [v.id, expanded])),
-      );
-    },
-    [vaults],
-  );
-
-  const toggleSectionsCollapse = useCallback(() => {
-    setAllSections(!allSectionsExpanded);
-  }, [allSectionsExpanded, setAllSections]);
+  const toggleExpandCollapse = useCallback(() => {
+    const open = !allExpanded;
+    setOpenMap((prev) => {
+      const next = { ...prev };
+      for (const key of sidebarFolderKeys) next[key] = open;
+      return next;
+    });
+    setShortcutsExpanded(open);
+    setRecentExpanded(open);
+    setJournalExpanded(open);
+    setVaultExpandedMap(Object.fromEntries(vaults.map((v) => [v.id, open])));
+  }, [allExpanded, sidebarFolderKeys, vaults]);
 
   // Vault icon options for the picker
   const vaultIconOptions = ICON_OPTIONS;
@@ -914,28 +932,110 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     if (canEditSpace) openFolderDialog();
   }, [openFolderDialog, canEditSpace]);
 
+  // Reveal: the note's vault section and folders open, then its row scrolls
+  // into view. Runs on every note change (the tree follows the open note)
+  // and from the toolbar button (with a short highlight).
+  const pendingReveal = useRef<{ id: string; flash: boolean } | null>(null);
+  const revealNote = useCallback(
+    (id: string, flash: boolean) => {
+      const vaultId = noteVaultMap[id];
+      const note = vaultId ? allVaultData[vaultId]?.notes.find((n) => n.id === id) : undefined;
+      if (!vaultId || !note || note.collection) return;
+      setVaultExpandedMap((prev) => (prev[vaultId] === false ? { ...prev, [vaultId]: true } : prev));
+      if (note.path) {
+        const segments = note.path.split("/");
+        setOpenMap((prev) => {
+          let next = prev;
+          for (let i = 1; i <= segments.length; i++) {
+            const key = folderKey(vaultId, segments.slice(0, i).join("/"));
+            if (next[key] === false) next = { ...next, [key]: true };
+          }
+          return next;
+        });
+      }
+      pendingReveal.current = { id: `vault:${vaultId}|${id}`, flash };
+    },
+    [noteVaultMap, allVaultData],
+  );
+  const revealActive = useCallback(() => {
+    if (activeId) revealNote(activeId, true);
+  }, [activeId, revealNote]);
+  // Also once the note's vault data has loaded (right after a page load the
+  // note isn't known yet), but not on every later data refresh.
+  const activeNoteVault = activeId ? noteVaultMap[activeId] : undefined;
   useEffect(() => {
-    onControlsReady?.({
-      expandAll,
-      collapseAll,
-      toggleSort,
-      sorted,
-      allExpanded,
-      toggleExpandCollapse,
-      allSectionsExpanded,
-      toggleSectionsCollapse,
-    });
-  }, [
-    onControlsReady,
-    expandAll,
-    collapseAll,
-    toggleSort,
-    sorted,
-    allExpanded,
-    toggleExpandCollapse,
-    allSectionsExpanded,
-    toggleSectionsCollapse,
-  ]);
+    if (activeId && view === "tree") revealNote(activeId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, view, activeNoteVault]);
+  // After the folders rendered open: scroll the tree's own scroll box. Not
+  // scrollIntoView: on the phone it would also scroll the swipe pager to
+  // the sidebar pane while a note is shown.
+  useEffect(() => {
+    const pending = pendingReveal.current;
+    if (!pending) return;
+    const [section, id] = pending.id.split("|");
+    const row = document.querySelector<HTMLElement>(`[data-section="${section}"][data-note-id="${id}"]`);
+    if (!row) return;
+    pendingReveal.current = null;
+    let box = row.parentElement;
+    while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+    if (box) {
+      const r = row.getBoundingClientRect();
+      const b = box.getBoundingClientRect();
+      if (r.top < b.top + 8 || r.bottom > b.bottom - 8) box.scrollTop += r.top - b.top - b.height / 2 + r.height / 2;
+    }
+    if (pending.flash) {
+      row.classList.add("tree-reveal");
+      window.setTimeout(() => row.classList.remove("tree-reveal"), 1200);
+    }
+  });
+
+  useEffect(() => {
+    onControlsReady?.({ allExpanded, toggleExpandCollapse, revealActive });
+  }, [onControlsReady, allExpanded, toggleExpandCollapse, revealActive]);
+
+  // Phone: a long press on a note or folder row opens its action sheet (the
+  // row's context menu). iOS fires no contextmenu event on long press, so it
+  // is synthesized; the click that ends the press is swallowed.
+  const longPress = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const swallowClick = useRef(false);
+  const cancelLongPress = () => {
+    if (longPress.current) window.clearTimeout(longPress.current.timer);
+    longPress.current = null;
+  };
+  const touchHandlers = touch
+    ? {
+        onPointerDown: (e: React.PointerEvent) => {
+          if (e.pointerType === "mouse") return;
+          const row = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-note-id],[data-folder-path]") : null;
+          if (!row) return;
+          cancelLongPress();
+          const { clientX: x, clientY: y } = e;
+          longPress.current = {
+            x,
+            y,
+            timer: window.setTimeout(() => {
+              longPress.current = null;
+              swallowClick.current = true;
+              haptic();
+              row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+            }, 450),
+          };
+        },
+        onPointerMove: (e: React.PointerEvent) => {
+          const lp = longPress.current;
+          if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) cancelLongPress();
+        },
+        onPointerUp: cancelLongPress,
+        onPointerCancel: cancelLongPress,
+        onClickCapture: (e: React.MouseEvent) => {
+          if (!swallowClick.current) return;
+          swallowClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        },
+      }
+    : {};
 
   const handleCreateFolder = useCallback(
     (fullPath: string) => {
@@ -1061,7 +1161,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={"flex h-full flex-col" + (touch ? " nexote-tree-touch" : "")} {...touchHandlers}>
       <button id="nexote-new-note-btn" type="button" className="hidden" onClick={handleCreateHere} />
       <button id="nexote-new-folder-btn" type="button" className="hidden" onClick={handleNewFolderHere} />
 
@@ -1243,12 +1343,14 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         shortcuts={shortcuts}
                         isFolderOpen={folderState.isOpen}
                         setOpenMap={folderState.set}
-                        sorted={sorted}
+                        sort={sort}
+                        cards={settings.treeCards}
+                        touch={touch}
                         onNoteDragStart={handleNoteDragStart}
                         onFolderDragOver={setDragOverPath}
                         onFolderDrop={handleFolderDrop}
                         dragOverPath={dragOverPath}
-                        onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                        onContextMenu={(x, y, items, title) => setCtxMenu({ x, y, items, title })}
                         renaming={renaming}
                         setRenaming={setRenaming}
                         onRename={handleRename}
@@ -1292,7 +1394,9 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         shortcuts={shortcuts}
                         isFolderOpen={folderState.isOpen}
                         setOpenMap={folderState.set}
-                        sorted={sorted}
+                        sort={sort}
+                        cards={settings.treeCards}
+                        touch={touch}
                         onNoteDragStart={handleNoteDragStart}
                         onFolderDragOver={setDragOverPath}
                         onFolderDrop={(folderPath) => {
@@ -1303,7 +1407,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                           setDragOverPath(null);
                         }}
                         dragOverPath={dragOverPath}
-                        onContextMenu={(x, y, items) => setCtxMenu({ x, y, items })}
+                        onContextMenu={(x, y, items, title) => setCtxMenu({ x, y, items, title })}
                         renaming={renaming}
                         setRenaming={setRenaming}
                         onRename={handleRename}
@@ -1372,14 +1476,23 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         onMove={performMoveTo}
       />
 
-      {ctxMenu && (
-        <ContextMenu
-          x={ctxMenu.x}
-          y={ctxMenu.y}
-          items={ctxMenu.items}
-          onClose={() => setCtxMenu(null)}
-        />
-      )}
+      {ctxMenu &&
+        (touch ? (
+          <MobileActionSheet
+            title={ctxMenu.title}
+            sections={ctxMenu.items.reduce<SheetAction[][]>(
+              (groups, item) => {
+                if (item.separator) groups.push([]);
+                else groups[groups.length - 1].push({ label: item.label, icon: item.icon, onClick: item.onClick, danger: item.danger });
+                return groups;
+              },
+              [[]],
+            )}
+            onClose={() => setCtxMenu(null)}
+          />
+        ) : (
+          <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />
+        ))}
 
       {/* Vault icon picker popover — portaled to <body> so it is not
           clipped by the transformed mobile sidebar drawer, and clamped to
@@ -1483,12 +1596,16 @@ type TreeChildProps = {
   shortcuts: Set<string>;
   isFolderOpen: (path: string) => boolean;
   setOpenMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-  sorted: boolean;
+  sort: TreeSort;
+  /** Card view: notes show a preview and their date/tags. */
+  cards: boolean;
+  /** Touch shell: taller rows, no hover-only controls. */
+  touch: boolean;
   onNoteDragStart: (e: React.DragEvent, id: string) => void;
   onFolderDragOver: (path: string | null) => void;
   onFolderDrop: (path: string) => void;
   dragOverPath: string | null;
-  onContextMenu: (x: number, y: number, items: MenuItem[]) => void;
+  onContextMenu: (x: number, y: number, items: MenuItem[], title?: string) => void;
   renaming: { id: string; value: string } | null;
   setRenaming: (r: { id: string; value: string } | null) => void;
   onRename: (id: string, title: string) => void;
@@ -1504,35 +1621,34 @@ type TreeChildProps = {
   noteIcon?: (id: string) => string | undefined;
 };
 
+// Indent per level and where a level's guide line sits (under the parent
+// folder's chevron).
+const indentOf = (touch: boolean) => (touch ? 16 : 14);
+
 function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
-  const { node, depth, sorted, ...rest } = props;
-  const folders = [...node.children.values()];
-  const notes = [...node.notes];
+  const { node, depth, ...rest } = props;
   // Deterministic ordering, independent of the server's filesystem walk
-  // order: folders always alphabetically; notes alphabetically (default) or
-  // by most-recent-update (toggle). Without this, a refresh() swaps the
-  // array from walk order to updatedAt-sorted and rows visibly jump.
-  const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
-  folders.sort((a, b) => byName(a.name, b.name));
-  if (sorted) {
-    notes.sort((a, b) => byName(a.title, b.title));
-  } else {
-    notes.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
-  }
-  const childProps = { ...rest, sorted };
+  // order: folders always alphabetically, notes per the sort setting.
+  // Without this, a refresh() swaps the array order and rows visibly jump.
+  const folders = [...node.children.values()].sort((a, b) => byName(a.name, b.name));
+  const notes = [...node.notes].sort(noteOrder(rest.sort));
+  const guide = depth > 0 && !rest.collectionsVault;
   return (
-    <ul>
+    <ul
+      className={guide ? "tree-guide" : undefined}
+      style={guide ? ({ "--guide-x": `${20 + (depth - 1) * indentOf(rest.touch)}px` } as React.CSSProperties) : undefined}
+    >
       {rest.collectionsVault
         ? folders.map((child) => (
-            <CollectionCard key={child.path} {...childProps} node={child} depth={0} />
+            <CollectionCard key={child.path} {...rest} node={child} depth={0} />
           ))
         : folders.map((child) => (
-            <FolderItem key={child.path} {...childProps} node={child} depth={depth} />
+            <FolderItem key={child.path} {...rest} node={child} depth={depth} />
           ))}
       {notes.map((n) => (
         <NoteItem
           key={n.id}
-          {...childProps}
+          {...rest}
           note={n}
           noteParentPath={node.path}
           depth={depth}
@@ -1552,7 +1668,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
     depth,
     isFolderOpen,
     setOpenMap,
-    sorted,
+    touch,
     onFolderDragOver,
     onFolderDrop,
     dragOverPath,
@@ -1648,7 +1764,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               danger: true,
               onClick: () => onDeleteFolder(node.path),
             },
-          ]);
+          ], node.name);
         }}
           className={[
             "tree-row group flex w-full items-center gap-2 transition-colors",
@@ -1656,9 +1772,9 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
             isDragOver ? "bg-primary/20" : "",
           ].join(" ")}
           style={{
-            height: 33,
-            paddingLeft: 14 + depth * 14,
-            paddingRight: 14,
+            height: touch ? 44 : 33,
+            paddingLeft: 14 + depth * indentOf(touch),
+            paddingRight: touch ? 12 : 10,
             borderRadius: 5,
           }}
         >
@@ -1673,7 +1789,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
             }}
             className="flex items-center gap-2 min-w-0 flex-1"
-            style={{ height: 33 }}
+            style={{ height: touch ? 44 : 33 }}
           >
             <ChevronRight
               className={[
@@ -1709,7 +1825,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               />
             ) : (
               <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                <span className="truncate" style={{ fontSize: 13, fontWeight: 500, color: "var(--foreground)" }}>{node.name}</span>
+                <span className="truncate" style={{ fontSize: touch ? 15 : 13, fontWeight: 500, color: "var(--foreground)" }}>{node.name}</span>
                 {node.label && FOLDER_LABEL_HEX[node.label] && (
                   <span
                     aria-hidden
@@ -1720,21 +1836,26 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
               </span>
             )}
           </button>
-          <button
-            type="button"
-            aria-label={`Toggle ${node.name} folder`}
-            title="Expand / collapse"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
-            }}
-            className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-            style={{ color: "var(--muted-foreground)" }}
-          >
-            <ChevronRight
-              className={["h-3.5 w-3.5 transition-transform", open ? "rotate-90" : ""].join(" ")}
-            />
-          </button>
+          {/* Notes inside (subfolders included); desktop: "+" on hover for a
+              new note right in this folder. */}
+          <span className="shrink-0 tabular-nums" style={{ fontSize: touch ? 12 : 11, color: "var(--muted-foreground)" }}>
+            {noteCount(node)}
+          </span>
+          {canEditSpace && !touch && (
+            <button
+              type="button"
+              aria-label={`New note in ${node.name}`}
+              title="New note in this folder"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewNoteInFolder(node.path);
+              }}
+              className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              style={{ color: "var(--muted-foreground)" }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       {open && (
         <TreeChildren
@@ -1796,7 +1917,7 @@ function CollectionCard(props: TreeChildProps & { node: TreeNode }) {
 
 function NoteItem(
   props: TreeChildProps & {
-    note: { id: string; title: string };
+    note: TreeNote;
     depth: number;
     active: boolean;
     // Folder the note lives in ("" = vault root). Present only in the tree
@@ -1827,6 +1948,9 @@ function NoteItem(
     onNewFolderInFolder,
     onMoveNote,
     onMoveTo,
+    cards,
+    touch,
+    sectionTag,
   } = props;
 
   const isRenaming = renaming?.id === note.id;
@@ -1847,6 +1971,7 @@ function NoteItem(
         onDragStart={(e) => onNoteDragStart(e, note.id)}
         onMouseEnter={() => setTreeSelectedNav?.(`note:${note.id}`)}
         onClick={() => !isRenaming && onOpen(note.id)}
+        data-section={sectionTag}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -1921,16 +2046,19 @@ function NoteItem(
               },
             );
           }
-          onContextMenu(e.clientX, e.clientY, items);
+          onContextMenu(e.clientX, e.clientY, items, note.title || "Untitled");
         }}
         className={[
-          "tree-row group flex w-full items-center gap-2 transition-colors",
+          "tree-row group flex w-full gap-2 transition-colors",
+          cards ? "items-start" : "items-center",
           active ? "tree-active" : isSelected ? "tree-selected" : "",
         ].join(" ")}
         style={{
-          height: 33,
-          paddingLeft: 30 + depth * 14,
-          paddingRight: 14,
+          minHeight: touch ? 44 : 33,
+          paddingLeft: 30 + depth * indentOf(touch),
+          paddingRight: touch ? 12 : 10,
+          paddingTop: cards ? 7 : 0,
+          paddingBottom: cards ? 7 : 0,
           borderRadius: 5,
         }}
       >
@@ -1939,54 +2067,74 @@ function NoteItem(
           return (
             <NoteIcon
               className={active ? "h-3.5 w-3.5 shrink-0 text-primary" : "h-3.5 w-3.5 shrink-0"}
-              style={active ? undefined : { color: "var(--muted-foreground)" }}
+              style={{ ...(active ? {} : { color: "var(--muted-foreground)" }), ...(cards ? { marginTop: touch ? 4 : 2 } : {}) }}
             />
           );
         })()}
-        {isRenaming ? (
-          <input
-            value={renaming.value}
-            autoFocus
-            onChange={(e) =>
-              setRenaming({ id: note.id, value: e.target.value })
-            }
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onRename(note.id, renaming.value.trim() || "Untitled");
+        <div className="flex min-w-0 flex-1 flex-col">
+          {isRenaming ? (
+            <input
+              value={renaming.value}
+              autoFocus
+              onChange={(e) =>
+                setRenaming({ id: note.id, value: e.target.value })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onRename(note.id, renaming.value.trim() || "Untitled");
+                  setRenaming(null);
+                }
+                if (e.key === "Escape") setRenaming(null);
+              }}
+              onBlur={() => {
+                if (renaming.value !== note.title) {
+                  onRename(note.id, renaming.value.trim() || "Untitled");
+                }
                 setRenaming(null);
-              }
-              if (e.key === "Escape") setRenaming(null);
-            }}
-            onBlur={() => {
-              if (renaming.value !== note.title) {
-                onRename(note.id, renaming.value.trim() || "Untitled");
-              }
-              setRenaming(null);
-            }}
-            className="min-w-0 flex-1 rounded border px-1 outline-none"
-            style={{
-              background: "var(--background)",
-              borderColor: "var(--ring)",
-              fontSize: 13,
-              color: "var(--foreground)",
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            onDoubleClick={() => canEdit && setRenaming({ id: note.id, value: note.title })}
-            className="tree-row-title min-w-0 flex-1 truncate text-left"
-            style={{
-              fontSize: 13,
-              fontWeight: active ? undefined : 400,
-              color: active ? undefined : "var(--foreground)",
-            }}
-          >
-            {note.title || "Untitled"}
-          </button>
-        )}
-        {canEdit && (
+              }}
+              className="min-w-0 flex-1 rounded border px-1 outline-none"
+              style={{
+                background: "var(--background)",
+                borderColor: "var(--ring)",
+                fontSize: touch ? 15 : 13,
+                color: "var(--foreground)",
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onDoubleClick={() => canEdit && setRenaming({ id: note.id, value: note.title })}
+              className="tree-row-title min-w-0 truncate text-left"
+              style={{
+                fontSize: touch ? 15 : 13,
+                fontWeight: active ? undefined : cards ? 500 : 400,
+                color: active ? undefined : "var(--foreground)",
+              }}
+            >
+              {note.title || "Untitled"}
+            </button>
+          )}
+          {/* Card view: a preview and when it was last edited, plus tags. */}
+          {cards && !isRenaming && (
+            <>
+              {note.snippet && (
+                <p className="tree-card-snippet" style={{ fontSize: touch ? 13 : 12 }}>
+                  {note.snippet}
+                </p>
+              )}
+              <span className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate" style={{ fontSize: touch ? 12 : 11, color: "var(--muted-foreground)" }}>
+                {note.updatedAt && <span className="shrink-0">{formatTime(note.updatedAt)}</span>}
+                {note.tags?.slice(0, 3).map((tag) => (
+                  <span key={tag} className="truncate" style={{ color: "var(--primary)", opacity: 0.85 }}>
+                    #{tag}
+                  </span>
+                ))}
+              </span>
+            </>
+          )}
+        </div>
+        {canEdit && !touch && (
           <button
             type="button"
             aria-label="Delete note"
@@ -1996,7 +2144,7 @@ function NoteItem(
               onDelete(note.id);
             }}
             className="shrink-0 p-0.5 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-            style={{ color: active ? undefined : "var(--muted-foreground)" }}
+            style={{ color: active ? undefined : "var(--muted-foreground)", ...(cards ? { marginTop: 1 } : {}) }}
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -2081,7 +2229,9 @@ function BookmarksList({
           onMoveTo={onMoveTo}
           isFolderOpen={() => false}
           setOpenMap={() => {}}
-          sorted={false}
+          sort="modified"
+          cards={false}
+          touch={false}
           onFolderDragOver={() => {}}
           onFolderDrop={() => {}}
           dragOverPath={null}
@@ -2538,7 +2688,9 @@ function RecentFilesList({
           onMoveTo={onMoveTo}
           isFolderOpen={() => false}
           setOpenMap={() => {}}
-          sorted={false}
+          sort="modified"
+          cards={false}
+          touch={false}
           onFolderDragOver={() => {}}
           onFolderDrop={() => {}}
           dragOverPath={null}

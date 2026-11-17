@@ -21,6 +21,9 @@ type Draft = { title: string; body: string };
 // When note bodies were last requested for the offline copy (per page load).
 let lastBodyPrecache = 0;
 
+/** Note order in the tree: name (A–Z), last edited, or created (newest first). */
+export type TreeSort = "name" | "modified" | "created";
+
 export type AppSettings = {
   // New-note title; date/time codes are filled in by formatTitle. Empty
   // means "Untitled".
@@ -74,6 +77,10 @@ export type AppSettings = {
   calloutsAndHighlights: boolean;
   // Desktop: formatting bar above the note (Settings › Editor).
   formattingToolbar: boolean;
+  // Note tree: note order within a folder (folders stay first, A–Z) and the
+  // card view (title + preview + date/tags) instead of compact rows.
+  treeSort: TreeSort;
+  treeCards: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -108,6 +115,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   interface: "auto",
   calloutsAndHighlights: true,
   formattingToolbar: true,
+  treeSort: "name",
+  treeCards: false,
 };
 
 type NotesContextValue = {

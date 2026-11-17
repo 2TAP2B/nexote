@@ -35,6 +35,7 @@ More screenshots, including the phone app, are in the [documentation](https://2t
 - Block selection mode to copy, cut or delete whole blocks on touchscreens.
 - Inline `#tags`, `- [ ]` tasks collected across vaults, and a full history of every note with restore.
 - Daily journal, command palette with full-text search, tabs, bookmarks, table of contents, color schemes.
+- Note tree with card view (previews), sort by name, last edited or created, note counts, and a tree that follows the open note.
 
 **Mobile and tablet app**
 - Touch interface for phones and tablets at the same address as the desktop one, chosen per device (switchable in Settings › General).

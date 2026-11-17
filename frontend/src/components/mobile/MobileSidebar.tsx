@@ -4,24 +4,28 @@ import {
   Bookmark,
   CalendarDays,
   ChevronsDownUp,
+  ChevronsUpDown,
   Clock,
-  Expand,
   FilePlus,
   FileStack,
   FolderPlus,
   Hash,
+  LayoutList,
   Library,
+  List,
   ListTodo,
   Settings,
+  SlidersHorizontal,
   Star,
   X,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import FileTree, { type TreeControls } from "@/components/FileTree";
+import FileTree, { TREE_SORT_LABELS, type TreeControls } from "@/components/FileTree";
 import type { SidebarView } from "@/components/Ribbon";
-import { useNotes } from "@/lib/notes-context";
+import { useNotes, type TreeSort } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
+import { MobileActionSheet } from "./MobileActionSheet";
 
 type Props = {
   onClose: () => void;
@@ -55,7 +59,9 @@ export default function MobileSidebar({
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
-  const { openDaily, settings } = useNotes();
+  const { openDaily, settings, updateSettings } = useNotes();
+  // The "View" sheet: note order and compact/card rows.
+  const [viewSheet, setViewSheet] = useState(false);
   // Viewers of a shared space can't add notes or folders.
   const { canEditSpace } = useCanEdit();
 
@@ -181,70 +187,78 @@ export default function MobileSidebar({
             onSelectTagConsumed={onSelectTagConsumed}
             onControlsReady={onControlsReady}
             onSelectView={onSelectView}
+            touch
           />
         </div>
 
-        {/* Bottom toolbar — new note, new folder, expand/collapse folders,
-         * expand/collapse all vaults, settings. Matches the top ribbon's
-         * design: same button size, colors, and active states. */}
+        {/* Bottom bar of the note tree: labeled actions (an icon alone said
+         * too little), each a full-width touch target. */}
         {view === "tree" && (
           <div
-            className="shrink-0 flex items-center gap-1 overflow-x-auto no-scrollbar px-2"
+            className="shrink-0 flex items-stretch px-1"
             style={{
-              paddingTop: 8,
-              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
+              paddingTop: 4,
+              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 4px)",
               borderTop: "1px solid var(--mob-surface)",
             }}
           >
             {canEditSpace && (
               <>
-                <RibbonBtn label="New note" onClick={newNote}>
+                <BarAction label="Note" onClick={newNote}>
                   <FilePlus size={20} />
-                </RibbonBtn>
-                <RibbonBtn label="New folder" onClick={newFolder}>
+                </BarAction>
+                <BarAction label="Folder" onClick={newFolder}>
                   <FolderPlus size={20} />
-                </RibbonBtn>
+                </BarAction>
               </>
             )}
-            <div className="flex-1" />
-            <RibbonBtn
-              label={
-                treeControls?.allExpanded
-                  ? "Collapse all folders"
-                  : "Expand all folders"
-              }
+            <BarAction label="View" onClick={() => setViewSheet(true)}>
+              <SlidersHorizontal size={20} />
+            </BarAction>
+            <BarAction
+              label={treeControls?.allExpanded ? "Collapse" : "Expand"}
               onClick={() => treeControls?.toggleExpandCollapse()}
             >
-              <ChevronsDownUp
-                size={20}
-                style={{
-                  transform: treeControls?.allExpanded ? "none" : "rotate(180deg)",
-                }}
-              />
-            </RibbonBtn>
-            <RibbonBtn
-              label={
-                treeControls?.allSectionsExpanded
-                  ? "Collapse all vaults"
-                  : "Expand all vaults"
-              }
-              onClick={() => treeControls?.toggleSectionsCollapse()}
-            >
-              <Expand size={20} />
-            </RibbonBtn>
-            <RibbonBtn
-              label="Settings"
-              onClick={() => window.dispatchEvent(new CustomEvent("nexote:open-settings"))}
-            >
+              {treeControls?.allExpanded ? <ChevronsDownUp size={20} /> : <ChevronsUpDown size={20} />}
+            </BarAction>
+            <BarAction label="Settings" onClick={() => window.dispatchEvent(new CustomEvent("nexote:open-settings"))}>
               <Settings size={20} />
-            </RibbonBtn>
+            </BarAction>
           </div>
+        )}
+        {viewSheet && (
+          <MobileActionSheet
+            title="View"
+            onClose={() => setViewSheet(false)}
+            sections={[
+              (Object.keys(TREE_SORT_LABELS) as TreeSort[]).map((sort) => ({
+                label: `Sort: ${TREE_SORT_LABELS[sort]}`,
+                icon: <ChevronsUpDown size={18} />,
+                checked: settings.treeSort === sort,
+                onClick: () => updateSettings({ treeSort: sort }),
+              })),
+              [
+                {
+                  label: "Compact rows",
+                  icon: <List size={18} />,
+                  checked: !settings.treeCards,
+                  onClick: () => updateSettings({ treeCards: false }),
+                },
+                {
+                  label: "Cards with preview",
+                  icon: <LayoutList size={18} />,
+                  checked: settings.treeCards,
+                  onClick: () => updateSettings({ treeCards: true }),
+                },
+              ],
+            ]}
+          />
         )}
     </div>
   );
 }
 
-function RibbonBtn({
+function BarAction({
   children,
   label,
   onClick,
@@ -256,17 +270,12 @@ function RibbonBtn({
   return (
     <button
       type="button"
-      aria-label={label}
-      title={label}
       onClick={onClick}
-      className="flex shrink-0 items-center justify-center rounded-lg transition-colors active:scale-95"
-      style={{
-        width: 38,
-        height: 38,
-        color: "var(--mob-muted)",
-      }}
+      className="flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg transition-colors active:bg-[var(--mob-surface)]"
+      style={{ color: "var(--mob-muted)" }}
     >
       {children}
+      <span className="text-[11px] leading-none">{label}</span>
     </button>
   );
 }

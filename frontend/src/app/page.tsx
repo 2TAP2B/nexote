@@ -1,28 +1,31 @@
 "use client";
 
 import {
-  ArrowDownAZ,
+  ArrowDownWideNarrow,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
+  ChevronsUpDown,
   FilePlus,
   FolderPlus,
   LayoutList,
+  LocateFixed,
   Menu,
   PanelLeftClose,
   Search,
-  SquareStack,
 } from "lucide-react";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { AuthGate } from "@/components/auth/AuthProvider";
 import { AuthSplash } from "@/components/auth/AuthScreens";
 import CommandPalette from "@/components/CommandPalette";
+import ContextMenu from "@/components/ContextMenu";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
 import EditorPane from "@/components/EditorPane";
-import FileTree, { type TreeControls } from "@/components/FileTree";
+import FileTree, { TREE_SORT_LABELS, type TreeControls } from "@/components/FileTree";
 import MobileBottomBar from "@/components/MobileBottomBar";
 import Ribbon, { type SidebarView } from "@/components/Ribbon";
 import SettingsPanel from "@/components/SettingsPanel";
@@ -33,7 +36,7 @@ import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import MobileApp from "@/components/mobile/MobileApp";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
-import { DASHBOARD_ID, NotesProvider, useNotes } from "@/lib/notes-context";
+import { DASHBOARD_ID, NotesProvider, useNotes, type TreeSort } from "@/lib/notes-context";
 import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
 
 // One address for every device: the touch interface (phones, tablets, narrow
@@ -106,14 +109,9 @@ function AppShell() {
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [collectionFormOpen, setCollectionFormOpen] = useState(false);
   const [treeControls, setTreeControls] = useState<TreeControls>({
-    expandAll: () => {},
-    collapseAll: () => {},
-    toggleSort: () => {},
-    sorted: false,
     allExpanded: true,
     toggleExpandCollapse: () => {},
-    allSectionsExpanded: true,
-    toggleSectionsCollapse: () => {},
+    revealActive: () => {},
   });
 
   useSwipeSidebar({
@@ -477,8 +475,10 @@ function SidebarHeader({
   onOpenDaily: () => void;
   treeControls: TreeControls;
 }) {
-  // Viewers of a shared space can't add notes or folders (hook before the early return).
+  // Viewers of a shared space can't add notes or folders (hooks before the early return).
   const { canEditSpace } = useCanEdit();
+  const { settings, updateSettings, activeNote } = useNotes();
+  const [sortMenu, setSortMenu] = useState<{ x: number; y: number } | null>(null);
   if (collapsed) return null;
 
   // Non-tree views: title-only bar with New note (+ Open today for journal).
@@ -537,38 +537,49 @@ function SidebarHeader({
           </>
         )}
         <ActionButton
-          label={treeControls.sorted ? "Sort: A–Z" : "Sort: recent first"}
-          icon={<ArrowDownAZ className="h-3.5 w-3.5" />}
-          onClick={treeControls.toggleSort}
-          active={treeControls.sorted}
+          label={`Sort notes: ${TREE_SORT_LABELS[settings.treeSort]}`}
+          icon={<ArrowDownWideNarrow className="h-3.5 w-3.5" />}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setSortMenu({ x: r.left, y: r.bottom + 4 });
+          }}
+          active={sortMenu !== null}
         />
         <ActionButton
-          label="Card view"
+          label={settings.treeCards ? "Compact view" : "Card view (previews)"}
           icon={<LayoutList className="h-3.5 w-3.5" />}
-          onClick={() => {}}
-          active={false}
+          onClick={() => updateSettings({ treeCards: !settings.treeCards })}
+          active={settings.treeCards}
         />
         <ActionButton
-          label={treeControls.allExpanded ? "Collapse all folders" : "Expand all folders"}
+          label="Show current note in the tree"
+          icon={<LocateFixed className="h-3.5 w-3.5" />}
+          onClick={treeControls.revealActive}
+          disabled={!activeNote}
+        />
+        <ActionButton
+          label={treeControls.allExpanded ? "Collapse all" : "Expand all"}
           icon={
             treeControls.allExpanded ? (
               <ChevronsDownUp className="h-3.5 w-3.5" />
             ) : (
-              <ChevronsDownUp className="h-3.5 w-3.5 rotate-180" />
+              <ChevronsUpDown className="h-3.5 w-3.5" />
             )
           }
           onClick={treeControls.toggleExpandCollapse}
         />
-        <ActionButton
-          label={
-            treeControls.allSectionsExpanded
-              ? "Collapse all sections"
-              : "Expand all sections"
-          }
-          icon={<SquareStack className="h-3.5 w-3.5" />}
-          onClick={treeControls.toggleSectionsCollapse}
-          active={false}
-        />
+        {sortMenu && (
+          <ContextMenu
+            x={sortMenu.x}
+            y={sortMenu.y}
+            onClose={() => setSortMenu(null)}
+            items={(Object.keys(TREE_SORT_LABELS) as TreeSort[]).map((sort) => ({
+              label: TREE_SORT_LABELS[sort],
+              icon: settings.treeSort === sort ? <Check className="h-4 w-4" /> : <span className="inline-block h-4 w-4" />,
+              onClick: () => updateSettings({ treeSort: sort }),
+            }))}
+          />
+        )}
         <div className="flex-1" />
         <ActionButton
           label="Collapse sidebar"
@@ -589,7 +600,7 @@ function ActionButton({
 }: {
   label: string;
   icon: React.ReactNode;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   active?: boolean;
   disabled?: boolean;
 }) {

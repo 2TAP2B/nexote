@@ -56,6 +56,10 @@ The tab switcher shows the open tabs as a two-column grid of cards, each with a 
 
 When you scroll down in a note, the top bar, the bottom pill, the editor toolbar and the view toggle slide away to leave the screen to the text. Scrolling up, reaching the top, or opening another note brings them back. On the dashboard the pill stays visible.
 
+## Note tree
+
+The note tree works like on the desktop (see [Note tree](./editor#note-tree)), sized for fingers: rows are 44 px high. **Long press** a note or folder for its actions in a sheet (open, copy, move, bookmark, shortcut, icon, rename, delete; for folders also new note, subfolder and color label). The bar at the bottom has **Note** and **Folder** (editors only), **View** (sort order and compact rows or cards), **Collapse**/**Expand** and **Settings**.
+
 ## Sheets
 
 Menus open as bottom sheets in the style of Obsidian's mobile app: a grab handle, an optional title and actions in rounded groups. A sheet closes when you tap outside it, press Escape or drag the handle down. The command palette and the note history use the same look.

@@ -1059,3 +1059,51 @@ html:has(.mob-shell-root) body {
 body:has([role="toolbar"][aria-label="Formatting"]) .nexote-fab {
   bottom: 64px;
 }
+
+/* Note tree (FileTree). Indent guides: a hairline under each folder's
+ * chevron along its open contents. */
+.tree-guide {
+  position: relative;
+}
+.tree-guide::before {
+  content: "";
+  position: absolute;
+  left: var(--guide-x);
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+/* Card view: a two-line preview under the title. */
+.tree-card-snippet {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+/* "Show current note": a short highlight on the revealed row. */
+.tree-row.tree-reveal {
+  animation: tree-reveal 1.2s ease-out;
+}
+@keyframes tree-reveal {
+  0%,
+  40% {
+    background: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+/* Phone tree: a long press opens the row's action sheet, not the system's
+ * text selection or link preview. */
+.nexote-tree-touch [data-note-id],
+.nexote-tree-touch [data-folder-path] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
