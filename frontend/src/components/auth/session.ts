@@ -20,7 +20,7 @@ const USER_KEYS = [
   "nexote:active-vault",
   "nexote:active-id",
   "nexote:open-tabs",
-  "nexote:folder-open",
+  "nexote:folders-open",
   "nexote:vault-expanded",
   "nexote:selected-tag",
 ];

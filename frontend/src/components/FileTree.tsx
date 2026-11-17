@@ -40,7 +40,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 
 import { useNotes } from "@/lib/notes-context";
@@ -136,6 +136,9 @@ function buildTree(
   return root;
 }
 
+const FOLDERS_OPEN_KEY = "nexote:folders-open";
+const folderKey = (vaultId: string, path: string) => `${vaultId}:${path}`;
+
 function allFolderPaths(node: TreeNode, acc: string[] = []): string[] {
   for (const child of node.children.values()) {
     acc.push(child.path);
@@ -212,15 +215,17 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     activeSpaceId,
   } = useNotes();
   const { canEditSpace, canEditVault } = useCanEdit();
-  const tree = useMemo(() => buildTree(notes, folders ?? []), [notes, folders]);
-  // Persist folder open/closed state, so a reload restores the same tree
-  // shape. Hydrated synchronously via the state initializer (several
+  // Folder open/closed state, per vault ("<vaultId>:<path>": two vaults may
+  // both have a "Projects" folder), persisted so a reload restores the same
+  // tree shape. Hydrated synchronously via the state initializer (several
   // FileTree instances mount; an async hydrate would race against another
   // instance's persist effect wiping the stored map with the default {}).
   const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
-      const stored = localStorage.getItem("nexote:folder-open");
+      // The earlier map was keyed by path alone, shared by all vaults.
+      localStorage.removeItem("nexote:folder-open");
+      const stored = localStorage.getItem(FOLDERS_OPEN_KEY);
       return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
     } catch {
       return {};
@@ -228,7 +233,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
   });
   useEffect(() => {
     try {
-      localStorage.setItem("nexote:folder-open", JSON.stringify(openMap));
+      localStorage.setItem(FOLDERS_OPEN_KEY, JSON.stringify(openMap));
     } catch {
       // ignore
     }
@@ -236,7 +241,27 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
 
   const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const isFolderOpen = useCallback(
-    (path: string) => openMap[path] ?? true,
+    (vaultId: string, path: string) => openMap[folderKey(vaultId, path)] ?? true,
+    [openMap],
+  );
+  const setFolderOpen = useCallback((vaultId: string, path: string, open: boolean) => {
+    setOpenMap((prev) => ({ ...prev, [folderKey(vaultId, path)]: open }));
+  }, []);
+  // One vault's folders as a path-keyed view, for its TreeChildren.
+  const vaultFolders = useCallback(
+    (vaultId: string) => {
+      const prefix = folderKey(vaultId, "");
+      const set: Dispatch<SetStateAction<Record<string, boolean>>> = (update) =>
+        setOpenMap((prev) => {
+          const own: Record<string, boolean> = {};
+          for (const [key, value] of Object.entries(prev)) if (key.startsWith(prefix)) own[key.slice(prefix.length)] = value;
+          const next = typeof update === "function" ? update(own) : update;
+          const out = { ...prev };
+          for (const [path, value] of Object.entries(next)) out[prefix + path] = value;
+          return out;
+        });
+      return { isOpen: (path: string) => openMap[prefix + path] ?? true, set };
+    },
     [openMap],
   );
 
@@ -380,7 +405,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
       );
       for (const child of folders) {
         items.push({ type: "folder", path: child.path });
-        if (isFolderOpen(child.path)) walk(child);
+        if (isFolderOpen(activeVault?.id ?? "", child.path)) walk(child);
       }
       for (const n of notes) {
         items.push({ type: "note", id: n.id });
@@ -602,8 +627,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         const item = items[currentIdx];
         if (item.type === "folder") {
           // Collapsed folder → expand; expanded folder → move to first child.
-          if (!isFolderOpen(item.path)) {
-            setOpenMap((prev) => ({ ...prev, [item.path]: true }));
+          if (!isFolderOpen(activeVault?.id ?? "", item.path)) {
+            setFolderOpen(activeVault?.id ?? "", item.path, true);
           } else {
             const next = Math.min(currentIdx + 1, items.length - 1);
             setTreeSelectedNav(navKeys[next]);
@@ -633,7 +658,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
           window.dispatchEvent(new CustomEvent("nexote:focus-note-end"));
         } else {
           // Folder → toggle open/closed.
-          setOpenMap((prev) => ({ ...prev, [item.path]: !(prev[item.path] ?? true) }));
+          setFolderOpen(activeVault?.id ?? "", item.path, !isFolderOpen(activeVault?.id ?? "", item.path));
         }
       } else if (e.key === "ArrowLeft") {
         if (currentIdx < 0) {
@@ -643,8 +668,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         const item = items[currentIdx];
         if (item.type === "folder") {
           // Expanded folder → collapse; collapsed folder → go to parent.
-          if (isFolderOpen(item.path)) {
-            setOpenMap((prev) => ({ ...prev, [item.path]: false }));
+          if (isFolderOpen(activeVault?.id ?? "", item.path)) {
+            setFolderOpen(activeVault?.id ?? "", item.path, false);
           } else {
             const parentPath = item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : null;
             if (parentPath !== null) setTreeSelectedNav(`folder:${parentPath}`);
@@ -661,13 +686,13 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
         if (currentIdx < 0) return;
         const item = items[currentIdx];
         if (item.type === "folder") {
-          setOpenMap((prev) => ({ ...prev, [item.path]: !(prev[item.path] ?? true) }));
+          setFolderOpen(activeVault?.id ?? "", item.path, !isFolderOpen(activeVault?.id ?? "", item.path));
         }
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [view, availableSections, navSection, currentNavItems, treeSelectedNav, openTab, openFromSection, openJournalNote, activeVault, setOpenMap, isFolderOpen, notePathMap]);
+  }, [view, availableSections, navSection, currentNavItems, treeSelectedNav, openTab, openFromSection, openJournalNote, activeVault, setFolderOpen, isFolderOpen, notePathMap]);
 
   // Listen for "focus tree" event (Shift+Left from editor) — select the
   // currently open note in the vault section so arrows work immediately.
@@ -698,24 +723,34 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [treeSelectedNav]);
 
-  const expandAll = useCallback(() => {
-    const paths = allFolderPaths(tree);
-    const next: Record<string, boolean> = {};
-    for (const p of paths) next[p] = true;
-    setOpenMap(next);
-  }, [tree]);
-
-  const collapseAll = useCallback(() => {
-    const paths = allFolderPaths(tree);
-    const next: Record<string, boolean> = {};
-    for (const p of paths) next[p] = false;
-    setOpenMap(next);
-  }, [tree]);
+  // Collapse / expand all: the folders of every vault in the sidebar.
+  const sidebarFolderKeys = useMemo(
+    () =>
+      vaults
+        .filter((v) => !isCollectionsVault(v))
+        .flatMap((v) => {
+          const data = allVaultData[v.id];
+          if (!data) return [];
+          const vaultTree = buildTree(data.notes.filter((n) => !n.collection), stripCollectionFolders(data.folders));
+          return allFolderPaths(vaultTree).map((path) => folderKey(v.id, path));
+        }),
+    [vaults, allVaultData, stripCollectionFolders],
+  );
+  const setAllFolders = useCallback(
+    (open: boolean) =>
+      setOpenMap((prev) => {
+        const next = { ...prev };
+        for (const key of sidebarFolderKeys) next[key] = open;
+        return next;
+      }),
+    [sidebarFolderKeys],
+  );
+  const expandAll = useCallback(() => setAllFolders(true), [setAllFolders]);
+  const collapseAll = useCallback(() => setAllFolders(false), [setAllFolders]);
 
   const toggleSort = useCallback(() => setSorted((v) => !v), []);
 
-  const folderPaths = useMemo(() => allFolderPaths(tree), [tree]);
-  const allExpanded = folderPaths.every((p) => openMap[p] ?? true);
+  const allExpanded = sidebarFolderKeys.every((key) => openMap[key] ?? true);
 
   const toggleExpandCollapse = useCallback(() => {
     if (allExpanded) collapseAll();
@@ -1142,6 +1177,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                 const isActiveVault = vault.id === activeVault?.id;
                 const vaultNotes = vaultData.notes.filter((n) => !n.collection);
                 const vaultTree = buildTree(vaultNotes, stripCollectionFolders(vaultData.folders));
+                const folderState = vaultFolders(vault.id);
                 return (
                   <CollapsibleSection
                     key={vault.id}
@@ -1205,8 +1241,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         onShortcut={toggleShortcut}
                         bookmarks={bookmarks}
                         shortcuts={shortcuts}
-                        isFolderOpen={isFolderOpen}
-                        setOpenMap={setOpenMap}
+                        isFolderOpen={folderState.isOpen}
+                        setOpenMap={folderState.set}
                         sorted={sorted}
                         onNoteDragStart={handleNoteDragStart}
                         onFolderDragOver={setDragOverPath}
@@ -1254,8 +1290,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
                         onShortcut={toggleShortcut}
                         bookmarks={bookmarks}
                         shortcuts={shortcuts}
-                        isFolderOpen={isFolderOpen}
-                        setOpenMap={setOpenMap}
+                        isFolderOpen={folderState.isOpen}
+                        setOpenMap={folderState.set}
                         sorted={sorted}
                         onNoteDragStart={handleNoteDragStart}
                         onFolderDragOver={setDragOverPath}
