@@ -155,6 +155,7 @@ type memberPayload struct {
 	UserID      string          `json:"userId"`
 	Username    string          `json:"username"`
 	DisplayName string          `json:"displayName"`
+	Avatar      string          `json:"avatar,omitempty"`
 	Role        notes.SpaceRole `json:"role"`
 	AddedAt     time.Time       `json:"addedAt"`
 }
@@ -164,7 +165,7 @@ func (h *Handler) membersPayload(s notes.Space) []memberPayload {
 	for _, m := range s.Members {
 		p := memberPayload{UserID: m.UserID, Role: m.Role, AddedAt: m.AddedAt}
 		if u, err := h.Accounts.User(m.UserID); err == nil {
-			p.Username, p.DisplayName = u.Username, u.DisplayName
+			p.Username, p.DisplayName, p.Avatar = u.Username, u.DisplayName, u.Avatar
 		}
 		out = append(out, p)
 	}

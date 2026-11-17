@@ -120,7 +120,7 @@ export default function MobileSpacesPane({ onShowTree }: { onShowTree: () => voi
       >
         <div className="overflow-hidden rounded-xl" style={{ background: "var(--mob-card)" }}>
           <div className="flex items-center gap-3 px-3 py-3">
-            <UserAvatar name={user.displayName} seed={user.id} size={40} />
+            <UserAvatar name={user.displayName} userId={user.id} avatar={user.avatar} size={40} />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-[16px] font-medium" style={{ color: "var(--mob-text)" }}>
                 {user.displayName}

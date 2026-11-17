@@ -231,7 +231,7 @@ export function AccountButton() {
         }}
         className={"flex h-9 w-9 items-center justify-center rounded-md transition-colors " + HOVER}
       >
-        <UserAvatar name={user.displayName} seed={user.id} size={24} />
+        <UserAvatar name={user.displayName} userId={user.id} avatar={user.avatar} size={24} />
       </button>
       {menu && (
         <ContextMenu

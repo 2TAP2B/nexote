@@ -12,6 +12,10 @@ There are no passwords. Every account signs in with a passkey: a key pair stored
 
 Sessions last 30 days after the last use. When a session ends while the app is open, a "Signed out" overlay appears and the open notes stay on screen until you sign in again.
 
+## Profile
+
+**Settings › Account › Profile** holds your display name and a profile picture. Upload any photo; the browser crops it to a centered square and scales it down before uploading (PNG, JPEG, GIF or WebP, up to 2 MB). The picture appears on your account button and in space member lists; without one, or when it can't be loaded (offline), your initials show instead.
+
 ## Server roles
 
 Each account has one of two roles on the server:

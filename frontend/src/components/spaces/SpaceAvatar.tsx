@@ -1,8 +1,9 @@
 "use client";
 
 import { Eye, Lock, Users } from "lucide-react";
+import { useState } from "react";
 
-import type { SpaceInfo, SpaceRole } from "@/lib/api";
+import { avatarUrl, type SpaceInfo, type SpaceRole } from "@/lib/api";
 import { getIcon } from "@/lib/icons";
 
 /** Up to two initials: first letters of the first two words. */
@@ -51,8 +52,38 @@ export function SpaceAvatar({
   );
 }
 
-/** Round avatar with the user's initials. */
-export function UserAvatar({ name, seed, size = 28 }: { name: string; seed: string; size?: number }) {
+/** Round avatar: the user's profile picture, else (or when it can't load,
+ *  e.g. offline) their initials on a color derived from the user id. */
+export function UserAvatar({
+  name,
+  userId,
+  avatar,
+  size = 28,
+}: {
+  name: string;
+  userId: string;
+  /** Picture version from the API; absent without a picture. */
+  avatar?: string;
+  size?: number;
+}) {
+  const url = avatar ? avatarUrl(userId, avatar) : null;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (url && failedUrl !== url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- small, already-sized API image
+      <img
+        src={url}
+        alt=""
+        aria-hidden
+        width={size}
+        height={size}
+        draggable={false}
+        onError={() => setFailedUrl(url)}
+        className="shrink-0 select-none rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   return (
     <span
       aria-hidden
@@ -61,7 +92,7 @@ export function UserAvatar({ name, seed, size = 28 }: { name: string; seed: stri
         width: size,
         height: size,
         fontSize: Math.round(size * 0.4),
-        background: `oklch(0.55 0.09 ${hue(seed)})`,
+        background: `oklch(0.55 0.09 ${hue(userId)})`,
         color: "#fff",
       }}
     >

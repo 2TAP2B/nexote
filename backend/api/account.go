@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -123,6 +124,7 @@ type directoryUser struct {
 	ID          string `json:"id"`
 	Username    string `json:"username"`
 	DisplayName string `json:"displayName"`
+	Avatar      string `json:"avatar,omitempty"`
 }
 
 // listDirectory lists active accounts for adding space members.
@@ -135,10 +137,56 @@ func (h *Handler) listDirectory(w http.ResponseWriter, r *http.Request) {
 	out := []directoryUser{}
 	for _, u := range users {
 		if !u.Disabled {
-			out = append(out, directoryUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName})
+			out = append(out, directoryUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Avatar: u.Avatar})
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"users": out})
+}
+
+// setMyAvatar stores the uploaded profile picture (multipart field "file").
+func (h *Handler) setMyAvatar(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, accounts.MaxAvatarBytes+(64<<10))
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, accounts.ErrInvalidAvatar)
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, accounts.ErrInvalidAvatar)
+		return
+	}
+	u, err := h.Accounts.SetAvatar(currentUser(r).ID, data)
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": toPublicUser(&u)})
+}
+
+// removeMyAvatar deletes the profile picture.
+func (h *Handler) removeMyAvatar(w http.ResponseWriter, r *http.Request) {
+	u, err := h.Accounts.RemoveAvatar(currentUser(r).ID)
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": toPublicUser(&u)})
+}
+
+// getUserAvatar serves a profile picture to any signed-in user (avatars show
+// in member lists). URLs carry the version (?v=), so they never go stale.
+func (h *Handler) getUserAvatar(w http.ResponseWriter, r *http.Request) {
+	data, contentType, err := h.Accounts.Avatar(r.PathValue("id"))
+	if err != nil {
+		writeAccountError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	_, _ = w.Write(data)
 }
 
 // writeAccountError maps account store errors to HTTP statuses.
@@ -149,7 +197,8 @@ func writeAccountError(w http.ResponseWriter, err error) {
 	case errors.Is(err, accounts.ErrLastPasskey), errors.Is(err, accounts.ErrLastAdmin),
 		errors.Is(err, accounts.ErrUsernameTaken):
 		writeError(w, http.StatusConflict, err)
-	case errors.Is(err, accounts.ErrInvalidName), errors.Is(err, accounts.ErrInvalidUsername):
+	case errors.Is(err, accounts.ErrInvalidName), errors.Is(err, accounts.ErrInvalidUsername),
+		errors.Is(err, accounts.ErrInvalidAvatar):
 		writeError(w, http.StatusBadRequest, err)
 	case isForbidden(err):
 		writeError(w, http.StatusForbidden, err)

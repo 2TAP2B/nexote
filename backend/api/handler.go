@@ -123,7 +123,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /api/me/passkeys/finish", h.addPasskeyFinish)
 	mux.HandleFunc("PATCH /api/me/passkeys/{id}", h.renamePasskey)
 	mux.HandleFunc("DELETE /api/me/passkeys/{id}", h.removePasskey)
+	mux.HandleFunc("PUT /api/me/avatar", h.setMyAvatar)
+	mux.HandleFunc("DELETE /api/me/avatar", h.removeMyAvatar)
 	mux.HandleFunc("GET /api/users", h.listDirectory)
+	mux.HandleFunc("GET /api/users/{id}/avatar", h.getUserAvatar)
 
 	// Administration (admins only)
 	mux.HandleFunc("GET /api/admin/users", h.adminListUsers)

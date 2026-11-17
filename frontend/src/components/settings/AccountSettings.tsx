@@ -1,10 +1,12 @@
 "use client";
 
 import { Check, KeyRound, LogOut, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { UserAvatar } from "@/components/spaces/SpaceAvatar";
 import { api, type PasskeyInfo } from "@/lib/api";
+import { squareImage } from "@/lib/avatar-image";
 import { passkeyErrorMessage, registerPasskey } from "@/lib/webauthn";
 import {
   Button,
@@ -31,6 +33,9 @@ export function AccountSettings() {
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [pictureStatus, setPictureStatus] = useState<Status | null>(null);
+  const [pictureBusy, setPictureBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -56,6 +61,33 @@ export function AccountSettings() {
       setNameStatus({ tone: "ok", text: "Saved" });
     } catch (e) {
       setNameStatus({ tone: "error", text: errorText(e, "Couldn't save the name") });
+    }
+  };
+
+  const uploadPicture = async (file: File) => {
+    setPictureBusy(true);
+    setPictureStatus(null);
+    try {
+      await api.setAvatar(await squareImage(file));
+      await refresh();
+      setPictureStatus({ tone: "ok", text: "Saved" });
+    } catch (e) {
+      setPictureStatus({ tone: "error", text: errorText(e, "Couldn't save the picture") });
+    } finally {
+      setPictureBusy(false);
+    }
+  };
+
+  const removePicture = async () => {
+    setPictureBusy(true);
+    setPictureStatus(null);
+    try {
+      await api.removeAvatar();
+      await refresh();
+    } catch (e) {
+      setPictureStatus({ tone: "error", text: errorText(e, "Couldn't remove the picture") });
+    } finally {
+      setPictureBusy(false);
     }
   };
 
@@ -109,6 +141,31 @@ export function AccountSettings() {
   return (
     <SettingsPage title="Account">
       <SettingGroup heading="Profile">
+        <SettingItem
+          name="Picture"
+          description={pictureStatus ? <StatusText status={pictureStatus} /> : "Shown next to your name in spaces."}
+          leading={<UserAvatar name={user.displayName} userId={user.id} avatar={user.avatar} size={48} />}
+        >
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void uploadPicture(file);
+            }}
+          />
+          <Button disabled={pictureBusy} onClick={() => fileRef.current?.click()}>
+            {user.avatar ? "Change" : "Upload"}
+          </Button>
+          {user.avatar && (
+            <Button variant="danger" disabled={pictureBusy} onClick={() => void removePicture()}>
+              Remove
+            </Button>
+          )}
+        </SettingItem>
         <SettingItem name="Username" description="Used to add you to spaces. Can't be changed.">
           <span className="font-mono text-[13px] text-muted-foreground">@{user.username}</span>
         </SettingItem>

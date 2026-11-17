@@ -26,13 +26,14 @@ type publicUser struct {
 	Username    string        `json:"username"`
 	DisplayName string        `json:"displayName"`
 	Role        accounts.Role `json:"role"`
+	Avatar      string        `json:"avatar,omitempty"`
 }
 
 func toPublicUser(u *accounts.User) *publicUser {
 	if u == nil {
 		return nil
 	}
-	return &publicUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Role: u.Role}
+	return &publicUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Role: u.Role, Avatar: u.Avatar}
 }
 
 const (

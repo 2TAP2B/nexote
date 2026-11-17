@@ -122,6 +122,8 @@ export type SpaceMember = {
   userId: string;
   username: string;
   displayName: string;
+  /** Profile picture version, absent without one (see avatarUrl). */
+  avatar?: string;
   role: SpaceRole;
   addedAt: string;
 };
@@ -133,6 +135,8 @@ export type AuthUser = {
   username: string;
   displayName: string;
   role: UserRole;
+  /** Profile picture version, absent without one (see avatarUrl). */
+  avatar?: string;
 };
 
 export type AuthStatus = {
@@ -157,7 +161,12 @@ export type PasskeyInfo = {
 };
 
 /** Another account, as listed to pick space members. */
-export type DirectoryUser = { id: string; username: string; displayName: string };
+export type DirectoryUser = { id: string; username: string; displayName: string; avatar?: string };
+
+/** URL of a user's profile picture; the version makes each upload a new URL. */
+export function avatarUrl(userId: string, version: string): string {
+  return `/api/users/${encodeURIComponent(userId)}/avatar?v=${encodeURIComponent(version)}`;
+}
 
 export type AdminUser = AuthUser & {
   disabled: boolean;
@@ -666,6 +675,15 @@ export const api = {
   // --- The logged-in account ---
   me: () => request<{ user: AuthUser; passkeys: PasskeyInfo[] }>("/api/me"),
   updateMe: (input: { displayName: string }) => request<{ user: AuthUser }>("/api/me", json("PATCH", input)),
+  /** Profile picture (PNG, JPEG, GIF or WebP up to 2 MB); multipart like image uploads. */
+  setAvatar: async (picture: Blob) => {
+    const form = new FormData();
+    form.append("file", picture, "avatar");
+    const res = await fetch("/api/me/avatar", { method: "PUT", body: form });
+    if (!res.ok) throw await failure(res, "/api/me/avatar");
+    return (await res.json()) as { user: AuthUser };
+  },
+  removeAvatar: () => request<{ user: AuthUser }>("/api/me/avatar", json("DELETE")),
   addPasskeyBegin: () => request<CeremonyStart>("/api/me/passkeys/begin", json("POST", {})),
   addPasskeyFinish: (input: CeremonyFinish) => request<PasskeyInfo>("/api/me/passkeys/finish", json("POST", input)),
   renamePasskey: (id: string, name: string) =>

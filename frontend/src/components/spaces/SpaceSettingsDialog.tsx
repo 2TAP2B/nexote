@@ -304,7 +304,7 @@ function SpaceSettingsBody({
             const self = m.userId === user.id;
             return (
               <SettingRow key={m.userId}>
-                <UserAvatar name={m.displayName} seed={m.userId} size={mobile ? 36 : 30} />
+                <UserAvatar name={m.displayName} userId={m.userId} avatar={m.avatar} size={mobile ? 36 : 30} />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className={cx("truncate text-foreground", text)}>
                     {m.displayName}
@@ -365,7 +365,7 @@ function SpaceSettingsBody({
             <div className="max-h-56 divide-y divide-border overflow-y-auto">
               {candidates.map((u) => (
                 <SettingRow key={u.id}>
-                  <UserAvatar name={u.displayName} seed={u.id} size={mobile ? 36 : 30} />
+                  <UserAvatar name={u.displayName} userId={u.id} avatar={u.avatar} size={mobile ? 36 : 30} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className={cx("truncate text-foreground", text)}>{u.displayName}</span>
                     <span className={cx("truncate text-muted-foreground", small)}>@{u.username}</span>

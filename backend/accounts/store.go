@@ -36,6 +36,9 @@ type User struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"displayName"`
 	Role        Role   `json:"role"`
+	// Avatar is the version of the profile picture (auth/avatars/<id>), ""
+	// for none. It changes with every upload, for cache-busting URLs.
+	Avatar string `json:"avatar,omitempty"`
 	// Handle is the WebAuthn user handle: random, opaque, never shown.
 	Handle    []byte    `json:"handle"`
 	Disabled  bool      `json:"disabled,omitempty"`
@@ -147,6 +150,7 @@ func ValidDisplayName(s string) bool {
 // server.
 type Store struct {
 	mu       sync.Mutex
+	dir      string
 	users    jsonFile[User]
 	sessions jsonFile[Session]
 	invites  jsonFile[Invite]
@@ -159,6 +163,7 @@ func Open(dir string) (*Store, error) {
 		return nil, fmt.Errorf("create auth dir: %w", err)
 	}
 	return &Store{
+		dir:      dir,
 		users:    jsonFile[User]{path: filepath.Join(dir, "users.json")},
 		sessions: jsonFile[Session]{path: filepath.Join(dir, "sessions.json")},
 		invites:  jsonFile[Invite]{path: filepath.Join(dir, "invites.json")},
@@ -664,7 +669,20 @@ func (f *jsonFile[T]) save(items []T) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(f.path), ".tmp-*")
+	if err := writeFileAtomic(f.path, data); err != nil {
+		return err
+	}
+	f.items, f.loaded = items, true
+	if info, err := os.Stat(f.path); err == nil {
+		f.modTime, f.size = info.ModTime(), info.Size()
+	}
+	return nil
+}
+
+// writeFileAtomic replaces path with data (mode 0600) via a temp file and a
+// rename, so readers never see a half-written file.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -683,13 +701,9 @@ func (f *jsonFile[T]) save(items []T) error {
 		os.Remove(tmpName)
 		return err
 	}
-	if err := os.Rename(tmpName, f.path); err != nil {
+	if err := os.Rename(tmpName, path); err != nil {
 		os.Remove(tmpName)
 		return err
-	}
-	f.items, f.loaded = items, true
-	if info, err := os.Stat(f.path); err == nil {
-		f.modTime, f.size = info.ModTime(), info.Size()
 	}
 	return nil
 }

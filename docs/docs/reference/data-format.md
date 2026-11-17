@@ -13,7 +13,8 @@ $NEXOTE_HOME/
 ├── auth/
 │   ├── users.json               # accounts and their passkeys (public keys)
 │   ├── sessions.json            # login sessions (token hashes)
-│   └── invites.json             # invite and recovery links (token hashes)
+│   ├── invites.json             # invite and recovery links (token hashes)
+│   └── avatars/<userId>         # profile pictures
 ├── spaces/
 │   └── <spaceId>/
 │       └── collections.json     # collection definitions of the space
