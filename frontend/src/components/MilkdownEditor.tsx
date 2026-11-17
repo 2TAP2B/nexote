@@ -72,7 +72,7 @@ import {
 } from "./editor/blockSelect";
 import { computeMention, insertMention, mentionCandidates, mentionPlugin, type MentionState } from "./editor/mention";
 import { inlineCodeTypingPlugin, startInlineCode } from "./editor/inlineCode";
-import { CALLOUT_INSERT_TYPES, calloutIconSvg, calloutLabel, calloutPlugins, insertCalloutCommand } from "./editor/callout";
+import { CALLOUT_INSERT_TYPES, calloutIconSvg, calloutLabel, calloutPlugins, insertCalloutCommand, type CalloutType } from "./editor/callout";
 import { highlightPlugins, highlightSchema, toggleHighlightCommand } from "./editor/highlight";
 import { wikilinkPlugins } from "./editor/wikilink";
 import { useVisualViewport } from "./mobile/useVirtualKeyboardInset";
@@ -384,8 +384,8 @@ export type MilkdownEditorHandle = {
   selectAllBody: () => void;
 };
 
-/** Callout insert actions, one per offered type ("callout-info", …). */
-export type CalloutAction = `callout-${(typeof CALLOUT_INSERT_TYPES)[number]}`;
+/** Callout insert actions, one per built-in type ("callout-info", …). */
+export type CalloutAction = `callout-${CalloutType}`;
 
 export type FormatAction =
   | "bold"

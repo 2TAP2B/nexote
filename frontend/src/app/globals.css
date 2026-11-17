@@ -1053,3 +1053,9 @@ html:has(.mob-shell-root) body {
   content: "==";
   opacity: 0.5;
 }
+
+/* The floating new-note button sits above the desktop formatting bar
+ * (EditorToolbar) instead of covering its right end. */
+body:has([role="toolbar"][aria-label="Formatting"]) .nexote-fab {
+  bottom: 64px;
+}

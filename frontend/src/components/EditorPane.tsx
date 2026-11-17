@@ -584,9 +584,6 @@ export default function EditorPane({
 
       {/* Editor — the wrapper scrolls (native page-style scrollbar); the
           table-of-contents panel docks to its right when enabled. */}
-      {!rawMode && !readOnly && settings.formattingToolbar && (
-        <EditorToolbar editorRef={editorRef} aiAvailable={Boolean(aiConfig.baseUrl)} />
-      )}
       <div className="flex min-h-0 flex-1">
         <div
           className={
@@ -649,6 +646,9 @@ export default function EditorPane({
           </aside>
         )}
       </div>
+      {!rawMode && !readOnly && settings.formattingToolbar && (
+        <EditorToolbar editorRef={editorRef} aiAvailable={Boolean(aiConfig.baseUrl)} />
+      )}
 
       {aiPanelOpen && !readOnly && (
         <AICommandPanel

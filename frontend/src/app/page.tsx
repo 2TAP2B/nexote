@@ -418,7 +418,7 @@ function AppShell() {
             aria-label="New note"
             title="New note"
             onClick={() => void create()}
-            className="fixed bottom-6 right-6 z-30 hidden md:flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
+            className="nexote-fab fixed bottom-6 right-6 z-30 hidden md:flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-[transform,bottom] hover:scale-105 active:scale-95"
             style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
           >
             <FilePlus className="h-5 w-5" />

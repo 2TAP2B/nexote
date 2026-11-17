@@ -82,8 +82,26 @@ export function calloutKind(type: string): Kind & { key: string } {
   return { key: "note", ...KINDS.note, label: type ? type.charAt(0).toUpperCase() + type.slice(1) : "Note" };
 }
 
-/** Types offered when inserting a callout (toolbar, "/" menu). */
-export const CALLOUT_INSERT_TYPES = ["info", "tip", "warning", "danger", "note"] as const;
+/** Every built-in type, in Obsidian's order (the toolbar's callout menu). */
+export const CALLOUT_TYPES = [
+  "note",
+  "abstract",
+  "info",
+  "todo",
+  "tip",
+  "success",
+  "question",
+  "warning",
+  "failure",
+  "danger",
+  "bug",
+  "example",
+  "quote",
+] as const;
+export type CalloutType = (typeof CALLOUT_TYPES)[number];
+
+/** The common types offered in the "/" menus. */
+export const CALLOUT_INSERT_TYPES = ["info", "tip", "warning", "danger", "note"] as const satisfies readonly CalloutType[];
 
 /** Display name of a callout type ("Info"). */
 export const calloutLabel = (type: string) => calloutKind(type).label;

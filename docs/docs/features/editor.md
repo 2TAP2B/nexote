@@ -89,7 +89,7 @@ Callouts are colored boxes for notes, tips and warnings, written in the syntax O
 Some ==highlighted== text.
 ```
 
-- **Insert a callout** with the callout button of the toolbar (wraps the current paragraph, or the selected blocks), from the `/` menu, or by typing `[!type] ` at the start of a quote (`> `).
+- **Insert a callout** with the callout button of the toolbar, which lists every type (wraps the current paragraph, or the selected blocks), from the `/` menu (the five common types), or by typing `[!type] ` at the start of a quote (`> `).
 - **Change the type** by clicking the icon of the box. The types are Obsidian's: Note, Abstract, Info, Todo, Tip, Success, Question, Warning, Failure, Danger, Bug, Example and Quote, including their aliases (GitHub's `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` too). Any other type such as `[!recipe]` is kept and shown like a note.
 - An empty title shows the type name. A fold marker (`[!tip]-`, `[!tip]+`) is kept in the file; Nexote shows the box open.
 - **Highlight** text with the highlight button, or type `==text==`.
@@ -100,7 +100,7 @@ Other tools show a callout as an ordinary quote starting with `[!info]`, and a h
 
 ## Formatting toolbar
 
-On desktop, a formatting bar above the note offers the insert menu (**+**), Link to note, Insert date, bold, italic, strikethrough, highlight, headings 1 to 3, lists, task list, quote, callout, code block, table, image and Ask AI (when configured). It works at the caret, without selecting text first. Turn it off in **Settings › Editor › Formatting toolbar**.
+On desktop, a formatting bar below the note offers the insert menu (**+**), Link to note, Insert date, bold, italic, strikethrough, highlight, headings 1 to 3, lists, task list, quote, callout (a menu with all callout types), code block, table, image and Ask AI (when configured). It works at the caret, without selecting text first. Turn it off in **Settings › Editor › Formatting toolbar**.
 
 Selecting text also shows a floating toolbar with Crepe's formatting buttons plus highlight, headings 1 to 3, bullet and ordered lists, quote and code block.
 

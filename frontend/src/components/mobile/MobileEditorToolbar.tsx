@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState, type RefObject } from "react";
 
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
 import { editorToolbarGroups } from "@/components/editor/toolbarActions";
+import { ToolbarMenu, useToolbarMenu } from "@/components/editor/ToolbarMenu";
 import { useNotes } from "@/lib/notes-context";
 import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
@@ -91,6 +92,12 @@ export default function MobileEditorToolbar({
     blockSelect: true,
     pickImage: () => fileRef.current?.click(),
   });
+  const menu = useToolbarMenu();
+  // The bar sliding away takes its open menu with it.
+  const closeMenu = menu.close;
+  useEffect(() => {
+    if (!show) closeMenu();
+  }, [show, closeMenu]);
 
   return (
     <div
@@ -115,15 +122,21 @@ export default function MobileEditorToolbar({
           {groups.map((group, gi) => (
             <Fragment key={group[0].key}>
               {gi > 0 && <BarDivider />}
-              {group.map(({ key, label, icon: Icon, run, accent }) => (
-                <BarButton key={key} label={label} onClick={run} accent={accent}>
-                  <Icon size={20} />
+              {group.map((action) => (
+                <BarButton
+                  key={action.key}
+                  label={action.label}
+                  onClick={(button) => menu.press(action, button)}
+                  accent={action.accent || menu.open?.key === action.key}
+                >
+                  <action.icon size={20} />
                 </BarButton>
               ))}
             </Fragment>
           ))}
         </div>
       </div>
+      {menu.open && <ToolbarMenu menu={menu.open} onClose={menu.close} touch />}
 
       <input
         ref={fileRef}
@@ -148,14 +161,14 @@ function BarButton({
 }: {
   children: React.ReactNode;
   label: string;
-  onClick: () => void;
+  onClick: (button: HTMLButtonElement) => void;
   accent?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
-      onClick={onClick}
+      onClick={(e) => onClick(e.currentTarget)}
       className="flex shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
       style={{
         width: 44,

@@ -1,8 +1,14 @@
 import {
   AtSign,
   Bold,
+  Bug,
   CalendarDays,
+  Check,
+  CircleCheck,
+  CircleHelp,
+  ClipboardList,
   Code2,
+  Flame,
   Heading1,
   Heading2,
   Heading3,
@@ -13,28 +19,62 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Pencil,
   Plus,
+  Quote,
   Sparkles,
   Strikethrough,
   Table,
   TextQuote,
   TextSelect,
+  TriangleAlert,
+  X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import type { RefObject } from "react";
 
 import type { FormatAction, MilkdownEditorHandle } from "@/components/MilkdownEditor";
+import { CALLOUT_TYPES, calloutKind, type CalloutType } from "@/components/editor/callout";
 
+export type ToolbarMenuItem = {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  /** Icon color (callout types use their box color). */
+  color?: string;
+  run: () => void;
+};
+
+/** A button runs `run`, or opens `menu` (a list of choices) when it has one. */
 export type ToolbarAction = {
   key: string;
   label: string;
   icon: LucideIcon;
-  run: () => void;
+  run?: () => void;
+  menu?: ToolbarMenuItem[];
   accent?: boolean;
 };
 
+// The lucide counterparts of the callout box icons (editor/callout.ts).
+const CALLOUT_ICONS: Record<CalloutType, LucideIcon> = {
+  note: Pencil,
+  abstract: ClipboardList,
+  info: Info,
+  todo: CircleCheck,
+  tip: Flame,
+  success: Check,
+  question: CircleHelp,
+  warning: TriangleAlert,
+  failure: X,
+  danger: Zap,
+  bug: Bug,
+  example: List,
+  quote: Quote,
+};
+
 /** The editor toolbar's buttons in groups, shared by the phone bar (above the
- *  keyboard) and the desktop bar (above the note) so both offer the same. */
+ *  keyboard) and the desktop bar (below the note) so both offer the same. */
 export function editorToolbarGroups({
   editorRef,
   aiAvailable,
@@ -51,6 +91,10 @@ export function editorToolbarGroups({
   pickImage: () => void;
 }): ToolbarAction[][] {
   const format = (action: FormatAction) => () => editorRef.current?.format(action);
+  const calloutMenu: ToolbarMenuItem[] = CALLOUT_TYPES.map((type) => {
+    const kind = calloutKind(type);
+    return { key: type, label: kind.label, icon: CALLOUT_ICONS[type], color: kind.color, run: format(`callout-${type}`) };
+  });
   const groups: ToolbarAction[][] = [
     [
       { key: "insert", label: "Insert (/ commands)", icon: Plus, run: () => editorRef.current?.openSlash(), accent: true },
@@ -78,7 +122,7 @@ export function editorToolbarGroups({
       { key: "ordered-list", label: "Ordered list", icon: ListOrdered, run: format("ordered-list") },
       { key: "task-list", label: "Task list", icon: ListTodo, run: format("task-list") },
       { key: "quote", label: "Quote", icon: TextQuote, run: format("quote") },
-      ...(markup ? [{ key: "callout", label: "Callout (> [!info])", icon: Info, run: format("callout-info") }] : []),
+      ...(markup ? [{ key: "callout", label: "Callout", icon: Info, menu: calloutMenu }] : []),
       { key: "code-block", label: "Code block", icon: Code2, run: format("code-block") },
       { key: "table", label: "Table", icon: Table, run: format("table") },
       { key: "image", label: "Image", icon: ImageIcon, run: pickImage },
