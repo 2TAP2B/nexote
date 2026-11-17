@@ -67,16 +67,25 @@ jobs:
           } > notes.md
           gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
 
+  # One native runner per architecture (arm64 under QEMU emulation took ~5
+  # minutes for the Next.js build alone), pushed by digest, then merged into
+  # one multi-arch tag by the merge job.
   docker:
     needs: release
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v7
 
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -85,9 +94,59 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Short commit
-        id: commit
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Names
+        id: names
+        run: |
+          echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          platform="${{ matrix.platform }}"
+          echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/2tap2b/nexote,push-by-digest=true,name-canonical=true,push=true
+          # Settings > About shows these (the build context has no .git).
+          build-args: |
+            NEXOTE_VERSION=${{ needs.release.outputs.tag }}
+            NEXOTE_COMMIT=${{ steps.names.outputs.short }}
+          cache-from: type=gha,scope=${{ steps.names.outputs.pair }}
+          cache-to: type=gha,mode=max,scope=${{ steps.names.outputs.pair }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ steps.names.outputs.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-merge:
+    needs: [release, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Image tags
         id: meta
@@ -98,17 +157,14 @@ jobs:
             type=semver,pattern={{version}},value=${{ needs.release.outputs.tag }}
             type=raw,value=latest
 
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Settings > About shows these (the build context has no .git).
-          build-args: |
-            NEXOTE_VERSION=${{ needs.release.outputs.tag }}
-            NEXOTE_COMMIT=${{ steps.commit.outputs.short }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create the multi-arch tags
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r tag; do args+=(-t "$tag"); done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          for digest in *; do args+=("ghcr.io/2tap2b/nexote@sha256:$digest"); done
+          docker buildx imagetools create "${args[@]}"
+
+      - name: Check the image
+        run: docker buildx imagetools inspect "ghcr.io/2tap2b/nexote:${{ steps.meta.outputs.version }}"
