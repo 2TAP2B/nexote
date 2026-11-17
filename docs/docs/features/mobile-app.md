@@ -72,9 +72,9 @@ While the keyboard is open, or after you tap into the text, a horizontally scrol
 
 1. **+**: the insert sheet (slash commands).
 2. Link to note (`@`), Insert date, Select blocks.
-3. Bold, Italic, Strikethrough.
+3. Bold, Italic, Strikethrough, Highlight.
 4. Heading 1, 2, 3.
-5. Bullet list, ordered list, task list, quote, code block, table, image.
+5. Bullet list, ordered list, task list, quote, callout, code block, table, image.
 6. Ask AI, when an AI base URL is set.
 
 Viewers, who can only read, do not get the toolbar. The editor features themselves are described on the [Editor](./editor) page.

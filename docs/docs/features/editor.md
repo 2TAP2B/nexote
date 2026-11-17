@@ -45,9 +45,9 @@ The picked note is inserted as a wikilink chip.
 
 ## Slash menu
 
-On desktop, typing `/` at the start of an empty line opens a block menu with the usual Crepe blocks (headings, lists, quotes, code, tables, images and more). Nexote adds an **Insert** group with **Today's date** and **Link to note**.
+On desktop, typing `/` at the start of an empty line opens a block menu with the usual Crepe blocks (headings, lists, quotes, code, tables, images and more). Nexote adds an **Insert** group with **Today's date** and **Link to note**, and a **Callouts** group (Info, Tip, Warning, Danger, Note).
 
-On mobile, the **+** button of the editor toolbar opens an insert sheet: Today's date, Link to note, Heading 1 to 3, bullet, ordered and task list, quote, inline code, code block, table and image.
+On mobile, the **+** button of the editor toolbar opens an insert sheet: Today's date, Link to note, Heading 1 to 3, bullet, ordered and task list, quote, the five callouts, highlight, inline code, code block, table and image.
 
 ## Inserting the date
 
@@ -78,11 +78,33 @@ Block selection is for copying, cutting or deleting whole blocks, which is easie
 - While it is on, the note is read-only. Each tap or click selects or deselects one block; list items are selected one by one. Blocks do not have to be next to each other.
 - A floating bar offers **Copy**, **Cut** and **Delete**.
 
+## Callouts and highlights
+
+Callouts are colored boxes for notes, tips and warnings, written in the syntax Obsidian and GitHub use, so the files stay readable everywhere:
+
+```markdown
+> [!info] Optional title
+> Text of the box, any blocks.
+
+Some ==highlighted== text.
+```
+
+- **Insert a callout** with the callout button of the toolbar (wraps the current paragraph, or the selected blocks), from the `/` menu, or by typing `[!type] ` at the start of a quote (`> `).
+- **Change the type** by clicking the icon of the box. The types are Obsidian's: Note, Abstract, Info, Todo, Tip, Success, Question, Warning, Failure, Danger, Bug, Example and Quote, including their aliases (GitHub's `NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` too). Any other type such as `[!recipe]` is kept and shown like a note.
+- An empty title shows the type name. A fold marker (`[!tip]-`, `[!tip]+`) is kept in the file; Nexote shows the box open.
+- **Highlight** text with the highlight button, or type `==text==`.
+
+Other tools show a callout as an ordinary quote starting with `[!info]`, and a highlight as `==text==`.
+
+**Settings › Editor › Callouts and highlights** turns the styled display and the buttons off: the same notes then show the plain markdown. Switching never changes a file.
+
 ## Formatting toolbar
 
-On desktop, selecting text shows a floating toolbar with Crepe's formatting buttons plus headings 1 to 3, bullet and ordered lists, quote and code block.
+On desktop, a formatting bar above the note offers the insert menu (**+**), Link to note, Insert date, bold, italic, strikethrough, highlight, headings 1 to 3, lists, task list, quote, callout, code block, table, image and Ask AI (when configured). It works at the caret, without selecting text first. Turn it off in **Settings › Editor › Formatting toolbar**.
 
-On mobile, a toolbar sits above the keyboard. See [Mobile app](./mobile-app#editor-toolbar).
+Selecting text also shows a floating toolbar with Crepe's formatting buttons plus highlight, headings 1 to 3, bullet and ordered lists, quote and code block.
+
+On mobile, a toolbar sits above the keyboard with the same buttons. See [Mobile app](./mobile-app#editor-toolbar).
 
 ## Images
 

@@ -68,6 +68,12 @@ export type AppSettings = {
   dateFormat: string;
   // Touch or desktop interface on this device (Settings › General).
   interface: InterfaceMode;
+  // Callouts ("> [!info]") and ==highlights== styled and offered in the
+  // toolbars (Settings › Editor). Off: shown as plain markdown; files are
+  // the same either way.
+  calloutsAndHighlights: boolean;
+  // Desktop: formatting bar above the note (Settings › Editor).
+  formattingToolbar: boolean;
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -100,6 +106,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dashTags: true,
   dateFormat: "YYYY-MM-DD",
   interface: "auto",
+  calloutsAndHighlights: true,
+  formattingToolbar: true,
 };
 
 type NotesContextValue = {

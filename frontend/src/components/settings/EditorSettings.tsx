@@ -64,6 +64,20 @@ export function EditorSettings() {
           ]}
           onChange={(v) => updateSettings({ defaultRawMode: v === "raw" })}
         />
+        {!mobile && (
+          <ToggleSetting
+            name="Formatting toolbar"
+            description="A row of formatting and insert buttons above the note. Off: use the selection toolbar and the / menu."
+            checked={settings.formattingToolbar}
+            onChange={(v) => updateSettings({ formattingToolbar: v })}
+          />
+        )}
+        <ToggleSetting
+          name="Callouts and highlights"
+          description="Show > [!info] callouts as colored boxes and ==text== as highlights, and offer both in the toolbars and the / menu. Off: they appear as plain markdown. The files are the same either way, readable in Obsidian and on GitHub."
+          checked={settings.calloutsAndHighlights}
+          onChange={(v) => updateSettings({ calloutsAndHighlights: v })}
+        />
       </SettingGroup>
 
       <SettingGroup heading="Raw markdown">

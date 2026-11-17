@@ -1,28 +1,10 @@
 "use client";
 
-import {
-  AtSign,
-  Bold,
-  CalendarDays,
-  Code2,
-  Heading1,
-  Heading2,
-  Heading3,
-  Image as ImageIcon,
-  Italic,
-  List,
-  ListOrdered,
-  ListTodo,
-  Plus,
-  Sparkles,
-  Strikethrough,
-  Table,
-  TextQuote,
-  TextSelect,
-} from "lucide-react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { Fragment, useEffect, useRef, useState, type RefObject } from "react";
 
-import type { FormatAction, MilkdownEditorHandle } from "@/components/MilkdownEditor";
+import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
+import { editorToolbarGroups } from "@/components/editor/toolbarActions";
+import { useNotes } from "@/lib/notes-context";
 import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
 
@@ -40,16 +22,7 @@ export default function MobileEditorToolbar({
   editorRef: RefObject<MilkdownEditorHandle | null>;
   aiAvailable: boolean;
 }) {
-  const run = (action: FormatAction) => () => {
-    editorRef.current?.format(action);
-  };
-
-  // First toolbar button: open the slash command menu. The editor listens for
-  // this event, drops a "/" in the document at the caret (or a fresh body
-  // paragraph below the current block) and focuses, which surfaces the sheet.
-  const openSlash = () => {
-    window.dispatchEvent(new CustomEvent("nexote:slash-open"));
-  };
+  const { settings } = useNotes();
 
   // Visible whenever the on-screen keyboard is open (the user is editing).
   const [hasSelection, setHasSelection] = useState(false);
@@ -111,6 +84,13 @@ export default function MobileEditorToolbar({
   }, [vv.isKeyboardOpen]);
 
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const groups = editorToolbarGroups({
+    editorRef,
+    aiAvailable,
+    markup: settings.calloutsAndHighlights,
+    blockSelect: true,
+    pickImage: () => fileRef.current?.click(),
+  });
 
   return (
     <div
@@ -132,73 +112,16 @@ export default function MobileEditorToolbar({
             boxShadow: "0 4px 20px rgba(0,0,0,0.35)",
           }}
         >
-          <BarButton label="Insert / slash commands" onClick={openSlash} accent>
-            <Plus size={20} />
-          </BarButton>
-          <BarDivider />
-          <BarButton label="Link to note" onClick={() => editorRef.current?.startMention()}>
-            <AtSign size={20} />
-          </BarButton>
-          <BarButton label="Insert date" onClick={() => editorRef.current?.insertDate()}>
-            <CalendarDays size={20} />
-          </BarButton>
-          <BarButton label="Select blocks" onClick={() => editorRef.current?.toggleBlockSelect()}>
-            <TextSelect size={20} />
-          </BarButton>
-          <BarDivider />
-          <BarButton label="Bold" onClick={run("bold")}>
-            <Bold size={20} />
-          </BarButton>
-          <BarButton label="Italic" onClick={run("italic")}>
-            <Italic size={20} />
-          </BarButton>
-          <BarButton label="Strikethrough" onClick={run("strike")}>
-            <Strikethrough size={20} />
-          </BarButton>
-          <BarDivider />
-          <BarButton label="Heading 1" onClick={run("h1")}>
-            <Heading1 size={20} />
-          </BarButton>
-          <BarButton label="Heading 2" onClick={run("h2")}>
-            <Heading2 size={20} />
-          </BarButton>
-          <BarButton label="Heading 3" onClick={run("h3")}>
-            <Heading3 size={20} />
-          </BarButton>
-          <BarDivider />
-          <BarButton label="Bullet list" onClick={run("bullet-list")}>
-            <List size={20} />
-          </BarButton>
-          <BarButton label="Ordered list" onClick={run("ordered-list")}>
-            <ListOrdered size={20} />
-          </BarButton>
-          <BarButton label="Task list" onClick={run("task-list")}>
-            <ListTodo size={20} />
-          </BarButton>
-          <BarButton label="Quote" onClick={run("quote")}>
-            <TextQuote size={20} />
-          </BarButton>
-          <BarButton label="Code block" onClick={run("code-block")}>
-            <Code2 size={20} />
-          </BarButton>
-          <BarButton label="Table" onClick={run("table")}>
-            <Table size={20} />
-          </BarButton>
-          <BarButton label="Image" onClick={() => fileRef.current?.click()}>
-            <ImageIcon size={20} />
-          </BarButton>
-          {aiAvailable && (
-            <>
-              <BarDivider />
-              <BarButton
-                label="Ask AI"
-                onClick={() => editorRef.current?.askAI()}
-                accent
-              >
-                <Sparkles size={20} />
-              </BarButton>
-            </>
-          )}
+          {groups.map((group, gi) => (
+            <Fragment key={group[0].key}>
+              {gi > 0 && <BarDivider />}
+              {group.map(({ key, label, icon: Icon, run, accent }) => (
+                <BarButton key={key} label={label} onClick={run} accent={accent}>
+                  <Icon size={20} />
+                </BarButton>
+              ))}
+            </Fragment>
+          ))}
         </div>
       </div>
 

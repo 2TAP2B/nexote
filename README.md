@@ -29,6 +29,8 @@ More screenshots, including the phone app, are in the [documentation](https://2t
 **Editor**
 - Rendered and raw markdown views, with a per-device default.
 - `[[Title]]` and `[[Title|label]]` wikilinks shown as clickable chips; a missing note is created on click.
+- Obsidian/GitHub callouts (`> [!info]`) as colored boxes and `==highlights==`, stored as plain, portable markdown (optional).
+- Formatting toolbar on desktop and above the keyboard on phones.
 - Note picker on `@` or `[[`, slash menu, and a date insert with a configurable format.
 - Block selection mode to copy, cut or delete whole blocks on touchscreens.
 - Inline `#tags`, `- [ ]` tasks collected across vaults, and a full history of every note with restore.

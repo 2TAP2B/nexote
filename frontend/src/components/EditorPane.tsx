@@ -36,6 +36,7 @@ import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import TocList, { TOC_HEADING_SELECTOR } from "@/components/TocList";
 import WelcomeDashboard from "@/components/WelcomeDashboard";
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
+import EditorToolbar from "@/components/EditorToolbar";
 import { useTocHeadings } from "@/components/useTocHeadings";
 import { useTocScrollSpy } from "@/components/useTocScrollSpy";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -583,6 +584,9 @@ export default function EditorPane({
 
       {/* Editor — the wrapper scrolls (native page-style scrollbar); the
           table-of-contents panel docks to its right when enabled. */}
+      {!rawMode && !readOnly && settings.formattingToolbar && (
+        <EditorToolbar editorRef={editorRef} aiAvailable={Boolean(aiConfig.baseUrl)} />
+      )}
       <div className="flex min-h-0 flex-1">
         <div
           className={

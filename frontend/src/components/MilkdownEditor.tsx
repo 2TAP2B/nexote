@@ -49,6 +49,12 @@ import {
   TextQuote,
   Trash2,
   X,
+  Flame,
+  Highlighter,
+  Info,
+  Pencil,
+  TriangleAlert,
+  Zap,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -66,6 +72,8 @@ import {
 } from "./editor/blockSelect";
 import { computeMention, insertMention, mentionCandidates, mentionPlugin, type MentionState } from "./editor/mention";
 import { inlineCodeTypingPlugin, startInlineCode } from "./editor/inlineCode";
+import { CALLOUT_INSERT_TYPES, calloutIconSvg, calloutLabel, calloutPlugins, insertCalloutCommand } from "./editor/callout";
+import { highlightPlugins, highlightSchema, toggleHighlightCommand } from "./editor/highlight";
 import { wikilinkPlugins } from "./editor/wikilink";
 import { useVisualViewport } from "./mobile/useVirtualKeyboardInset";
 
@@ -78,6 +86,7 @@ import {
   h2Icon,
   h3Icon,
   orderedListIcon,
+  highlighterIcon,
   quoteIcon,
 } from "./toolbar-icons";
 
@@ -364,6 +373,9 @@ export type MilkdownEditorHandle = {
   runAI: (instruction: string, label?: string) => void;
   /** Inserts today's date (Settings › Editor format) at the caret. */
   insertDate: () => void;
+  /** Opens the insert menu: types "/" at the caret (phone sheet or the
+   *  desktop "/" menu), in a fresh paragraph where needed. */
+  openSlash: () => void;
   /** Types "@" at the caret, opening the note picker. */
   startMention: () => void;
   /** Switches block selection mode on or off. */
@@ -372,10 +384,14 @@ export type MilkdownEditorHandle = {
   selectAllBody: () => void;
 };
 
+/** Callout insert actions, one per offered type ("callout-info", …). */
+export type CalloutAction = `callout-${(typeof CALLOUT_INSERT_TYPES)[number]}`;
+
 export type FormatAction =
   | "bold"
   | "italic"
   | "strike"
+  | "highlight"
   | "h1"
   | "h2"
   | "h3"
@@ -385,7 +401,8 @@ export type FormatAction =
   | "quote"
   | "code"
   | "code-block"
-  | "table";
+  | "table"
+  | CalloutAction;
 
 export type AIConfig = {
   baseUrl: string;
@@ -429,6 +446,16 @@ type SlashItem = {
   hint: string;
   icon: ComponentType<{ size?: number }>;
   keywords: string;
+  /** Callouts/highlights: only offered with Settings › Editor › Callouts and highlights on. */
+  markup?: boolean;
+};
+
+const CALLOUT_ICONS: Record<(typeof CALLOUT_INSERT_TYPES)[number], ComponentType<{ size?: number }>> = {
+  info: Info,
+  tip: Flame,
+  warning: TriangleAlert,
+  danger: Zap,
+  note: Pencil,
 };
 
 const SLASH_ITEMS: SlashItem[] = [
@@ -441,6 +468,15 @@ const SLASH_ITEMS: SlashItem[] = [
   { id: "ordered-list", label: "Ordered list", hint: "1. item", icon: ListOrdered, keywords: "list ordered ol numbered" },
   { id: "task-list", label: "Task list", hint: "- [ ] item", icon: ListTodo, keywords: "task todo checkbox checklist" },
   { id: "quote", label: "Quote", hint: "> ", icon: TextQuote, keywords: "quote blockquote" },
+  ...CALLOUT_INSERT_TYPES.map((type) => ({
+    id: `callout-${type}` as const,
+    label: `${calloutLabel(type)} callout`,
+    hint: `> [!${type}]`,
+    icon: CALLOUT_ICONS[type],
+    keywords: `callout box admonition alert ${type}`,
+    markup: true,
+  })),
+  { id: "highlight", label: "Highlight", hint: "==text==", icon: Highlighter, keywords: "highlight mark marker", markup: true },
   { id: "code", label: "Code", hint: "`code`", icon: Code, keywords: "code inline monospace" },
   { id: "code-block", label: "Code block", hint: "```", icon: Code2, keywords: "code block" },
   { id: "table", label: "Table", hint: "| a | b |", icon: Table, keywords: "table grid" },
@@ -505,6 +541,11 @@ function runFormatAction(ctx: Ctx, action: Exclude<FormatAction, "image">) {
     case "table":
       commands.call(insertTableCommand.key, { row: 3, col: 2 });
       break;
+    case "highlight":
+      commands.call(toggleHighlightCommand.key);
+      break;
+    default:
+      commands.call(insertCalloutCommand.key, action.slice("callout-".length));
   }
 }
 
@@ -745,39 +786,36 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     }, [noteId]);
 
     // Toolbar "+" button: drops a "/" in the document at the caret and
-    // focuses, which surfaces the slash command sheet via the watcher below.
-    // If the caret is wedged in a block that can't trigger the menu (e.g. the
-    // title heading), insert a fresh body paragraph after it first.
-    useEffect(() => {
-      if (!mobile) return;
-      const onSlashOpen = () => {
-        const editor = crepeRef.current?.editor;
-        if (!editor) return;
-        editor.action((ctx) => {
-          const view = ctx.get(editorViewCtx);
-          const { state } = view;
-          let tr = state.tr;
-          if (!state.selection.empty) tr = tr.deleteSelection();
-          const $pos = tr.selection.$from;
-          if ($pos.parent.type.name !== "paragraph") {
-            const after = $pos.after($pos.depth);
-            tr = tr.insert(after, tr.doc.type.schema.nodes.paragraph.create());
-            tr = tr.setSelection(TextSelection.near(tr.doc.resolve(after + 1)));
-          }
-          const slashFrom = tr.selection.from;
-          tr = tr.insertText("/", slashFrom).scrollIntoView();
-          view.dispatch(tr);
-          view.focus();
-          // If the editor was blurred when "+" was tapped, the watcher's
-          // update already ran with hasFocus() === false and returned null; the
-          // focus call doesn't dispatch a transaction, so open the sheet from
-          // the position we just wrote to make the menu appear regardless.
-          applySlash({ query: "", from: slashFrom, to: slashFrom + 1 });
-        });
-      };
-      window.addEventListener("nexote:slash-open", onSlashOpen);
-      return () => window.removeEventListener("nexote:slash-open", onSlashOpen);
-    }, [mobile]);
+    // focuses, which surfaces the slash command menu. If the caret is wedged
+    // in a block that can't trigger it (e.g. the title heading), insert a
+    // fresh body paragraph after it first. Desktop: Crepe's "/" menu only
+    // opens for a "/" alone in its paragraph, so a paragraph with text gets a
+    // fresh one below too.
+    const openSlashNow = () => {
+      const editor = crepeRef.current?.editor;
+      if (!editor) return;
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const { state } = view;
+        let tr = state.tr;
+        if (!state.selection.empty) tr = tr.deleteSelection();
+        const $pos = tr.selection.$from;
+        if ($pos.parent.type.name !== "paragraph" || (!mobile && $pos.parent.content.size > 0)) {
+          const after = $pos.after($pos.depth);
+          tr = tr.insert(after, tr.doc.type.schema.nodes.paragraph.create());
+          tr = tr.setSelection(TextSelection.near(tr.doc.resolve(after + 1)));
+        }
+        const slashFrom = tr.selection.from;
+        tr = tr.insertText("/", slashFrom).scrollIntoView();
+        view.dispatch(tr);
+        view.focus();
+        // Phone: if the editor was blurred when "+" was tapped, the watcher's
+        // update already ran with hasFocus() === false and returned null; the
+        // focus call doesn't dispatch a transaction, so open the sheet from
+        // the position we just wrote to make the menu appear regardless.
+        if (mobile) applySlash({ query: "", from: slashFrom, to: slashFrom + 1 });
+      });
+    };
 
     // Slash command menu (mobile). A ProseMirror watcher plumbs the live
     // "/query" state up to React whenever the caret moves or the doc changes;
@@ -798,6 +836,15 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
     const { settings, vaults, allVaultData } = useNotes();
     const dateFormatRef = useRef(settings.dateFormat);
     dateFormatRef.current = settings.dateFormat;
+    // Read when the editor is built (desktop "/" menu, selection toolbar);
+    // the phone sheet and the plain/styled look follow the setting live.
+    const markupRef = useRef(settings.calloutsAndHighlights);
+    markupRef.current = settings.calloutsAndHighlights;
+    // Off: callouts and highlights show as plain markdown (the files are the
+    // same either way; see globals.css .nexote-plain-markup).
+    useEffect(() => {
+      document.documentElement.classList.toggle("nexote-plain-markup", !settings.calloutsAndHighlights);
+    }, [settings.calloutsAndHighlights]);
 
     // Space before the date/@ when the caret follows text directly.
     const leadingSpace = (view: EditorView) => {
@@ -975,6 +1022,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
 
     const slashItems = slash
       ? SLASH_ITEMS.filter((item) => {
+          if (item.markup && !settings.calloutsAndHighlights) return false;
           const q = slash.query.trim().toLowerCase();
           return (
             !q ||
@@ -1154,6 +1202,19 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   view.dispatch(view.state.tr.insertText("@"));
                 },
               });
+            if (markupRef.current) {
+              const callouts = builder.addGroup("nexote-callouts", "Callouts");
+              for (const type of CALLOUT_INSERT_TYPES) {
+                callouts.addItem(`callout-${type}`, {
+                  label: `${calloutLabel(type)} callout`,
+                  icon: calloutIconSvg(type),
+                  onRun: (ctx: Ctx) => {
+                    clearSlash(ctx.get(editorViewCtx));
+                    ctx.get(commandsCtx).call(insertCalloutCommand.key, type);
+                  },
+                });
+              }
+            }
           },
         },
         [Crepe.Feature.Placeholder]: {
@@ -1181,8 +1242,22 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                 });
               },
             });
-            builder
-              .getGroup("formatting")
+            const formatting = builder.getGroup("formatting");
+            if (markupRef.current) {
+              formatting.addItem("highlight", {
+                icon: highlighterIcon,
+                active: (ctx: Ctx) => {
+                  const { state } = ctx.get(editorViewCtx);
+                  const { from, to, empty, $from } = state.selection;
+                  const type = highlightSchema.type(ctx);
+                  return empty ? Boolean(type.isInSet(state.storedMarks ?? $from.marks())) : state.doc.rangeHasMark(from, to, type);
+                },
+                onRun: (ctx: Ctx) => {
+                  ctx.get(commandsCtx).call(toggleHighlightCommand.key);
+                },
+              });
+            }
+            formatting
               .addItem("h1", addHeading(1, h1Icon))
               .addItem("h2", addHeading(2, h2Icon))
               .addItem("h3", addHeading(3, h3Icon));
@@ -1455,6 +1530,11 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
 
       // [[Wikilinks]]: parse/serialize them and render chips.
       crepe.editor.use(wikilinkPlugins);
+      // Callouts ("> [!info]") and ==highlights==: always parsed, so files
+      // round-trip unchanged even with the setting off (it only changes the
+      // look and the menus).
+      crepe.editor.use(calloutPlugins);
+      crepe.editor.use(highlightPlugins);
       // "Code" at a bare caret: typing there becomes inline code.
       crepe.editor.use($prose(() => inlineCodeTypingPlugin));
       // "@" / "[[" note picker.
@@ -1752,6 +1832,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           uploadImageFile(file);
         },
         insertDate: insertDateNow,
+        openSlash: openSlashNow,
         startMention: startMentionNow,
         toggleBlockSelect: toggleBlockSelectNow,
         selectAllBody,

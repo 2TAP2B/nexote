@@ -955,3 +955,101 @@ html:has(.mob-shell-root) body {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Callouts ("> [!info] Title", editor/callout.ts): a tinted box in the type's
+ * color with an icon (a native type picker sits invisibly on top of it) and
+ * a bold title; an empty title shows the type name. */
+.milkdown .ProseMirror .nexote-callout {
+  --callout-color: #448aff;
+  position: relative;
+  margin: 16px 0;
+  padding: 10px 14px 10px 14px;
+  border-left: 3px solid var(--callout-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--callout-color) 10%, transparent);
+}
+.milkdown .ProseMirror .nexote-callout-icon {
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  color: var(--callout-color);
+}
+.milkdown .ProseMirror .nexote-callout-glyph svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+.milkdown .ProseMirror .nexote-callout-picker {
+  position: absolute;
+  inset: -4px;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px; /* no iOS zoom on focus */
+}
+.milkdown .ProseMirror .nexote-callout-picker:disabled {
+  cursor: default;
+}
+.milkdown .ProseMirror .nexote-callout-content > * {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+.milkdown .ProseMirror .nexote-callout-content > :first-child {
+  margin-top: 0;
+}
+.milkdown .ProseMirror .nexote-callout-title {
+  min-height: 1.5em;
+  padding-left: 28px;
+  font-weight: 600;
+  color: var(--callout-color);
+}
+.milkdown .ProseMirror .nexote-callout-title.is-empty::before {
+  content: var(--callout-label);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ==Highlights== (editor/highlight.ts). */
+.milkdown .ProseMirror mark.nexote-highlight {
+  background: color-mix(in srgb, #ffd54f 55%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* Settings › Editor › Callouts and highlights off: the same document shown
+ * as its plain markdown (quote with the "[!type]" marker, "==" around
+ * highlights). Nothing changes in the files. */
+.nexote-plain-markup .milkdown .ProseMirror .nexote-callout {
+  border-left: 3px solid var(--crepe-color-primary);
+  border-radius: 0;
+  background: none;
+  padding: 4px 0 4px 20px;
+  color: var(--crepe-color-on-surface-variant);
+}
+.nexote-plain-markup .milkdown .ProseMirror .nexote-callout-icon {
+  display: none;
+}
+.nexote-plain-markup .milkdown .ProseMirror .nexote-callout-title {
+  padding-left: 0;
+  font-weight: inherit;
+  color: inherit;
+}
+.nexote-plain-markup .milkdown .ProseMirror .nexote-callout-title::before,
+.nexote-plain-markup .milkdown .ProseMirror .nexote-callout-title.is-empty::before {
+  content: var(--callout-raw);
+  float: none;
+  height: auto;
+  opacity: 0.6;
+}
+.nexote-plain-markup .milkdown .ProseMirror mark.nexote-highlight {
+  background: none;
+  padding: 0;
+}
+.nexote-plain-markup .milkdown .ProseMirror mark.nexote-highlight::before,
+.nexote-plain-markup .milkdown .ProseMirror mark.nexote-highlight::after {
+  content: "==";
+  opacity: 0.5;
+}
