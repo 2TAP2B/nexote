@@ -178,11 +178,27 @@ export function PasskeyEnvironmentNotices({ origin }: { origin?: string }) {
 
 // ── Screens ────────────────────────────────────────────────────────────
 
-/** Full-screen splash while the session is checked (no flash of a form). */
+/** Full-screen splash while the app starts and the session is checked. In
+ *  the colors of the installed app's launch screen (manifest
+ *  background_color), so launch screen → splash → app shows no flash. The
+ *  spinner only fades in when loading takes a moment. */
 export function AuthSplash() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background text-muted-foreground">
-      <Loader2 size={22} className="animate-spin" aria-label="Loading" />
+    <div
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-5"
+      style={{ background: "#1a1d29", color: "#e8e8f0" }}
+      role="status"
+      aria-label="Loading Nexote"
+    >
+      <svg width="88" height="88" viewBox="112 64 288 384" aria-hidden="true">
+        <rect x="128" y="80" width="256" height="352" rx="24" fill="none" stroke="#7c6ff0" strokeWidth="16" />
+        <line x1="176" y1="160" x2="336" y2="160" stroke="#7c6ff0" strokeWidth="12" strokeLinecap="round" />
+        <line x1="176" y1="220" x2="336" y2="220" stroke="#5c5f6b" strokeWidth="12" strokeLinecap="round" />
+        <line x1="176" y1="280" x2="336" y2="280" stroke="#5c5f6b" strokeWidth="12" strokeLinecap="round" />
+        <line x1="176" y1="340" x2="272" y2="340" stroke="#5c5f6b" strokeWidth="12" strokeLinecap="round" />
+      </svg>
+      <span className="font-sans text-2xl font-semibold tracking-tight">Nexote</span>
+      <Loader2 size={18} className="nexote-splash-spinner" style={{ color: "#8b8fa3" }} aria-hidden="true" />
     </div>
   );
 }

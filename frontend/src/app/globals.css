@@ -943,3 +943,15 @@ html:has(.mob-shell-root) body {
   color: var(--primary);
   font-weight: 600;
 }
+
+/* Loading splash (AuthSplash): the spinner appears only when loading takes
+ * a moment, so fast starts show just the logo. */
+.nexote-splash-spinner {
+  animation:
+    spin 1s linear infinite,
+    nexote-splash-in 0.3s ease 0.6s both;
+}
+@keyframes nexote-splash-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -36,7 +36,8 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: "/icon.svg",
-    apple: "/icon-192.png",
+    // Full-bleed: iOS rounds the corners itself (transparent ones turn black).
+    apple: "/apple-touch-icon.png",
   },
 };
 

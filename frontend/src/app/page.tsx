@@ -17,6 +17,7 @@ import {
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import { AuthGate } from "@/components/auth/AuthProvider";
+import { AuthSplash } from "@/components/auth/AuthScreens";
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
@@ -51,7 +52,9 @@ function useStartShell(): Shell | null {
 
 export default function Page() {
   const shell = useStartShell();
-  if (!shell) return null;
+  // Server render (static HTML) and the first client frame: the splash, so
+  // something branded shows before the scripts have loaded.
+  if (!shell) return <AuthSplash />;
   return (
     <AuthGate>
       <NotesProvider>
