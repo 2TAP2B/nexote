@@ -72,7 +72,9 @@ While the composer is empty, a microphone button takes the place of the send but
 
 A thread is a memo that grew replies, for following a thought over days. **Swipe a memo to the left** to turn it into a thread; a toast offers Undo. The memo leaves the Notepad and stays in the stream as a thread card with its title, the latest post and the number of replies. A new reply moves the card down to the reply's time.
 
-Tap a card to open the thread. It looks like the quick notes: the posts are bubbles, the first one marked **Started**, and the composer adds replies (text, images, `@` links, voice memos). Long-press a post to edit, copy or delete it. Tap the title to rename the thread; **More** also deletes it. On phones, **swipe right** anywhere outside the composer to close the thread and go back.
+Tap a card to open the thread. On phones a thread is a timeline: every post shows its time on top (with the date when the day changes) and sits on a line of dots, the first one, marked **Started**, filled. On desktop the posts are bubbles like the quick notes. The composer adds replies (text, images, `@` links, voice memos). Long-press a post to edit, copy or delete it. Tap the title to rename the thread; **More** also deletes it. On phones, **swipe right** anywhere outside the composer to close the thread and go back.
+
+Posts are Markdown: **bold**, *italics*, ~~strikethrough~~, lists and task lists, quotes, headings, code, links, tables and `==highlights==` show formatted. `[[links]]` and `#tags` stay tappable. HTML in a post shows as text.
 
 **Swipe a reply to the left** to start a new thread from it. The reply is replaced by a link to the new thread, so the two stay connected. On desktop, the same is a button next to each reply.
 

@@ -5,6 +5,7 @@ import { useRef, type ReactNode } from "react";
 
 import { haptic } from "@/lib/haptics";
 import { splitMemo } from "@/lib/notepad";
+import { PostMarkdown } from "../threads/PostMarkdown";
 import { useSwipeAction } from "../threads/useSwipeAction";
 
 /**
@@ -28,7 +29,9 @@ const MOVE_TOLERANCE_PX = 8;
  * linked notes and #tags as tappable chips. A long press (touch) or
  * right-click selects it; while memos are selected, a tap toggles the
  * selection instead of opening links. With `onSwipeLeft`, swiping it left
- * runs that (start a thread).
+ * runs that (start a thread). `variant="timeline"` drops the bubble: full
+ * width text on the page (the phone's thread view); `markdown` renders the
+ * text as Markdown (threads).
  */
 export function MemoBubble({
   text: memo,
@@ -42,6 +45,8 @@ export function MemoBubble({
   onToggleSelect,
   onSwipeLeft,
   swipeLabel = "Start a thread",
+  variant = "bubble",
+  markdown = false,
 }: {
   /** The memo/post text (image lines included). */
   text: string;
@@ -57,7 +62,10 @@ export function MemoBubble({
   onToggleSelect: () => void;
   onSwipeLeft?: () => void;
   swipeLabel?: string;
+  variant?: "bubble" | "timeline";
+  markdown?: boolean;
 }) {
+  const timeline = variant === "timeline";
   const { text, images } = splitMemo(memo);
   const press = useRef<{ x: number; y: number; timer: number } | null>(null);
   // This press selected the memo: swallow the click that ends it.
@@ -76,8 +84,25 @@ export function MemoBubble({
     onToggleSelect();
   };
 
+  const imageGrid = (
+    <div className={`grid gap-1 ${timeline ? "px-2 pb-1" : "p-1"} ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+      {images.map((url, i) => (
+        <button
+          key={`${url}-${i}`}
+          type="button"
+          aria-label="Show image"
+          onClick={() => onOpenImage(url)}
+          className="block overflow-hidden rounded-xl"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- vault image */}
+          <img src={url} alt="" loading="lazy" draggable={false} className="block max-h-64 w-full object-cover" />
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <div ref={swipeRef} className="relative max-w-[85%]">
+    <div ref={swipeRef} className={timeline ? "relative w-full" : "relative max-w-[85%]"}>
       {offset < 0 && (
         <span
           aria-hidden
@@ -132,38 +157,40 @@ export function MemoBubble({
         else onToggleSelect();
       }}
       className={
-        "relative select-none overflow-hidden rounded-2xl rounded-br-md text-[15px] leading-snug transition-shadow" +
-        (editing || selected ? " ring-2 ring-primary ring-offset-2 ring-offset-background" : "")
+        timeline
+          ? "relative select-none rounded-xl text-[15px] leading-relaxed transition-colors"
+          : "relative select-none overflow-hidden rounded-2xl rounded-br-md text-[15px] leading-snug transition-shadow" +
+            (editing || selected ? " ring-2 ring-primary ring-offset-2 ring-offset-background" : "")
       }
       style={{
-        background: "var(--mob-accent)",
-        color: "#fff",
+        // Timeline: text straight on the page; selected/edited posts get a tint.
+        background: timeline ? (editing || selected ? "var(--mob-surface)" : "transparent") : "var(--mob-accent)",
+        color: timeline ? "var(--mob-text)" : "#fff",
         WebkitTouchCallout: "none",
         transform: offset ? `translateX(${offset}px)` : undefined,
-        transition: offset ? "none" : "transform 180ms ease-out",
+        transition: offset ? "none" : "transform 180ms ease-out, background-color 150ms",
       }}
     >
-      {images.length > 0 && (
-        <div className={`grid gap-1 p-1 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-          {images.map((url, i) => (
-            <button
-              key={`${url}-${i}`}
-              type="button"
-              aria-label="Show image"
-              onClick={() => onOpenImage(url)}
-              className="block overflow-hidden rounded-xl"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- vault image */}
-              <img src={url} alt="" loading="lazy" draggable={false} className="block max-h-64 w-full object-cover" />
-            </button>
-          ))}
-        </div>
-      )}
-      {text && (
-        <p className="whitespace-pre-wrap break-words px-3 py-2">
-          <MemoText text={text} resolve={resolve} onOpenNote={onOpenNote} onOpenTag={onOpenTag} />
-        </p>
-      )}
+      {images.length > 0 && !timeline && imageGrid}
+      {text &&
+        (markdown ? (
+          <div className={timeline ? "px-2 py-1" : "px-3 py-2"}>
+            <PostMarkdown
+              text={text}
+              tone={timeline ? "plain" : "bubble"}
+              resolve={resolve}
+              onOpenNote={onOpenNote}
+              onOpenTag={onOpenTag}
+              onOpenImage={onOpenImage}
+            />
+          </div>
+        ) : (
+          <p className={"whitespace-pre-wrap break-words " + (timeline ? "px-2 py-1" : "px-3 py-2")}>
+            <MemoText text={text} resolve={resolve} onOpenNote={onOpenNote} onOpenTag={onOpenTag} tone={timeline ? "plain" : "bubble"} />
+          </p>
+        ))}
+      {/* The timeline reads text first, then the pictures. */}
+      {images.length > 0 && timeline && imageGrid}
     </div>
     </div>
   );
@@ -172,18 +199,26 @@ export function MemoBubble({
 // [[Title]] / [[Title|label]], or a #tag after whitespace (the backend's rule).
 const TOKEN_RE = /\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]|(^|\s)\\?#([a-z0-9][\w-]*)/gi;
 
-/** Memo text with linked notes ("@label") and #tags as chips (white-on-accent bubble styling). */
+/**
+ * Memo text with linked notes ("@label") and #tags as chips. `tone` picks
+ * the chip look: "bubble" = white on the accent bubble, "plain" = accent on
+ * the page background (the phone's thread timeline).
+ */
 export function MemoText({
   text,
   resolve,
   onOpenNote,
   onOpenTag,
+  tone = "bubble",
 }: {
   text: string;
   resolve: (title: string) => NoteRef | null;
   onOpenNote: (note: NoteRef) => void;
   onOpenTag?: (tag: string) => void;
+  tone?: "bubble" | "plain";
 }) {
+  const plain = tone === "plain";
+  const accent = plain ? { color: "var(--mob-accent)" } : undefined;
   const parts: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(TOKEN_RE)) {
@@ -200,11 +235,12 @@ export function MemoText({
             type="button"
             onClick={() => onOpenTag(tag)}
             className="font-semibold underline-offset-2 active:underline"
+            style={accent}
           >
             #{m[4]}
           </button>
         ) : (
-          <span key={tagStart} className="font-semibold">
+          <span key={tagStart} className="font-semibold" style={accent}>
             #{m[4]}
           </span>
         ),
@@ -222,13 +258,19 @@ export function MemoText({
           key={start}
           type="button"
           onClick={() => onOpenNote(note)}
-          className="mx-px rounded-md bg-white/20 px-1 font-medium active:bg-white/30"
+          className={"mx-px rounded-md px-1 font-medium " + (plain ? "" : "bg-white/20 active:bg-white/30")}
+          style={plain ? { ...accent, background: "var(--mob-surface)" } : undefined}
         >
           {note.thread ? "↳ " : "@"}
           {label}
         </button>
       ) : (
-        <span key={start} title="No note with this title" className="mx-px rounded-md bg-white/10 px-1 italic opacity-75">
+        <span
+          key={start}
+          title="No note with this title"
+          className={"mx-px rounded-md px-1 italic opacity-75 " + (plain ? "" : "bg-white/10")}
+          style={plain ? { background: "var(--mob-surface)" } : undefined}
+        >
           @{label}
         </span>
       ),

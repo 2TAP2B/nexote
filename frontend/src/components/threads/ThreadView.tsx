@@ -463,6 +463,69 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     );
   } else if (posts.length === 0) {
     content = <Notice title="No posts yet" text="Write the first one below." />;
+  } else if (mobile) {
+    // Phone: a timeline instead of chat bubbles (unlike quick notes). Each
+    // post has its time on top and a dot on the rail; the line runs on to the
+    // next post's dot, so a thread reads as one thought over time.
+    content = (
+      <ol className="flex flex-col">
+        {posts.map((post, i) => {
+          const key = postKey(post);
+          const first = i === 0;
+          const last = i === posts.length - 1;
+          const newDay = first || post.day !== posts[i - 1].day;
+          const stamp = post.time ? (newDay ? `${dayLabel(post.day)} · ${post.time}` : post.time) : newDay ? dayLabel(post.day) : "";
+          return (
+            <li key={`${post.day}-${post.start}`} className="flex gap-1">
+              {selectMode && (
+                <SelectCircle label="Select post" selected={selectedKeys.has(key)} onToggle={() => toggleSelected(post)} />
+              )}
+              <div aria-hidden className="relative flex w-5 shrink-0 justify-center">
+                <span
+                  className="relative z-[1] mt-[5px] h-2.5 w-2.5 rounded-full"
+                  style={
+                    first
+                      ? { background: "var(--mob-accent)" }
+                      : { background: "var(--mob-bg)", border: "2px solid var(--mob-accent)" }
+                  }
+                />
+                {!last && (
+                  <span
+                    className="absolute bottom-[-5px] top-[15px] w-[2px] rounded-full"
+                    style={{ background: "color-mix(in srgb, var(--mob-accent) 30%, transparent)" }}
+                  />
+                )}
+              </div>
+              <div className="min-w-0 flex-1 pb-5">
+                <div className="flex items-baseline gap-1.5 px-2 text-[12px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                  {stamp && <span>{stamp}</span>}
+                  {first && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--mob-accent)" }}>
+                      Started
+                    </span>
+                  )}
+                </div>
+                <MemoBubble
+                  text={post.text}
+                  variant="timeline"
+                  markdown
+                  editing={editingKey === key}
+                  selected={selectedKeys.has(key)}
+                  selecting={selectMode}
+                  resolve={resolve}
+                  onOpenNote={openNote}
+                  onOpenImage={setViewer}
+                  onOpenTag={openTag}
+                  onToggleSelect={() => toggleSelected(post)}
+                  onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
+                  swipeLabel="Start a thread from this"
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    );
   } else {
     content = (
       <ol className="flex flex-col gap-1.5">
@@ -508,6 +571,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                     )}
                     <MemoBubble
                       text={post.text}
+                      markdown
                       editing={editingKey === key}
                       selected={selectedKeys.has(key)}
                       selecting={selectMode}
