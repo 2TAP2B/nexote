@@ -22,7 +22,7 @@ The app is a horizontal pager with four panes, from left to right:
 | Spaces | Your spaces, **New space**, and an account card with Account and Sign out. |
 | Sidebar | The note tree of the active vault. |
 | Note | The open note, or the dashboard. |
-| Right pane | The table of contents of the open note, or [Quick notes](./quick-notes) when the dashboard is open. |
+| Right pane | The table of contents of the open note, or [Quick notes](./quick-notes) when the dashboard is open. Threads open full screen on top. |
 
 The app remembers the last pane across reloads.
 

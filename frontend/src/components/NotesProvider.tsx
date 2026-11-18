@@ -14,6 +14,7 @@ import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type Git
 import { localDateKey } from "@/lib/note-utils";
 import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
+import { NOTE_CHANGE_EVENT } from "@/lib/threads";
 import type { InterfaceMode } from "@/lib/shell";
 
 type Draft = { title: string; body: string };
@@ -49,6 +50,7 @@ export type AppSettings = {
   // Features — section visibility
   showTagsSection: boolean;
   showTasksSection: boolean;
+  showThreadsSection: boolean;
   showTagsOnPalette: boolean;
   // Quick notes › "Make note": where the note goes ("" vault = ask first).
   memoNoteVault: string;
@@ -98,6 +100,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultRawMode: false,
   showTagsSection: true,
   showTasksSection: true,
+  showThreadsSection: true,
   showTagsOnPalette: true,
   memoNoteVault: "",
   memoNoteFolder: "",
@@ -1576,6 +1579,8 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         }
         const { vaultId, id, updatedAt } = data;
         if (!vaultId || !id || !updatedAt) return;
+        // For views holding notes outside the provider's cache (threads).
+        window.dispatchEvent(new CustomEvent(NOTE_CHANGE_EVENT, { detail: { vaultId, id, updatedAt } }));
         const cached = notesByIdRef.current[id];
         if (!cached) return;
         // The user is typing on this note right now — don't yank the editor.

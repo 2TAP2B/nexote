@@ -303,6 +303,9 @@ type CreateInput struct {
 	// ("## <title>"); the frontend's headingOnNewNote=off passes "\n" so the
 	// note starts as a plain blank paragraph (classic Obsidian look).
 	Body string `json:"body,omitempty"`
+	// Type sets the note type right away (e.g. "thread" for a quick-notes
+	// thread), so typed notes need no second write.
+	Type string `json:"type,omitempty"`
 }
 
 // validID reports whether id looks like a NewID() id.
@@ -355,6 +358,7 @@ func (s *Store) Create(in CreateInput) (Document, error) {
 			// Same rule as Update: a body that already carries #tags (a note
 			// made from a memo, an import) is tagged right away.
 			Tags: extractInlineTags(body),
+			Type: strings.TrimSpace(in.Type),
 		},
 		Body: body,
 	}

@@ -1,33 +1,46 @@
 "use client";
 
-import { Check, CircleCheck, Copy, FilePlus, Pencil, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, isCollectionsVault } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { cacheImage } from "@/lib/image-cache";
 import { localDateKey } from "@/lib/note-utils";
 import {
   appendNotepadEntry,
   findNotepad,
-  joinMemo,
   memoToNote,
   NOTEPAD_TITLE,
   notepadLocation,
   parseNotepad,
   removeNotepadEntries,
   replaceNotepadEntry,
-  splitMemo,
   type NotepadEntry,
 } from "@/lib/notepad";
 import type { Notebook } from "@/lib/notebooks";
 import { useNotes } from "@/lib/notes-context";
+import {
+  appendThreadPosts,
+  createThread,
+  deleteThread,
+  lastActivity,
+  mutateThread,
+  openThread,
+  postStamp,
+  postTags,
+  replyLabel,
+  useThreads,
+  type Thread,
+} from "@/lib/threads";
+import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "../threads/MemoChrome";
+import { ThreadCard } from "../threads/ThreadCard";
+import { errorText, useMemoDraft } from "../threads/useMemoDraft";
+import { useNoteRefs } from "../threads/useNoteRefs";
 import { MemoBubble, type NoteRef } from "./MemoBubble";
-import { MemoComposer, type Attachment } from "./MemoComposer";
+import { MemoComposer } from "./MemoComposer";
+import { MobileActionSheet } from "./MobileActionSheet";
 import { NotebookPicker } from "./NotebookPicker";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
-import { useVoiceRecorder, VoiceError, type VoiceClip } from "./useVoiceRecorder";
 
 // Quick capture: a chat-style pad in the dashboard's right pane (swipe left on
 // the dashboard). Enter posts the text into the "Notepad" note — created on the
@@ -35,39 +48,38 @@ import { useVoiceRecorder, VoiceError, type VoiceClip } from "./useVoiceRecorder
 // image button (or pasting) attaches images, the mic records a voice memo that
 // the AI endpoint transcribes into the text, and the expand button writes in
 // full screen. Tap the circle next to a memo (or long-press it) to select it;
-// the bar on top then copies, edits, makes a note of or deletes the selection.
+// the bar on top then copies, edits, makes a note of, adds to a thread or
+// deletes the selection. Threads (lib/threads) show in the stream as cards at
+// their last activity; swiping a memo left starts one; a #tag filters both.
 
 type Target = { vaultId: string; id: string };
-type Toast = { text: string; action?: { label: string; run: () => void } };
 
 // Selection survives reloads and posts: entries are matched by content, not
 // by their (shifting) line numbers.
 const memoKey = (e: NotepadEntry) => `${e.day}\n${e.time}\n${e.text}`;
 
-const MAX_RECORDING_MS = 10 * 60_000;
+type StreamItem =
+  | { kind: "memo"; key: string; entry: NotepadEntry }
+  | { kind: "thread"; key: string; thread: Thread };
 
-const errorText = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
+const dayOf = (item: StreamItem) => item.key.slice(0, 10).trim();
 
-// "/api/vaults/<vault>/images/<rel>" → "<rel>" (what the delete route takes).
-const imageRel = (url: string) => url.slice(url.indexOf("/images/") + "/images/".length);
+function dayLabel(day: string): string {
+  if (day === localDateKey()) return "Today";
+  if (!day) return "Earlier";
+  return new Date(`${day}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function hasTag(item: StreamItem, tag: string): boolean {
+  if (item.kind === "memo") return postTags(item.entry.text).includes(tag);
+  const t = item.thread;
+  return t.tags.some((x) => x.toLowerCase() === tag) || t.posts.some((p) => postTags(p.text).includes(tag));
+}
 
 export default function QuickCapturePane({ focused, onBack }: { focused: boolean; onBack: () => void }) {
-  const {
-    vaults,
-    allVaults,
-    allVaultData,
-    journalNotes,
-    refresh,
-    refreshNoteBody,
-    openNoteInVault,
-    openTab,
-    settings,
-    updateSettings,
-  } = useNotes();
+  const { allVaults, refresh, refreshNoteBody, openNoteInVault, openTab, settings, updateSettings } = useNotes();
   const vv = useVisualViewport();
   const [body, setBody] = useState("");
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [fullscreen, setFullscreenState] = useState(false);
   // "Exit full screen" acts on pointerdown; the tap's click then lands on
   // the close button that sits at the same spot underneath. Ignore it.
@@ -76,27 +88,14 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     if (!next) fullscreenClosedAt.current = Date.now();
     setFullscreenState(next);
   };
-  const [editing, setEditing] = useState<NotepadEntry | null>(null);
-  const [posting, setPosting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<Toast | null>(null);
+  const { toast, showToast, dismissToast } = useMemoToast();
   // The memos waiting for the first-time notebook choice.
   const [picking, setPicking] = useState<NotepadEntry[] | null>(null);
-  const [transcribing, setTranscribing] = useState(false);
-  // A recording whose transcription failed, kept for "Retry".
-  const [failedClip, setFailedClip] = useState<VoiceClip | null>(null);
-  const transcribeAbort = useRef<AbortController | null>(null);
-  const recorder = useVoiceRecorder({ maxMs: MAX_RECORDING_MS, onLimit: () => void stopVoice() });
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
   // Selection circles show only in selection mode (header button or long press).
   const [selectMode, setSelectMode] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const toastTimer = useRef(0);
-  const nextKey = useRef(0);
-  // Attachments removed while still uploading: delete the file once it lands.
-  const removedWhileUploading = useRef(new Set<number>());
   // The Notepad note once known or created here. Creation is shared, so an
   // image upload and a post can't create two notes.
   const targetRef = useRef<Target | null>(null);
@@ -106,7 +105,6 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   useEffect(() => {
     focusedRef.current = focused;
   }, [focused]);
-  useEffect(() => () => transcribeAbort.current?.abort(), []);
 
   // The Notepad lives where Settings › Features says: the personal "home"
   // store (default, the same in every space) or a chosen notebook. Found and
@@ -114,10 +112,18 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   // Creating it on the first post only sets targetRef: reloading then would
   // race the post and show the empty new note.
   const { vaultId: locVault, folder: locFolder } = notepadLocation(settings);
+  // The #tag the stream is filtered by (tap a tag chip); kept until cleared.
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  // The memos waiting for a thread to be added to (selection › Add to thread).
+  const [threadPicking, setThreadPicking] = useState<NotepadEntry[] | null>(null);
+  // A swipe is starting a thread: a second swipe meanwhile is ignored.
+  const [threading, setThreading] = useState(false);
+  const threadingRef = useRef(false);
   // A new location means another note: forget the old one and its memos.
   useEffect(() => {
     targetRef.current = null;
     setBody("");
+    setTagFilter(null);
   }, [locVault, locFolder]);
   useEffect(() => {
     if (!focused) return;
@@ -159,60 +165,35 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     setSelectMode(false);
   }
 
-  // Newest entry at the bottom, like a chat.
+  // Memos and threads in one stream by time (a thread at its last post), oldest
+  // first. The sort is stable, so memos of the same minute keep pad order.
+  const { threads } = useThreads(locVault);
+  const stream = useMemo(() => {
+    const items: StreamItem[] = [
+      ...entries.map((entry): StreamItem => ({ kind: "memo", key: `${entry.day} ${entry.time.padStart(5, "0")}`, entry })),
+      ...threads.map((thread): StreamItem => ({ kind: "thread", key: lastActivity(thread), thread })),
+    ];
+    return items.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  }, [entries, threads]);
+  const visible = useMemo(
+    () => (tagFilter ? stream.filter((item) => hasTag(item, tagFilter)) : stream),
+    [stream, tagFilter],
+  );
+  const threadsByActivity = useMemo(
+    () => [...threads].sort((a, b) => lastActivity(b).localeCompare(lastActivity(a))),
+    [threads],
+  );
+  const filterByTag = (tag: string) => setTagFilter(tag.toLowerCase());
+
+  // Newest item at the bottom, like a chat; also when threads load or move.
+  const lastKey = visible[visible.length - 1]?.key ?? "";
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [entries.length, focused, vv.isKeyboardOpen]);
+  }, [visible.length, lastKey, focused, vv.isKeyboardOpen]);
 
-  // Notes a memo can link to: every regular vault note and the journal.
-  const noteRefs = useMemo(() => {
-    const refs: NoteRef[] = [];
-    for (const v of vaults) {
-      if (isCollectionsVault(v)) continue;
-      for (const n of allVaultData[v.id]?.notes ?? []) {
-        if (!n.title) continue;
-        refs.push({
-          id: n.id,
-          title: n.title,
-          vaultId: v.id,
-          where: n.path ? `${v.name} › ${n.path}` : v.name,
-          updatedAt: n.updatedAt,
-        });
-      }
-    }
-    for (const n of journalNotes) {
-      if (n.title) refs.push({ id: n.id, title: n.title, vaultId: null, where: "Journal", updatedAt: n.updatedAt });
-    }
-    return refs;
-  }, [vaults, allVaultData, journalNotes]);
-
-  // [[Title]] → note: same title (any case); the first match wins (the
-  // active space's vaults, then the journal).
-  const resolve = useCallback(
-    (title: string) => {
-      const wanted = title.toLowerCase();
-      return noteRefs.find((ref) => ref.title.toLowerCase() === wanted) ?? null;
-    },
-    [noteRefs],
-  );
-
-  // "@query" suggestions: titles containing the query, prefix matches first,
-  // then the most recently edited.
-  const suggest = useCallback(
-    (query: string) => {
-      const q = query.toLowerCase();
-      return noteRefs
-        .filter((r) => r.title.toLowerCase().includes(q))
-        .sort(
-          (a, b) =>
-            Number(b.title.toLowerCase().startsWith(q)) - Number(a.title.toLowerCase().startsWith(q)) ||
-            b.updatedAt.localeCompare(a.updatedAt),
-        )
-        .slice(0, 6);
-    },
-    [noteRefs],
-  );
+  // The Notepad's threads too, so [[Thread title]] links resolve to them.
+  const { resolve, suggest } = useNoteRefs(locVault);
 
   const ensureTarget = (): Promise<Target> => {
     if (targetRef.current) return Promise.resolve(targetRef.current);
@@ -226,216 +207,64 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     return creatingRef.current;
   };
 
-  const showToast = (text: string, action?: Toast["action"]) => {
-    setToast({ text, action });
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), action ? 5000 : 1600);
-  };
-
-  // Drops an attachment's preview; a fresh upload that is never posted is
-  // deleted from the vault again.
-  const discard = (a: Attachment) => {
-    if (a.preview.startsWith("blob:")) URL.revokeObjectURL(a.preview);
-    const target = targetRef.current;
-    if (a.fresh && a.url && target) void api.removeImage(target.vaultId, imageRel(a.url)).catch(() => {});
-  };
-
-  const attach = async (files: File[]) => {
-    const images = files.filter((f) => f.type.startsWith("image/"));
-    if (images.length === 0) return;
-    setError(null);
-    const items = images.map((file): Attachment => ({
-      key: ++nextKey.current,
-      preview: URL.createObjectURL(file),
-      status: "uploading",
-      fresh: true,
-    }));
-    setAttachments((list) => [...list, ...items]);
-    const update = (key: number, patch: Partial<Attachment>) =>
-      setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
-    let target: Target;
-    try {
-      target = await ensureTarget();
-    } catch (e) {
-      items.forEach((item) => update(item.key, { status: "error" }));
-      setError(errorText(e, "Couldn't create the notepad"));
-      return;
-    }
-    await Promise.all(
-      images.map(async (file, i) => {
-        const key = items[i].key;
-        try {
-          const meta = await api.uploadImage(target.vaultId, target.id, file);
-          if (removedWhileUploading.current.delete(key)) {
-            void api.removeImage(target.vaultId, imageRel(meta.url)).catch(() => {});
-            return;
-          }
-          // Keep the bytes locally so the image survives a reload offline.
-          void cacheImage(meta.url, file);
-          window.dispatchEvent(new CustomEvent("nexote:image-uploaded", { detail: meta.url }));
-          update(key, { status: "ready", url: meta.url });
-        } catch (e) {
-          update(key, { status: "error" });
-          setError(errorText(e, "Image upload failed"));
-        }
-      }),
-    );
-  };
-
-  const removeAttachment = (key: number) => {
-    const a = attachments.find((x) => x.key === key);
-    if (!a) return;
-    if (a.status === "uploading") removedWhileUploading.current.add(key);
-    else discard(a);
-    setAttachments((list) => list.filter((x) => x.key !== key));
-  };
-
-  const uploading = attachments.some((a) => a.status === "uploading");
-  const memoText = joinMemo(
+  const {
+    inputRef,
     input,
-    attachments.flatMap((a) => (a.status === "ready" && a.url ? [a.url] : [])),
-  );
-  const canSend = Boolean(memoText) && !uploading;
+    setInput,
+    attachments,
+    editing,
+    posting,
+    error,
+    setError,
+    canSend,
+    attach,
+    removeAttachment,
+    submit,
+    startEdit,
+    cancelEdit,
+    voice,
+    canRetryTranscription,
+    retryTranscription,
+    discardFailedClip,
+  } = useMemoDraft<NotepadEntry>({
+    ensureTarget,
+    currentTarget: () => targetRef.current,
+    targetErrorText: "Couldn't create the notepad",
+    canFocus: () => focusedRef.current,
+  });
 
-  const resetComposer = () => {
-    setInput("");
-    setAttachments([]);
-    setEditing(null);
-  };
-
-  const post = async () => {
-    if (!canSend || posting) return;
-    const text = memoText;
-    const edit = editing;
-    if (edit && text === edit.text) {
-      resetComposer();
-      return;
-    }
-    setPosting(true);
-    setError(null);
-    const draft = { input, attachments };
-    setInput("");
-    setAttachments([]);
-    let previous = body;
-    try {
-      const target = await ensureTarget();
-      // Write into the latest version, not this pane's copy, so edits made in
-      // the editor or on another device are kept.
-      previous = (await api.get(target.vaultId, target.id)).body;
-      const next = edit ? replaceNotepadEntry(previous, edit, text) : appendNotepadEntry(previous, text);
-      if (next === null) throw new Error("This memo was changed elsewhere in the meantime. Try again.");
-      setBody(next);
-      await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: next });
-      draft.attachments.forEach((a) => {
-        if (a.preview.startsWith("blob:")) URL.revokeObjectURL(a.preview);
-      });
-      setEditing(null);
-      setFullscreen(false);
-      void refreshNoteBody(target.id);
-    } catch (e) {
-      setBody(previous);
-      setInput((current) => current || draft.input);
-      setAttachments((current) => (current.length > 0 ? current : draft.attachments));
-      setError(errorText(e, "Couldn't save to the notepad"));
-    } finally {
-      setPosting(false);
-      // Keep typing the next memo — but never focus a pane swiped away in the
-      // meantime: focusing makes the browser scroll the pager to the field.
-      if (focusedRef.current) inputRef.current?.focus({ preventScroll: true });
-    }
-  };
-
-  const startEdit = (entry: NotepadEntry) => {
-    const memo = splitMemo(entry.text);
-    attachments.forEach(discard);
-    setError(null);
-    setEditing(entry);
-    setInput(memo.text);
-    setAttachments(
-      memo.images.map((url): Attachment => ({ key: ++nextKey.current, preview: url, url, status: "ready", fresh: false })),
+  const post = () =>
+    submit(
+      async (text, edit) => {
+        let previous = body;
+        try {
+          const target = await ensureTarget();
+          // Write into the latest version, not this pane's copy, so edits made in
+          // the editor or on another device are kept.
+          previous = (await api.get(target.vaultId, target.id)).body;
+          const next = edit ? replaceNotepadEntry(previous, edit, text) : appendNotepadEntry(previous, text);
+          if (next === null) throw new Error("This memo was changed elsewhere in the meantime. Try again.");
+          setBody(next);
+          await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: next });
+          void refreshNoteBody(target.id);
+        } catch (e) {
+          setBody(previous);
+          throw e;
+        }
+      },
+      "Couldn't save to the notepad",
+      () => setFullscreen(false),
     );
-    requestAnimationFrame(() => {
-      const el = inputRef.current;
-      if (!el) return;
-      el.focus({ preventScroll: true });
-      el.setSelectionRange(el.value.length, el.value.length);
-    });
-  };
-
-  const cancelEdit = () => {
-    attachments.forEach(discard);
-    resetComposer();
-  };
 
   const openNote = (note: NoteRef) => {
+    // Threads open in the thread overlay, over this pane.
+    if (note.thread && note.vaultId) {
+      openThread({ vaultId: note.vaultId, id: note.id });
+      return;
+    }
     onBack();
     void (note.vaultId ? openNoteInVault(note.vaultId, note.id) : openTab(note.id));
   };
-
-  // Voice memos: record, then the AI endpoint transcribes the clip and the
-  // text lands in the composer to check before posting.
-  const transcribe = async (clip: VoiceClip) => {
-    setTranscribing(true);
-    setError(null);
-    setFailedClip(null);
-    const abort = new AbortController();
-    transcribeAbort.current = abort;
-    try {
-      const text = (
-        await api.transcribeAudio(
-          {
-            baseUrl: settings.aiBaseUrl,
-            apiKey: settings.aiApiKey,
-            model: settings.aiTranscribeModel.trim() || "whisper-1",
-          },
-          clip.blob,
-          clip.fileName,
-          abort.signal,
-        )
-      ).trim();
-      if (!text) {
-        setError("No speech was recognized.");
-        return;
-      }
-      setInput((current) => (current.trim() ? `${current.replace(/\s+$/, "")} ${text}` : text));
-      if (focusedRef.current) inputRef.current?.focus({ preventScroll: true });
-    } catch (e) {
-      if (abort.signal.aborted) return;
-      setFailedClip(clip);
-      setError(errorText(e, "Transcription failed"));
-    } finally {
-      if (transcribeAbort.current === abort) transcribeAbort.current = null;
-      setTranscribing(false);
-    }
-  };
-
-  const startVoice = async () => {
-    setError(null);
-    setFailedClip(null);
-    if (!settings.aiBaseUrl.trim()) {
-      setError("Voice memos are transcribed by your AI endpoint: set it up in Settings › AI on this device.");
-      return;
-    }
-    try {
-      await recorder.start();
-    } catch (e) {
-      setError(e instanceof VoiceError ? e.message : "Couldn't start recording.");
-    }
-  };
-
-  const stopVoice = async () => {
-    const clip = await recorder.stop();
-    if (clip) await transcribe(clip);
-    else setError("Nothing was recorded.");
-  };
-
-  const cancelVoice = () => {
-    recorder.cancel();
-    transcribeAbort.current?.abort();
-    setTranscribing(false);
-  };
-
-  const voiceState = recorder.recording ? "recording" : transcribing ? "transcribing" : "idle";
 
   // "Make note": the memos become one note in the default notebook (asked for
   // the first time), then leave the notepad — moved, not copied.
@@ -538,6 +367,114 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     }
   };
 
+  // Takes memos out of the notepad's latest version, shown at once; null when
+  // none of them is there anymore (changed elsewhere).
+  const takeFromNotepad = async (list: NotepadEntry[]) => {
+    const target = targetRef.current;
+    if (!target) throw new Error("The notepad note is gone");
+    const before = (await api.get(target.vaultId, target.id)).body;
+    const after = removeNotepadEntries(before, list);
+    if (after === before) return null;
+    setBody(after);
+    try {
+      await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: after });
+    } catch (e) {
+      setBody(before);
+      throw e;
+    }
+    void refreshNoteBody(target.id);
+    return { target, before, after };
+  };
+
+  // Swipe left: the memo becomes a thread (keeping its time) and leaves the
+  // notepad. Undo deletes the thread and puts the notepad back.
+  const startThread = async (entry: NotepadEntry) => {
+    if (threadingRef.current || !targetRef.current) return;
+    threadingRef.current = true;
+    setThreading(true);
+    setError(null);
+    if (isEditing([entry])) cancelEdit();
+    try {
+      let thread: Thread;
+      try {
+        thread = await createThread(notepadLocation(settings), [{ day: entry.day, time: entry.time, text: entry.text }]);
+      } catch (e) {
+        setError(errorText(e, "Couldn't start the thread"));
+        return;
+      }
+      const open = { label: "Open", run: () => openThread(thread) };
+      try {
+        const taken = await takeFromNotepad([entry]);
+        if (!taken) {
+          showToast("Thread started — the memo changed elsewhere, so it stays", open);
+          return;
+        }
+        showToast("Thread started", {
+          label: "Undo",
+          run: () => void undoThread(thread, taken.target, taken.before, taken.after),
+        });
+      } catch (e) {
+        showToast("Thread started", open);
+        setError(errorText(e, "Couldn't remove the memo from the notepad"));
+      }
+    } finally {
+      threadingRef.current = false;
+      setThreading(false);
+    }
+  };
+
+  // The notepad is checked first: if it changed since, the thread stays. The
+  // memo goes back before the thread is deleted, so a failure never loses it.
+  const undoThread = async (thread: Thread, target: Target, before: string, after: string) => {
+    try {
+      if ((await api.get(target.vaultId, target.id)).body !== after) {
+        showToast("The notepad changed since — can't undo");
+        return;
+      }
+      setBody(before);
+      try {
+        await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: before });
+      } catch (e) {
+        setBody(after);
+        throw e;
+      }
+      void refreshNoteBody(target.id);
+      await deleteThread(thread);
+    } catch (e) {
+      setError(errorText(e, "Couldn't undo"));
+    }
+  };
+
+  // "Add to thread": the memos become posts of the thread with their own
+  // times (in pad order), then leave the notepad — moved, not copied.
+  const addToThread = async (list: NotepadEntry[], thread: Thread) => {
+    if (list.length === 0) return;
+    setError(null);
+    if (isEditing(list)) cancelEdit();
+    // An undated memo (text above the first day) would run into the previous
+    // post without a heading: it gets the current time instead.
+    const now = postStamp();
+    const posts = list.map(({ day, time, text }) => (day ? { day, time, text } : { ...now, text }));
+    let saved: Thread;
+    try {
+      saved = await mutateThread(thread, (body) => appendThreadPosts(body, posts));
+    } catch (e) {
+      setError(errorText(e, "Couldn't add to the thread"));
+      return;
+    }
+    const open = { label: "Open", run: () => openThread(saved) };
+    try {
+      const taken = await takeFromNotepad(list);
+      showToast(
+        taken ? `Added to “${saved.title}”` : `Added to “${saved.title}” — the memos changed elsewhere, so they stay`,
+        open,
+      );
+    } catch (e) {
+      showToast(`Added to “${saved.title}”`, open);
+      setError(errorText(e, "Couldn't remove the memos from the notepad"));
+    }
+  };
+
   // Runs a selection action, leaving selection mode.
   const onSelection = (action: (list: NotepadEntry[]) => void) => () => {
     const list = selected;
@@ -603,6 +540,13 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                 <FilePlus size={18} />
               </HeaderButton>
               <HeaderButton
+                label="Add to thread"
+                disabled={selected.length === 0 || threads.length === 0}
+                onClick={onSelection(setThreadPicking)}
+              >
+                <MessageSquarePlus size={18} />
+              </HeaderButton>
+              <HeaderButton
                 label="Delete"
                 danger
                 disabled={selected.length === 0}
@@ -638,119 +582,124 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
             </>
           )}
         </div>
+        {tagFilter && (
+          <div
+            className="flex shrink-0 items-center gap-2 px-3 py-2"
+            style={{ borderBottom: "1px solid var(--mob-surface)" }}
+          >
+            <button
+              type="button"
+              onClick={() => setTagFilter(null)}
+              aria-label={`Clear filter #${tagFilter}`}
+              className="flex min-w-0 items-center gap-1 rounded-full px-3 py-1 text-[13px] font-medium"
+              style={{ background: "var(--mob-accent)", color: "#fff" }}
+            >
+              <span className="truncate">#{tagFilter}</span>
+              <X size={14} className="shrink-0" />
+            </button>
+            <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>
+              {visible.length === 1 ? "1 item" : `${visible.length} items`}
+            </span>
+          </div>
+        )}
 
         <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3" style={{ touchAction: "pan-y" }}>
-          {entries.length === 0 ? (
+          {stream.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
               <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
                 Jot it down
               </p>
               <p className="text-xs" style={{ color: "var(--mob-muted)" }}>
                 Type below and press Enter — each memo is added to &quot;{NOTEPAD_TITLE}&quot; with the time. Type @ to
-                link a note; add photos with the image button.
+                link a note; add photos with the image button. Swipe a memo left to start a thread.
               </p>
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+              <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
+                No quick notes with #{tagFilter}
+              </p>
+              <button
+                type="button"
+                onClick={() => setTagFilter(null)}
+                className="text-xs font-medium"
+                style={{ color: "var(--mob-accent)" }}
+              >
+                Show all
+              </button>
             </div>
           ) : (
             <ol className="flex flex-col gap-1.5">
-              {entries.map((entry, i) => (
-                <li key={`${entry.day}-${entry.start}`} className="flex flex-col">
-                  {entry.day !== entries[i - 1]?.day && (
-                    <span
-                      className="my-2 self-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                      style={{ background: "var(--mob-surface)", color: "var(--mob-muted)" }}
-                    >
-                      {entry.day === localDateKey()
-                        ? "Today"
-                        : entry.day
-                          ? new Date(`${entry.day}T00:00`).toLocaleDateString(undefined, {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                            })
-                          : "Earlier"}
-                    </span>
-                  )}
-                  <div className="flex items-center gap-2">
-                    {selectMode && (
-                      <SelectCircle
-                        selected={selectedKeys.has(memoKey(entry))}
-                        onToggle={() => toggleSelected(entry)}
-                      />
-                    )}
-                    <div className="flex min-w-0 flex-1 flex-col items-end">
-                      <MemoBubble
-                        entry={entry}
-                        editing={editing?.start === entry.start && editing.day === entry.day}
-                        selected={selectedKeys.has(memoKey(entry))}
-                        selecting={selectMode}
-                        resolve={resolve}
-                        onOpenNote={openNote}
-                        onOpenImage={setViewer}
-                        onToggleSelect={() => toggleSelected(entry)}
-                      />
-                      <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
-                        {entry.time}
+              {visible.map((item, i) => {
+                const day = dayOf(item);
+                const prev = visible[i - 1];
+                return (
+                  <li
+                    key={item.kind === "memo" ? `m-${item.entry.day}-${item.entry.start}` : `t-${item.thread.id}`}
+                    className="flex flex-col"
+                  >
+                    {(!prev || day !== dayOf(prev)) && (
+                      <span
+                        className="my-2 self-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                        style={{ background: "var(--mob-surface)", color: "var(--mob-muted)" }}
+                      >
+                        {dayLabel(day)}
                       </span>
-                    </div>
-                  </div>
-                </li>
-              ))}
+                    )}
+                    {item.kind === "memo" ? (
+                      <div className="flex items-center gap-2">
+                        {selectMode && (
+                          <SelectCircle
+                            selected={selectedKeys.has(memoKey(item.entry))}
+                            onToggle={() => toggleSelected(item.entry)}
+                          />
+                        )}
+                        <div className="flex min-w-0 flex-1 flex-col items-end">
+                          <MemoBubble
+                            text={item.entry.text}
+                            editing={editing?.start === item.entry.start && editing.day === item.entry.day}
+                            selected={selectedKeys.has(memoKey(item.entry))}
+                            selecting={selectMode}
+                            resolve={resolve}
+                            onOpenNote={openNote}
+                            onOpenImage={setViewer}
+                            onOpenTag={filterByTag}
+                            onToggleSelect={() => toggleSelected(item.entry)}
+                            onSwipeLeft={threading ? undefined : () => void startThread(item.entry)}
+                          />
+                          <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                            {item.entry.time}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex min-w-0 flex-col items-end">
+                        <ThreadCard
+                          thread={item.thread}
+                          dimmed={selectMode}
+                          onOpen={() => openThread(item.thread)}
+                          onOpenTag={filterByTag}
+                        />
+                        <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                          {item.key.slice(11)}
+                        </span>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </div>
 
-        {toast && (
-          <div
-            role="status"
-            className={
-              "absolute left-1/2 top-20 z-30 flex max-w-[90%] -translate-x-1/2 items-center gap-3 rounded-full bg-black/80 px-3.5 py-1.5 text-xs font-medium text-white" +
-              (toast.action ? "" : " pointer-events-none")
-            }
-          >
-            <span className="truncate">{toast.text}</span>
-            {toast.action && (
-              <button
-                type="button"
-                onClick={() => {
-                  toast.action?.run();
-                  setToast(null);
-                }}
-                className="shrink-0 font-semibold underline-offset-2 active:underline"
-              >
-                {toast.action.label}
-              </button>
-            )}
-          </div>
-        )}
+        <MemoToast toast={toast} onDismiss={dismissToast} />
 
-        {error && (
-          <div className="flex items-start gap-3 px-3 pb-1 text-xs" style={{ color: "#f87171" }}>
-            <span className="min-w-0 flex-1">{error}</span>
-            {failedClip && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void transcribe(failedClip)}
-                  className="shrink-0 font-semibold"
-                  style={{ color: "var(--mob-accent)" }}
-                >
-                  Retry
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFailedClip(null);
-                    setError(null);
-                  }}
-                  className="shrink-0"
-                  style={{ color: "var(--mob-muted)" }}
-                >
-                  Discard
-                </button>
-              </>
-            )}
-          </div>
-        )}
+        <DraftError
+          error={error}
+          canRetry={canRetryTranscription}
+          onRetry={retryTranscription}
+          onDiscard={discardFailedClip}
+        />
 
         <MemoComposer
           value={input}
@@ -768,13 +717,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           onSend={() => void post()}
           suggest={suggest}
           keyboardOpen={vv.isKeyboardOpen}
-          voice={{
-            state: voiceState,
-            elapsedMs: recorder.elapsedMs,
-            onStart: () => void startVoice(),
-            onStop: () => void stopVoice(),
-            onCancel: cancelVoice,
-          }}
+          voice={voice}
         />
       </div>
 
@@ -790,95 +733,24 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           }}
         />
       )}
+      {threadPicking && (
+        <MobileActionSheet
+          title="Add to thread"
+          subtitle={threadPicking.length === 1 ? "1 memo" : `${threadPicking.length} memos`}
+          sections={[
+            threadsByActivity.map((thread) => ({
+              label: `${thread.title || "Untitled thread"} · ${replyLabel(thread)}`,
+              icon: <MessagesSquare size={18} />,
+              onClick: () => {
+                const list = threadPicking;
+                setThreadPicking(null);
+                void addToThread(list, thread);
+              },
+            })),
+          ]}
+          onClose={() => setThreadPicking(null)}
+        />
+      )}
     </section>
-  );
-}
-
-function HeaderButton({
-  label,
-  danger = false,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  danger?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
-      onClick={onClick}
-      className={
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 disabled:opacity-40" +
-        (danger ? " text-red-600 dark:text-red-400" : "")
-      }
-      style={{ background: "var(--mob-surface)", color: danger ? undefined : "var(--mob-text)" }}
-    >
-      {children}
-    </button>
-  );
-}
-
-// The circle left of a memo: tap to select it (several can be selected).
-function SelectCircle({ selected, onToggle }: { selected: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={selected}
-      aria-label="Select memo"
-      onClick={onToggle}
-      className="flex h-9 w-9 shrink-0 items-center justify-center"
-    >
-      <span
-        className="flex h-[22px] w-[22px] items-center justify-center rounded-full transition-colors"
-        style={
-          selected
-            ? { background: "var(--mob-accent)", color: "#fff" }
-            : { border: "2px solid color-mix(in srgb, var(--mob-muted) 55%, transparent)" }
-        }
-      >
-        {selected && <Check size={14} strokeWidth={3} />}
-      </span>
-    </button>
-  );
-}
-
-// Full-screen image, portaled out of the pager (its transform would anchor a
-// fixed overlay to the track instead of the screen).
-function ImageViewer({ url, onClose }: { url: string; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return createPortal(
-    <div
-      role="dialog"
-      aria-label="Image"
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/90 p-2"
-      onClick={onClose}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element -- vault image */}
-      <img src={url} alt="" className="max-h-full max-w-full object-contain" />
-      <button
-        type="button"
-        aria-label="Close image"
-        onClick={onClose}
-        className="absolute right-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"
-        style={{ top: "calc(env(safe-area-inset-top, 0px) + 12px)" }}
-      >
-        <X size={20} />
-      </button>
-    </div>,
-    document.body,
   );
 }

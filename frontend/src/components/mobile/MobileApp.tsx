@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
@@ -16,10 +17,13 @@ import MobileSpacesPane from "@/components/spaces/MobileSpacesPane";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar, type PagerFocus } from "@/components/useSwipeSidebar";
 import QuickCapturePane from "./QuickCapturePane";
+import ThreadView from "@/components/threads/ThreadView";
+import { threadRefFrom, threadsViewTagFrom, type ThreadRef } from "@/components/threads/threadEvents";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
+import { OPEN_THREAD_EVENT, OPEN_THREADS_VIEW_EVENT } from "@/lib/threads";
 
 import MobileBottomPill from "./MobileBottomPill";
 import MobileNoteView from "./MobileNoteView";
@@ -84,6 +88,10 @@ export default function MobileApp() {
   // closed; we set the view then open the sidebar).
   const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  // Threads: the thread in the full-screen overlay (also highlighted in the
+  // Threads view), and a tag filter requested for the Threads view ("" = none).
+  const [openThreadRef, setOpenThreadRef] = useState<ThreadRef | null>(null);
+  const [threadTag, setThreadTag] = useState<string | null>(null);
 
   // Persist the sidebar section (tree/recent/shortcuts/bookmarks/tags/tasks/
   // collections/journal) + selected tag across reloads, so the app reopens where
@@ -187,6 +195,8 @@ export default function MobileApp() {
     prevActiveIdRef.current = activeId ?? null;
     if (spaceChanged) return;
     setPagerFocus("editor");
+    // A note opened from a thread (a [[link]]) shows instead of the thread.
+    setOpenThreadRef(null);
   }, [activeId, activeSpaceId]);
 
   // The shared CommandPalette dispatches nexote:select-view and
@@ -227,11 +237,28 @@ export default function MobileApp() {
         }
       });
     };
+    const onOpenThread = (e: Event) => {
+      const ref = threadRefFrom(e);
+      if (!ref) return;
+      blurPagerField();
+      setOpenThreadRef(ref);
+    };
+    // Like a "Go to" view: the sidebar on the Threads view, now filtered.
+    // Closes the thread overlay so a #tag tapped in a thread shows the list.
+    const onOpenThreadsView = (e: Event) => {
+      setThreadTag(threadsViewTagFrom(e));
+      setSidebarView("threads");
+      setOpenThreadRef(null);
+      blurPagerField();
+      setPagerFocus("sidebar");
+    };
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
+    window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
+    window.addEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
     const onNewCollection = () => setCollectionFormOpen(true);
     window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
@@ -240,6 +267,8 @@ export default function MobileApp() {
       window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
+      window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
+      window.removeEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
       window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
@@ -334,6 +363,9 @@ export default function MobileApp() {
             selectedTag={selectedTag}
             onSelectView={setSidebarView}
             onSelectTagConsumed={() => setSelectedTag(null)}
+            threadTag={threadTag}
+            onThreadTagConsumed={() => setThreadTag(null)}
+            openThreadId={openThreadRef?.id ?? null}
           />
 
           <main className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden">
@@ -468,6 +500,28 @@ export default function MobileApp() {
           }
         }}
       />
+
+      {/* The open thread, full screen. Portaled out of the pager (its
+          transform would anchor a fixed overlay to the track); above the
+          pager and pill, below settings, action sheets and the palette. */}
+      {openThreadRef &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-label="Thread"
+            className="mob-shell-root fixed inset-0 z-[55] flex flex-col overflow-hidden"
+            style={{ background: "var(--mob-bg)" }}
+          >
+            <ThreadView
+              key={`${openThreadRef.vaultId}:${openThreadRef.id}`}
+              vaultId={openThreadRef.vaultId}
+              id={openThreadRef.id}
+              variant="mobile"
+              onClose={() => setOpenThreadRef(null)}
+            />
+          </div>,
+          document.body,
+        )}
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 

@@ -52,6 +52,7 @@ import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type Co
 import { makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
 
 import { type SidebarView } from "./Ribbon";
+import ThreadsList from "./threads/ThreadsList";
 
 function getVaultIcon(iconName?: string) {
   return getIcon(iconName, Database);
@@ -205,13 +206,28 @@ type FileTreeProps = {
   view?: SidebarView;
   selectedTag?: string | null;
   onSelectTagConsumed?: () => void;
+  /** Threads view: a tag filter requested from outside, and the thread showing in the thread view. */
+  threadTag?: string | null;
+  onThreadTagConsumed?: () => void;
+  openThreadId?: string | null;
   onControlsReady?: (c: TreeControls) => void;
   onSelectView?: (view: SidebarView) => void;
   /** Touch shell: bigger rows, long press opens an action sheet. */
   touch?: boolean;
 };
 
-export default function FileTree({ collapsed, view = "tree", selectedTag, onSelectTagConsumed, onControlsReady, onSelectView, touch = false }: FileTreeProps) {
+export default function FileTree({
+  collapsed,
+  view = "tree",
+  selectedTag,
+  onSelectTagConsumed,
+  threadTag,
+  onThreadTagConsumed,
+  openThreadId,
+  onControlsReady,
+  onSelectView,
+  touch = false,
+}: FileTreeProps) {
   const {
     notes,
     settings,
@@ -399,6 +415,7 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     journal: "journal",
     tags: "tags",
     tasks: "tasks",
+    threads: "threads",
     collections: "collections",
   };
 
@@ -626,6 +643,8 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      // The desktop thread panel's buttons keep their own Enter/Space/arrows.
+      if (el?.closest("[data-thread-panel]")) return;
 
       // Tab / Shift+Tab — switch between sections.
       if (e.key === "Tab") {
@@ -1258,6 +1277,13 @@ export default function FileTree({ collapsed, view = "tree", selectedTag, onSele
               setTreeSelectedNav={setTreeSelectedNav}
               onOpenNote={openNoteInVault}
               onToggle={toggleTaskItem}
+            />
+          ) : view === "threads" ? (
+            <ThreadsList
+              touch={touch}
+              openThreadId={openThreadId}
+              initialTag={threadTag}
+              onInitialTagConsumed={onThreadTagConsumed}
             />
           ) : view === "collections" ? (
             <CollectionsView

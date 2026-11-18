@@ -23,6 +23,30 @@ const COMPACT_MAX_HEIGHT = 160;
 
 export type VoiceState = "idle" | "recording" | "transcribing";
 
+/** The composer's wording: what is written, and where it goes. */
+export type ComposerLabels = {
+  send: string;
+  save: string;
+  placeholder: string;
+  editPlaceholder: string;
+  newTitle: string;
+  editTitle: string;
+  /** The banner while editing: the edited memo's time ("" when it has none). */
+  editing: (time: string) => string;
+  field: string;
+};
+
+const MEMO_LABELS: ComposerLabels = {
+  send: "Post to notepad",
+  save: "Save memo",
+  placeholder: "Write a memo…",
+  editPlaceholder: "Edit memo…",
+  newTitle: "New memo",
+  editTitle: "Edit memo",
+  editing: (time) => `Editing the memo from ${time}`,
+  field: "Quick note",
+};
+
 const formatElapsed = (ms: number) => {
   const s = Math.floor(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -53,6 +77,8 @@ export function MemoComposer({
   suggest,
   keyboardOpen,
   voice,
+  labels = MEMO_LABELS,
+  allowFullscreen = true,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -76,6 +102,9 @@ export function MemoComposer({
     onStop: () => void;
     onCancel: () => void;
   };
+  labels?: ComposerLabels;
+  /** False hides the expand button (desktop: the panel is the writing room). */
+  allowFullscreen?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
@@ -134,7 +163,7 @@ export function MemoComposer({
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   };
 
-  const sendLabel = editing ? "Save memo" : "Post to notepad";
+  const sendLabel = editing ? labels.save : labels.send;
   const sendDisabled = !canSend || posting;
   const send = () => {
     if (!sendDisabled) onSend();
@@ -301,7 +330,7 @@ export function MemoComposer({
             <Minimize2 size={18} />
           </button>
           <span className="flex-1 text-lg font-semibold" style={{ color: "var(--mob-text)" }}>
-            {editing ? "Edit memo" : "New memo"}
+            {editing ? labels.editTitle : labels.newTitle}
           </span>
           <button
             type="button"
@@ -323,7 +352,7 @@ export function MemoComposer({
           style={{ background: "var(--mob-surface)", color: "var(--mob-muted)" }}
         >
           <Pencil size={13} className="shrink-0" />
-          <span className="flex-1">Editing the memo from {editing.time}</span>
+          <span className="flex-1">{labels.editing(editing.time)}</span>
           <button
             type="button"
             {...tap(onCancelEdit)}
@@ -433,8 +462,8 @@ export function MemoComposer({
             }}
             rows={1}
             enterKeyHint={fullscreen ? "enter" : "send"}
-            placeholder={editing ? "Edit memo…" : "Write a memo…"}
-            aria-label="Quick note"
+            placeholder={editing ? labels.editPlaceholder : labels.placeholder}
+            aria-label={labels.field}
             className={
               fullscreen
                 ? "block h-full w-full resize-none bg-transparent px-4 py-3 text-[16px] leading-relaxed outline-none"
@@ -442,7 +471,7 @@ export function MemoComposer({
             }
             style={{ color: "var(--mob-text)" }}
           />
-          {!fullscreen && (
+          {!fullscreen && allowFullscreen && (
             <PillIcon label="Write in full screen" tapHandlers={tap(() => setFullscreen(true))}>
               <Maximize2 size={18} />
             </PillIcon>

@@ -106,6 +106,22 @@ function findNotepadEntry(entries: NotepadEntry[], target: Pick<NotepadEntry, "d
 }
 
 /**
+ * The title a memo's text gives a note or thread: its first text line, links
+ * reduced to their text, cut at a word boundary to 80 characters; "" for a
+ * memo without text (images only).
+ */
+export function memoTitle(text: string): string {
+  const first = text.split("\n").find((l) => l.trim() && !IMAGE_LINE.test(l.trim()))?.trim() ?? "";
+  let title = first.replace(MENTION_RE, (_m, target: string, label?: string) => (label ?? target).trim()).trim();
+  if (title.length > 80) {
+    const cut = title.slice(0, 80);
+    const space = cut.lastIndexOf(" ");
+    title = (space > 40 ? cut.slice(0, space) : cut).trim();
+  }
+  return title;
+}
+
+/**
  * A note made from a memo: the first text line, links reduced to their text,
  * becomes the title. With a title heading the heading replaces that line,
  * unless the line says more (links, cut off), then it stays below.
@@ -114,13 +130,7 @@ export function memoToNote(entry: NotepadEntry, titleHeading: boolean): { title:
   const lines = entry.text.split("\n");
   const firstIndex = lines.findIndex((l) => l.trim() && !IMAGE_LINE.test(l.trim()));
   const first = firstIndex >= 0 ? lines[firstIndex].trim() : "";
-  let title = first.replace(MENTION_RE, (_m, target: string, label?: string) => (label ?? target).trim()).trim();
-  if (title.length > 80) {
-    const cut = title.slice(0, 80);
-    const space = cut.lastIndexOf(" ");
-    title = (space > 40 ? cut.slice(0, space) : cut).trim();
-  }
-  if (!title) title = `Memo ${entry.day} ${entry.time}`.trim();
+  const title = memoTitle(entry.text) || `Memo ${entry.day} ${entry.time}`.trim();
   if (!titleHeading) return { title, body: `${entry.text}\n` };
   const rest = title === first ? lines.filter((_, i) => i !== firstIndex) : lines;
   const restText = rest.join("\n").trim();

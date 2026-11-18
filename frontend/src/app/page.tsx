@@ -34,10 +34,13 @@ import TopBar from "@/components/TopBar";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import MobileApp from "@/components/mobile/MobileApp";
+import ThreadView from "@/components/threads/ThreadView";
+import { threadRefFrom, threadsViewTagFrom, type ThreadRef } from "@/components/threads/threadEvents";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, NotesProvider, useNotes, type TreeSort } from "@/lib/notes-context";
 import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
+import { OPEN_THREAD_EVENT, OPEN_THREADS_VIEW_EVENT } from "@/lib/threads";
 
 // One address for every device: the touch interface (phones, tablets, narrow
 // windows) or the desktop one, chosen once when the app starts (Settings ›
@@ -102,8 +105,13 @@ function AppShell() {
   useEffect(() => {
     if (sidebarView === "tags" && !settings.showTagsSection) setSidebarView("tree");
     else if (sidebarView === "tasks" && !settings.showTasksSection) setSidebarView("tree");
-  }, [sidebarView, settings.showTagsSection, settings.showTasksSection]);
+    else if (sidebarView === "threads" && !settings.showThreadsSection) setSidebarView("tree");
+  }, [sidebarView, settings.showTagsSection, settings.showTasksSection, settings.showThreadsSection]);
   const [tagSelection, setTagSelection] = useState<string | null>(null);
+  // Threads: the thread in the right panel (also highlighted in the Threads
+  // view), and a tag filter requested for the Threads view ("" = none).
+  const [openThreadRef, setOpenThreadRef] = useState<ThreadRef | null>(null);
+  const [threadTag, setThreadTag] = useState<string | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
@@ -143,6 +151,15 @@ function AppShell() {
         setSidebarView("tags");
       }
     };
+    const onOpenThread = (e: Event) => {
+      const ref = threadRefFrom(e);
+      if (ref) setOpenThreadRef(ref);
+    };
+    const onOpenThreadsView = (e: Event) => {
+      setThreadTag(threadsViewTagFrom(e));
+      setSidebarView("threads");
+      setCollapsed(false);
+    };
     const onOpenCollection = (e: Event) => {
       const folder = (e as CustomEvent).detail as string;
       if (!folder) return;
@@ -157,6 +174,8 @@ function AppShell() {
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
+    window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
+    window.addEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
     const onNewCollection = () => setCollectionFormOpen(true);
     window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
@@ -166,9 +185,31 @@ function AppShell() {
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
+      window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
+      window.removeEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
       window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
+
+  // Escape closes the thread panel — unless something else used the key
+  // (ThreadView cancelling an edit) or it was typed in a field elsewhere
+  // (the command palette, the editor).
+  useEffect(() => {
+    if (!openThreadRef) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const t = e.target;
+      if (
+        t instanceof HTMLElement &&
+        !t.closest("[data-thread-panel]") &&
+        (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA")
+      )
+        return;
+      setOpenThreadRef(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openThreadRef]);
 
   // Persist + hydrate sidebar width (drag-to-resize). SSR-safe via effect.
   useEffect(() => {
@@ -340,6 +381,9 @@ function AppShell() {
                 view={sidebarView}
                 selectedTag={tagSelection}
                 onSelectTagConsumed={() => setTagSelection(null)}
+                threadTag={threadTag}
+                onThreadTagConsumed={() => setThreadTag(null)}
+                openThreadId={openThreadRef?.id ?? null}
                 onSelectView={setSidebarView}
                 onControlsReady={setTreeControls}
               />
@@ -407,6 +451,25 @@ function AppShell() {
               />
             )}
           </main>
+
+          {/* Thread panel: the chat view of the open thread beside the editor
+              (a thread can't open in the editor). Full screen on narrow windows. */}
+          {openThreadRef && (
+            <aside
+              data-thread-panel
+              aria-label="Thread"
+              className="flex h-full w-[420px] max-w-full shrink-0 flex-col overflow-hidden bg-background max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full"
+              style={{ borderLeft: "1px solid var(--border)" }}
+            >
+              <ThreadView
+                key={`${openThreadRef.vaultId}:${openThreadRef.id}`}
+                vaultId={openThreadRef.vaultId}
+                id={openThreadRef.id}
+                variant="desktop"
+                onClose={() => setOpenThreadRef(null)}
+              />
+            </aside>
+          )}
         </div>
 
         {/* Floating new-note button (desktop only); viewers can't add notes. */}
@@ -458,6 +521,7 @@ const VIEW_TITLES: Record<Exclude<SidebarView, "tree">, string> = {
   tags: "Tags",
   tasks: "Tasks",
   collections: "Collections",
+  threads: "Threads",
 };
 
 function SidebarHeader({

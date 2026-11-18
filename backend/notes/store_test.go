@@ -372,6 +372,27 @@ func TestCreateIndexesInlineTags(t *testing.T) {
 	}
 }
 
+// Quick-notes threads are found by their type: it must survive a reread and
+// later saves that don't mention it.
+func TestCreateWithType(t *testing.T) {
+	s := newTestStore(t)
+
+	doc, err := s.Create(CreateInput{Title: "Garden", Path: "Threads", Type: "thread", Body: "## Garden\n\n### 2026-11-18 09:14\nSeeds #garden\n"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := s.Update(doc.Meta.ID, UpdateInput{Title: "Garden", Body: doc.Body + "\n### 2026-11-19 08:02\nReply\n"}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got, err := s.Get(doc.Meta.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Meta.Type != "thread" || len(got.Meta.Tags) != 1 || got.Meta.Tags[0] != "garden" {
+		t.Fatalf("type %q tags %v, want thread [garden]", got.Meta.Type, got.Meta.Tags)
+	}
+}
+
 func TestCreateWithClientID(t *testing.T) {
 	s := newTestStore(t)
 

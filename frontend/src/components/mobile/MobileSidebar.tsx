@@ -14,6 +14,7 @@ import {
   Library,
   List,
   ListTodo,
+  MessagesSquare,
   Settings,
   SlidersHorizontal,
   Star,
@@ -35,6 +36,9 @@ type Props = {
   selectedTag: string | null;
   onSelectView: (view: SidebarView) => void;
   onSelectTagConsumed: () => void;
+  threadTag: string | null;
+  onThreadTagConsumed: () => void;
+  openThreadId: string | null;
 };
 
 const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }[] = [
@@ -44,6 +48,7 @@ const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }
   { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
   { icon: Hash, label: "Tags", view: "tags" },
   { icon: ListTodo, label: "Tasks", view: "tasks" },
+  { icon: MessagesSquare, label: "Threads", view: "threads" },
   { icon: Library, label: "Collections", view: "collections" },
   { icon: CalendarDays, label: "Daily", view: "journal" },
 ];
@@ -56,6 +61,9 @@ export default function MobileSidebar({
   selectedTag,
   onSelectView,
   onSelectTagConsumed,
+  threadTag,
+  onThreadTagConsumed,
+  openThreadId,
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
@@ -69,14 +77,16 @@ export default function MobileSidebar({
   const visibleItems = RIBBON_ITEMS.filter(
     (item) =>
       (item.view !== "tags" || settings.showTagsSection) &&
-      (item.view !== "tasks" || settings.showTasksSection),
+      (item.view !== "tasks" || settings.showTasksSection) &&
+      (item.view !== "threads" || settings.showThreadsSection),
   );
 
   // If the persisted view is now hidden, fall back to the note tree.
   useEffect(() => {
     if (view === "tags" && !settings.showTagsSection) onSelectView("tree");
     else if (view === "tasks" && !settings.showTasksSection) onSelectView("tree");
-  }, [view, settings.showTagsSection, settings.showTasksSection, onSelectView]);
+    else if (view === "threads" && !settings.showThreadsSection) onSelectView("tree");
+  }, [view, settings.showTagsSection, settings.showTasksSection, settings.showThreadsSection, onSelectView]);
 
   useEffect(() => {
     const el = fileTreeBox.current;
@@ -185,6 +195,9 @@ export default function MobileSidebar({
             view={view}
             selectedTag={selectedTag}
             onSelectTagConsumed={onSelectTagConsumed}
+            threadTag={threadTag}
+            onThreadTagConsumed={onThreadTagConsumed}
+            openThreadId={openThreadId}
             onControlsReady={onControlsReady}
             onSelectView={onSelectView}
             touch

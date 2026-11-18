@@ -8,6 +8,7 @@ import {
   Hash,
   Library,
   ListTodo,
+  MessagesSquare,
   Settings,
   Star,
   Terminal,
@@ -25,6 +26,7 @@ export type SidebarView =
   | "journal"
   | "tags"
   | "tasks"
+  | "threads"
   | "collections";
 
 type RibbonProps = {
@@ -55,6 +57,7 @@ export default function Ribbon({
     { icon: Bookmark, label: "Bookmarks", view: "bookmarks" },
     ...(settings.showTagsSection ? [{ icon: Hash, label: "Tags", view: "tags" as const }] : []),
     ...(settings.showTasksSection ? [{ icon: ListTodo, label: "Tasks", view: "tasks" as const }] : []),
+    ...(settings.showThreadsSection ? [{ icon: MessagesSquare, label: "Threads", view: "threads" as const }] : []),
     { icon: Library, label: "Collections", view: "collections" },
     { icon: CalendarDays, label: "Daily notes", view: "journal", daily: true },
   ];

@@ -1119,6 +1119,17 @@ html:has(.mob-shell-root) body {
 body:has([role="toolbar"][aria-label="Formatting"]) .nexote-fab {
   bottom: 64px;
 }
+/* The desktop thread panel (420px, app/page.tsx) takes the right edge: the
+ * new-note FAB moves left of it instead of covering the panel's send button;
+ * below md the panel covers the window, so the FAB hides. */
+body:has([data-thread-panel]) .nexote-fab {
+  right: calc(420px + 24px);
+}
+@media (max-width: 767.98px) {
+  body:has([data-thread-panel]) .nexote-fab {
+    display: none;
+  }
+}
 
 /* Note tree (FileTree). Indent guides: a hairline under each folder's
  * chevron along its open contents. */

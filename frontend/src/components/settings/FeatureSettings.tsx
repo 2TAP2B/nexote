@@ -74,6 +74,12 @@ export function FeatureSettings() {
           checked={settings.showTasksSection}
           onChange={(v) => updateSettings({ showTasksSection: v })}
         />
+        <ToggleSetting
+          name="Threads"
+          description="Threads view in the sidebar."
+          checked={settings.showThreadsSection}
+          onChange={(v) => updateSettings({ showThreadsSection: v })}
+        />
       </SettingGroup>
       <SettingGroup heading="Command palette">
         <ToggleSetting

@@ -1,6 +1,6 @@
 # Quick notes
 
-Quick notes are for capturing a thought quickly on a phone. They look like a messenger chat: short memos appear as bubbles, newest at the bottom, and a composer sits at the bottom of the screen. Quick notes are part of the [mobile app](./mobile-app); open the dashboard and swipe left.
+Quick notes are for capturing a thought quickly on a phone. They look like a messenger chat: short memos appear as bubbles, newest at the bottom, and a composer sits at the bottom of the screen. Quick notes are part of the [mobile app](./mobile-app); open the dashboard and swipe left. A memo that keeps growing can become a [thread](#threads).
 
 ![Quick notes in the mobile app](/screenshots/mobile-quick-notes.png)
 
@@ -48,6 +48,7 @@ Tap **Select memos** in the header, or long-press a memo, to enter selection mod
 | Copy | Copy the text of the selected memos. |
 | Make note | Turn the selected memos into one new note. |
 | Delete | Remove the memos. A toast offers Undo for five seconds, as long as the Notepad has not changed since. |
+| Add to thread | Add the selected memos to an existing [thread](#threads) as replies. They keep their original times and leave the Notepad. |
 
 ### Make note
 
@@ -66,3 +67,35 @@ While the composer is empty, a microphone button takes the place of the send but
 - Browsers only allow microphone access on https origins or `localhost`. Over plain http the button explains this instead of recording.
 - A recording stops automatically after 10 minutes. The server accepts audio files up to 25 MB.
 - If the transcription fails, the recording is kept so you can retry or discard it.
+
+## Threads
+
+A thread is a memo that grew replies, for following a thought over days. **Swipe a memo to the left** to turn it into a thread; a toast offers Undo. The memo leaves the Notepad and stays in the stream as a thread card with its title, the latest post and the number of replies. A new reply moves the card down to the reply's time.
+
+Tap a card to open the thread. It looks like the quick notes: the posts are bubbles, the first one marked **Started**, and the composer adds replies (text, images, `@` links, voice memos). Long-press a post to edit, copy or delete it. Tap the title to rename the thread; **More** also deletes it.
+
+**Swipe a reply to the left** to start a new thread from it. The reply is replaced by a link to the new thread, so the two stay connected. On desktop, the same is a button next to each reply.
+
+### Tags
+
+Write `#tags` in memos and replies. A thread's tags are the tags of all its posts. Tapping a tag in the quick notes filters the stream to memos and threads with that tag; tapping one inside a thread opens the Threads view filtered by it.
+
+### Threads view
+
+The sidebar's **Threads** view (ribbon icon on desktop, sidebar strip on phones) lists all threads, most recent activity first, with a search field and the tags of all threads to filter by. Clicking a thread opens it: on desktop in a panel beside the note, on phones full screen. Threads also show up in the command palette's search. **Settings › Features › Sidebar › Threads** hides the view.
+
+### Storage
+
+Each thread is a note of its own (type `thread`) in a **Threads** folder next to the Notepad, so with the default location only you can see it. Every post is a section with its date and time:
+
+```markdown
+## Garden ideas
+
+### 2026-11-18 09:14
+Order seeds before March #garden
+
+### 2026-11-19 08:02
+Tomatoes: start indoors in February
+```
+
+Images in replies are stored next to the thread. When the Notepad lives in a vault, threads are ordinary notes there and can also be opened in the editor; any text before the first post heading shows as a post without a time.

@@ -12,6 +12,7 @@ import {
   Layers,
   LayoutDashboard,
   ListTodo,
+  MessagesSquare,
   PanelLeftClose,
   Search,
   Settings,
@@ -25,6 +26,9 @@ import { useTheme } from "next-themes";
 
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { api, type SearchHit } from "@/lib/api";
+import { makeSnippet } from "@/lib/note-utils";
+import { notepadLocation } from "@/lib/notepad";
+import { openThread, useThreads } from "@/lib/threads";
 import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
 import { useCanEdit } from "@/components/useCanEdit";
 
@@ -46,6 +50,7 @@ type Item =
   | { kind: "note"; id: string; title: string; path?: string; vaultId?: string; vaultName?: string; snippet?: string }
   | { kind: "create"; label: string; title: string }
   | { kind: "space"; id: string; name: string }
+  | { kind: "thread"; vaultId: string; id: string; title: string; snippet?: string }
   | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
@@ -59,6 +64,8 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Threads (in the Notepad's vault) open in the thread view, never the editor.
+  const { threads } = useThreads(notepadLocation(settings).vaultId);
 
   useEffect(() => {
     if (open) {
@@ -182,6 +189,15 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
           ),
       },
       {
+        id: "go-threads",
+        label: "Go to Threads",
+        icon: <MessagesSquare className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () =>
+          window.dispatchEvent(
+            new CustomEvent("nexote:select-view", { detail: "threads" }),
+          ),
+      },
+      {
         id: "go-daily",
         label: "Go to Daily notes",
         icon: <CalendarDays className="h-4 w-4 shrink-0 text-muted-foreground" />,
@@ -273,14 +289,34 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
     }
 
+    // Then threads whose title or posts contain the query.
+    const threadIds = new Set(threads.map((t) => t.id));
+    if (q) {
+      const matched = threads
+        .map((t) => ({ t, post: t.posts.find((p) => p.text.toLowerCase().includes(q)) }))
+        .filter(({ t, post }) => post || t.title.toLowerCase().includes(q))
+        .sort((a, b) => b.t.updatedAt.localeCompare(a.t.updatedAt));
+      for (const { t, post } of matched) {
+        const shown = post ?? t.posts[t.posts.length - 1];
+        result.push({
+          kind: "thread",
+          vaultId: t.vaultId,
+          id: t.id,
+          title: t.title || "Untitled thread",
+          snippet: shown ? makeSnippet(shown.text, 100) : undefined,
+        });
+      }
+    }
+
     // Then notes — merged from the instant local title filter and the
     // backend full-text (title + content) hits, de-duplicated by vault:id.
+    // Thread notes are left out: they're listed above and open elsewhere.
     const key = (vid: string | undefined, id: string) => `${vid ?? activeVault?.id ?? ""}:${id}`;
     const seen = new Set<string>();
     if (q) {
       // Sorted by updatedAt desc locally (instant).
       const localMatched = [...notes]
-        .filter((n) => n.title.toLowerCase().includes(q))
+        .filter((n) => n.title.toLowerCase().includes(q) && !threadIds.has(n.id))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       for (const n of localMatched) {
         const k = key(undefined, n.id);
@@ -290,7 +326,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
       for (const h of hits) {
         const k = key(h.vaultId === "journal" ? "" : h.vaultId, h.id);
-        if (seen.has(k)) continue;
+        if (seen.has(k) || threadIds.has(h.id)) continue;
         seen.add(k);
         result.push({
           kind: "note",
@@ -302,9 +338,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         });
       }
     } else {
-      const sorted = [...notes].sort((a, b) =>
-        b.updatedAt.localeCompare(a.updatedAt),
-      );
+      const sorted = [...notes]
+        .filter((n) => !threadIds.has(n.id))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       // If empty query, limit notes to 8 so commands are visible
       for (const n of sorted.slice(0, 8)) {
         result.push({ kind: "note", id: n.id, title: n.title, path: n.path });
@@ -321,7 +357,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, spaces, activeSpaceId, activeVault, tagsByVault, query, settings, canEditSpace]);
+  }, [commands, notes, spaces, activeSpaceId, activeVault, tagsByVault, query, settings, canEditSpace, threads]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));
@@ -348,6 +384,9 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         break;
       case "space":
         switchSpace(item.id);
+        break;
+      case "thread":
+        openThread(item);
         break;
       case "tag":
         window.dispatchEvent(
@@ -383,6 +422,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     command: "Commands",
     space: "Switch space",
     note: "Notes",
+    thread: "Threads",
     tag: "Tags",
     create: "Create",
   };
@@ -470,9 +510,10 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                           {item.kind === "create" && <FilePlus />}
                           {item.kind === "space" && <Layers />}
                           {item.kind === "note" && <FileText />}
+                          {item.kind === "thread" && <MessagesSquare />}
                           {item.kind === "tag" && <Hash />}
                         </span>
-                        {item.kind === "note" && item.snippet ? (
+                        {(item.kind === "note" || item.kind === "thread") && item.snippet ? (
                           <span className="flex min-w-0 flex-1 flex-col">
                             <span className="truncate">{item.title || "Untitled"}</span>
                             <span className="truncate text-xs text-muted-foreground">{item.snippet}</span>
@@ -483,7 +524,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
                               ? item.cmd.label
                               : item.kind === "space"
                                 ? item.name
-                                : item.kind === "note"
+                                : item.kind === "note" || item.kind === "thread"
                                   ? item.title || "Untitled"
                                   : item.kind === "tag"
                                     ? `#${item.name}`

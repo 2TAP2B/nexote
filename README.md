@@ -44,7 +44,8 @@ More screenshots, including the phone app, are in the [documentation](https://2t
 
 **Quick notes**
 - Messenger-style Notepad for short memos, with images and `@` note links.
-- Select memos to edit, copy, delete (with undo) or turn them into a note.
+- Select memos to edit, copy, delete (with undo), turn them into a note or add them to a thread.
+- Swipe a memo left to turn it into a thread: replies over days, `#tags`, a Threads view on desktop and phone, and a thread panel next to the note on desktop.
 - Voice memos, transcribed by your OpenAI-compatible endpoint.
 - The Notepad is private by default or lives in a vault of your choice.
 

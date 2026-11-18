@@ -116,7 +116,8 @@ export function MobileActionSheet({
           {groups.map((group, i) => (
             <ul key={i} className="shrink-0 overflow-hidden rounded-xl bg-muted/60">
               {group.map((action, j) => (
-                <li key={action.label}>
+                // Labels may repeat (two threads with one title); the list is fixed while shown.
+                <li key={`${j}-${action.label}`}>
                   {j > 0 && <div aria-hidden className="ml-[52px] border-t border-border/70" />}
                   <button
                     type="button"
