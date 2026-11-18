@@ -86,7 +86,7 @@ touches**. Do not re-read the whole repo per session.
 | `notes/collections.go` | `CollectionMeta`/`CollectionField`/`CollectionFieldType` + `CollectionRegistry`. |
 | `notes/history.go` | Per-note full snapshots under `<store>/.history/<noteId>/<unix-nanos>.md`. |
 | `notes/snippet.go` | Plain-text note previews (`makeSnippet`, `contentSnippet`) for lists/history/search. Mirrored by `makeSnippet` in `src/lib/note-utils.ts` — keep both in sync. |
-| `notes/images.go` | Image upload/list/read/delete + cross-folder & cross-vault migration on note move. Traversal-guarded. |
+| `notes/images.go` | Image + PDF upload/list/read/delete + cross-folder & cross-vault migration on note move (`IsAttachmentName` = image or PDF; `ListImages`/Images view stay images-only). `SavePDF` checks the `%PDF-` signature and names the file `<slug of original>-<6 chars>.pdf` (no spaces/parens: the URL regexes stop there). Traversal-guarded. |
 | `notes/bookmarks.go` | `idList` (order-preserving ID set) backing per-user `Bookmarks` and `Shortcuts`; legacy-file adoption. |
 | `api/events.go` | SSE hub: `note-change`, `tree-change`, `spaces-change`, each delivered only to users who can see the vault/space (personal stores: only their owner). |
 | `api/ai.go` | AI proxy: forwards chat/test to an OpenAI-compatible endpoint, relays upstream SSE; `POST /api/ai/transcribe` sends a voice memo to the endpoint's `/v1/audio/transcriptions` (multipart, ≤25 MB, file name keeps the format extension). Tests: `api/ai_test.go`. |
@@ -117,7 +117,7 @@ touches**. Do not re-read the whole repo per session.
 | Vault or collection management | `notes/vaults.go`, `notes/collections.go`, `handler.go`, `NotesProvider.tsx` |
 | Collection item lookup (records, books) | `api/metadata.go` (Discogs; books: Google Books → Open Library → `api/dnb.go` Deutsche Nationalbibliothek, which goes first after Google for 978-3 ISBNs; search hits without an ISBN carry `gb:`/`ol:` ids), `CollectionItemForm.tsx` |
 | Note history / restore | `notes/history.go`, `NoteHistoryPanel.tsx` |
-| Image upload / migration | `notes/images.go`, `handler.go` image routes |
+| Image / PDF upload / migration | `notes/images.go`, `handler.go` image routes (`uploadImage`: images 20MB, PDFs 50MB; `getImage`: PDFs served inline without the `sandbox` CSP, which breaks the browser's PDF viewer), `editor/pdfEmbed.ts` (`![name.pdf](url)` alone in a paragraph ↔ `pdf_embed` node; PDF file paste/drop lives in `MilkdownEditor.tsx` `handlePaste`/`handleDrop` because Crepe's upload plugin swallows every file) |
 | AI features | `api/ai.go`, `src/lib/ai.ts`, `AICommandPanel.tsx`; voice memos: `api.transcribeAudio` (`src/lib/api.ts`) + `mobile/useVoiceRecorder.ts`. AI settings are per device (localStorage). |
 | Accounts, login, invites | `backend/accounts/*`, `api/{auth,account,admin,access}.go`, `src/lib/api.ts` |
 | Spaces, members, permissions | `notes/spaces.go`, `api/{spaces,access}.go`, `NotesProvider.tsx` (spaces state) |

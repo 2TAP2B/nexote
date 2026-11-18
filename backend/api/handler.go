@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"maps"
+	"mime"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -949,10 +950,13 @@ func (h *Handler) renameFolder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"path": in.NewPath})
 }
 
-// --- Images ---
+// --- Images and PDFs (files embedded in notes) ---
 
-// maxImageBytes caps uploads at 20MB.
-const maxImageBytes = 20 << 20
+// maxImageBytes caps image uploads at 20MB, maxPDFBytes PDFs at 50MB.
+const (
+	maxImageBytes = 20 << 20
+	maxPDFBytes   = 50 << 20
+)
 
 // imageMimeByExt maps image extensions to their Content-Type. Used as a
 // fallback when http.DetectContentType can't identify the format (e.g. svg).
@@ -973,7 +977,7 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 		h.writeRegistryError(w, err)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxImageBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, maxPDFBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxImageBytes); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid upload: %w", err))
 		return
@@ -998,7 +1002,24 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("file has no extension"))
 		return
 	}
-	meta, err := store.SaveImage(r.PathValue("id"), ext, r.PathValue("vaultId"), data)
+	var meta notes.ImageMeta
+	if ext == "pdf" {
+		if len(data) > maxPDFBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, errors.New("PDFs can be up to 50 MB"))
+			return
+		}
+		meta, err = store.SavePDF(r.PathValue("id"), header.Filename, r.PathValue("vaultId"), data)
+	} else {
+		if len(data) > maxImageBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, errors.New("images can be up to 20 MB"))
+			return
+		}
+		meta, err = store.SaveImage(r.PathValue("id"), ext, r.PathValue("vaultId"), data)
+	}
+	if errors.Is(err, notes.ErrInvalidPDF) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
@@ -1031,15 +1052,29 @@ func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, err)
 		return
 	}
-	mime := http.DetectContentType(data)
-	if !strings.HasPrefix(mime, "image/") {
-		if m, ok := imageMimeByExt[strings.ToLower(filepath.Ext(r.PathValue("path")))]; ok {
-			mime = m
+	name := r.PathValue("path")
+	if notes.IsPDFName(name) {
+		// Shown in the editor's PDF viewer (an iframe of this origin) and
+		// opened in a tab. Not sandboxed like images: browsers refuse to run
+		// their PDF viewer in a sandbox. nosniff keeps a fake "PDF" from being
+		// read as HTML; uploads are checked for the %PDF- signature.
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filepath.Base(name)}))
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(data)
+		return
+	}
+	contentType := http.DetectContentType(data)
+	if !strings.HasPrefix(contentType, "image/") {
+		if m, ok := imageMimeByExt[strings.ToLower(filepath.Ext(name))]; ok {
+			contentType = m
 		} else {
-			mime = "application/octet-stream"
+			contentType = "application/octet-stream"
 		}
 	}
-	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 	// Uploaded files come from any member of a space: never let one run as
 	// a page of this origin (an SVG with script opened directly).

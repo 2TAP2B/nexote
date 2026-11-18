@@ -93,6 +93,8 @@ Nexote identifies notes by the `id` in the frontmatter, not by the file name. At
 
 Uploaded images are stored next to the note, in the note's folder, as `img-<random id>.<ext>`. The note references them with a markdown image link. When a note moves to another folder or vault, its images move with it.
 
+PDFs are stored the same way, named after the original file with spaces and special characters replaced by `-` and a short random suffix (`Lease 2026.pdf` → `Lease-2026-x7Kq2b.pdf`). The note embeds them with an image link on its own line: `![Lease 2026.pdf](/api/vaults/<vault>/images/<folder>/Lease-2026-x7Kq2b.pdf)`.
+
 ## History snapshots
 
 Before each save, the previous version of the note is copied to `.history/<noteId>/<timestamp>.md` inside the vault (or personal store). The timestamp is the Unix time in nanoseconds; if two snapshots collide, a counter suffix is added. Each snapshot is a complete note file with frontmatter and body, so any version can be restored from the app or copied back by hand.

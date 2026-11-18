@@ -74,6 +74,7 @@ import { computeMention, insertMention, mentionCandidates, mentionPlugin, type M
 import { inlineCodeTypingPlugin, startInlineCode } from "./editor/inlineCode";
 import { CALLOUT_INSERT_TYPES, calloutIconSvg, calloutLabel, calloutPlugins, insertCalloutCommand, type CalloutType } from "./editor/callout";
 import { highlightPlugins, highlightSchema, toggleHighlightCommand } from "./editor/highlight";
+import { insertPdfCommand, pdfFiles, pdfPlugins, pdfSchema } from "./editor/pdfEmbed";
 import { wikilinkPlugins } from "./editor/wikilink";
 import { useVisualViewport } from "./mobile/useVirtualKeyboardInset";
 
@@ -87,6 +88,7 @@ import {
   h3Icon,
   orderedListIcon,
   highlighterIcon,
+  pdfIcon,
   quoteIcon,
 } from "./toolbar-icons";
 
@@ -369,6 +371,8 @@ export type MilkdownEditorHandle = {
   focusEnd: () => void;
   format: (action: FormatAction) => void;
   insertImageFile: (file: File) => void;
+  /** Opens the file picker for a PDF, uploads it and embeds it at the caret. */
+  pickPdf: () => void;
   askAI: () => void;
   runAI: (instruction: string, label?: string) => void;
   /** Inserts today's date (Settings › Editor format) at the caret. */
@@ -441,7 +445,7 @@ function computeSlashState(view: EditorView): SlashState | null {
 }
 
 type SlashItem = {
-  id: FormatAction | "image" | "date" | "mention";
+  id: FormatAction | "image" | "pdf" | "date" | "mention";
   label: string;
   hint: string;
   icon: ComponentType<{ size?: number }>;
@@ -481,7 +485,28 @@ const SLASH_ITEMS: SlashItem[] = [
   { id: "code-block", label: "Code block", hint: "```", icon: Code2, keywords: "code block" },
   { id: "table", label: "Table", hint: "| a | b |", icon: Table, keywords: "table grid" },
   { id: "image", label: "Image", hint: "![alt](url)", icon: ImageIcon, keywords: "image img picture" },
+  { id: "pdf", label: "PDF", hint: "embed a file", icon: FileText, keywords: "pdf document file attachment embed" },
 ];
+
+// Opens the system file picker. The input is attached to the document for
+// the duration (iOS fires no change event on a detached input) and is not
+// tied to any menu, which may close before a file is chosen.
+function pickFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.style.display = "none";
+    const done = (file: File | null) => {
+      input.remove();
+      resolve(file);
+    };
+    input.addEventListener("change", () => done(input.files?.[0] ?? null), { once: true });
+    input.addEventListener("cancel", () => done(null), { once: true });
+    document.body.append(input);
+    input.click();
+  });
+}
 
 // Shared command dispatch for the mobile "format" handle and the slash menu so
 // both expose the exact same formatting set.
@@ -1070,6 +1095,39 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       });
     };
 
+    // PDFs: upload next to the note, then embed at the caret, or at the block
+    // boundary `at` where a file was dropped. Failures are reported: a PDF is
+    // worth retrying.
+    const uploadPdfFile = (file: File, at?: number) => {
+      void api
+        .uploadImage(vaultId, noteId, file)
+        .then((meta) => {
+          void cacheImage(meta.url, file);
+          crepeRef.current?.editor.action((ctx) => {
+            const view = ctx.get(editorViewCtx);
+            const pdf = { src: meta.url, title: file.name };
+            try {
+              if (at === undefined) throw new RangeError("no drop position");
+              view.dispatch(view.state.tr.insert(at, pdfSchema.type(ctx).create(pdf)));
+            } catch {
+              // No drop, or the note changed during the upload so the
+              // boundary moved: the caret position will do.
+              ctx.get(commandsCtx).call(insertPdfCommand.key, pdf);
+            }
+            view.focus();
+          });
+        })
+        .catch((err) => {
+          console.error("[nexote-pdf]", err);
+          window.alert(`Couldn't add the PDF: ${err instanceof Error ? err.message : String(err)}`);
+        });
+    };
+    const pickPdfNow = () => {
+      void pickFile("application/pdf,.pdf").then((file) => {
+        if (file) uploadPdfFile(file);
+      });
+    };
+
     // Removes the typed "/query" before a sheet command runs. The live range
     // needs a focused editor; tapping the sheet can blur it, so fall back to
     // the range the sheet was opened for, but only while that text still is
@@ -1097,6 +1155,10 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       }
       if (action === "image") {
         slashImageRef.current?.click();
+        return;
+      }
+      if (action === "pdf") {
+        pickPdfNow();
         return;
       }
       editor.action((ctx) => {
@@ -1204,6 +1266,14 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                   const view = ctx.get(editorViewCtx);
                   clearSlash(view);
                   view.dispatch(view.state.tr.insertText("@"));
+                },
+              })
+              .addItem("pdf", {
+                label: "PDF",
+                icon: pdfIcon,
+                onRun: (ctx: Ctx) => {
+                  clearSlash(ctx.get(editorViewCtx));
+                  pickPdfNow();
                 },
               });
             if (markupRef.current) {
@@ -1370,6 +1440,12 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             return clipboardPlainText(ctx.get(serializerCtx)(doc));
           },
           handlePaste: (view: EditorView, event: ClipboardEvent) => {
+            const pdfs = pdfFiles(event.clipboardData?.files);
+            if (pdfs.length) {
+              event.preventDefault();
+              for (const file of pdfs) uploadPdfFile(file);
+              return true;
+            }
             // OS-clipboard image paste: the clipboard plugin only handles
             // text, so intercept image files, upload them into the note's
             // folder and insert the resulting URL as an inline image.
@@ -1422,6 +1498,21 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               }
             }
             return false;
+          },
+          // A dropped PDF goes before or after the paragraph it lands on,
+          // never splitting its text (images keep Crepe's own handling).
+          handleDrop: (view: EditorView, event: DragEvent) => {
+            const pdfs = pdfFiles(event.dataTransfer?.files);
+            if (!pdfs.length) return false;
+            event.preventDefault();
+            const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+            let at: number | undefined;
+            if (pos !== undefined) {
+              const $pos = view.state.doc.resolve(pos);
+              at = $pos.depth === 0 ? pos : $pos.parentOffset === 0 ? $pos.before(1) : $pos.after(1);
+            }
+            for (const file of pdfs) uploadPdfFile(file, at);
+            return true;
           },
           handleKeyDown: (_view: EditorView, event: KeyboardEvent) => {
             // Legacy: when the note title was an H1, Ctrl/Cmd+A here selected
@@ -1539,6 +1630,8 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       // look and the menus).
       crepe.editor.use(calloutPlugins);
       crepe.editor.use(highlightPlugins);
+      // Embedded PDFs (pasted/dropped files: handlePaste/handleDrop above).
+      crepe.editor.use(pdfPlugins);
       // "Code" at a bare caret: typing there becomes inline code.
       crepe.editor.use($prose(() => inlineCodeTypingPlugin));
       // "@" / "[[" note picker.
@@ -1835,6 +1928,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         insertImageFile: (file: File) => {
           uploadImageFile(file);
         },
+        pickPdf: pickPdfNow,
         insertDate: insertDateNow,
         openSlash: openSlashNow,
         startMention: startMentionNow,

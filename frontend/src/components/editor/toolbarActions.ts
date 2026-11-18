@@ -8,6 +8,7 @@ import {
   CircleHelp,
   ClipboardList,
   Code2,
+  FileText,
   Flame,
   Heading1,
   Heading2,
@@ -126,6 +127,7 @@ export function editorToolbarGroups({
       { key: "code-block", label: "Code block", icon: Code2, run: format("code-block") },
       { key: "table", label: "Table", icon: Table, run: format("table") },
       { key: "image", label: "Image", icon: ImageIcon, run: pickImage },
+      { key: "pdf", label: "PDF", icon: FileText, run: () => editorRef.current?.pickPdf() },
     ],
   ];
   if (aiAvailable) {

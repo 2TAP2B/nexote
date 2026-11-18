@@ -110,6 +110,18 @@ On mobile, a toolbar sits above the keyboard with the same buttons. See [Mobile 
 
 Paste an image from the clipboard, use the image block's upload button, or the image button on mobile. The file is stored next to the note, in the note's folder (the vault root for notes without a folder), and the note references it with a markdown image link. When a note moves to another folder or vault, its images move with it.
 
+## PDFs
+
+Embed a PDF with the PDF button in the toolbar, **PDF** in the `/` menu, or by pasting or dropping a PDF file into the note. Like images, the file is stored next to the note and moves with it; PDFs can be up to 50 MB (images up to 20 MB).
+
+On desktop the PDF shows in an inline viewer; drag its bottom edge to make it taller. Phones and tablets have no inline PDF viewer, so there the PDF is a card that opens it in the system viewer. **Open** opens the PDF in a new tab on any device.
+
+In the file, a PDF is an image link on its own line, the form Obsidian also embeds:
+
+```markdown
+![Lease 2026.pdf](/api/vaults/<vault>/images/Contracts/Lease-2026-x7Kq2b.pdf)
+```
+
 ## Tags
 
 Write tags inline as `#tag`. A tag starts with a lowercase letter or a digit; tags inside code blocks are ignored. When the note is saved, its tags become exactly the hashtags in its text, stored in lowercase in the frontmatter. Removing `#tag` from the text removes the tag.

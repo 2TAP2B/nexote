@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -54,34 +55,73 @@ func IsImageName(name string) bool {
 	return imageExtensions[strings.ToLower(filepath.Ext(name))]
 }
 
+// IsPDFName reports whether the given filename is a PDF.
+func IsPDFName(name string) bool {
+	return strings.EqualFold(filepath.Ext(name), ".pdf")
+}
+
+// IsAttachmentName reports whether a note can embed the file: an image or a
+// PDF. These live next to the note and move with it.
+func IsAttachmentName(name string) bool {
+	return IsImageName(name) || IsPDFName(name)
+}
+
+// ErrInvalidPDF rejects an upload named .pdf that isn't one.
+var ErrInvalidPDF = errors.New("the file is not a PDF")
+
 // SaveImage writes an uploaded image into the folder of the given note
 // (the vault root when the note has no folder). The file is named
 // img-<NewID>.<ext> so it never collides. Returns the saved metadata.
 func (s *Store) SaveImage(noteID, ext string, vaultID string, data []byte) (ImageMeta, error) {
-	doc, err := s.read(noteID)
-	if err != nil {
-		return ImageMeta{}, err
-	}
 	ext = strings.ToLower(ext)
 	if !imageExtensions["."+ext] {
 		return ImageMeta{}, fmt.Errorf("unsupported image extension %q", ext)
 	}
-	name := "img-" + NewID() + "." + ext
+	return s.saveAttachment(noteID, "img-"+NewID()+"."+ext, vaultID, data)
+}
+
+// pdfNameUnsafe matches what a PDF's file name keeps out: anything but
+// letters, digits, "_" and "-" (no spaces or parentheses, which would end a
+// markdown link).
+var pdfNameUnsafe = regexp.MustCompile(`[^\p{L}\p{N}_-]+`)
+
+// SavePDF writes an uploaded PDF next to the note, like SaveImage. The file
+// keeps a readable name from the original ("Contract 2026.pdf" →
+// "Contract-2026-x7Kq2b.pdf"); the random suffix avoids collisions.
+func (s *Store) SavePDF(noteID, original, vaultID string, data []byte) (ImageMeta, error) {
+	if !bytes.HasPrefix(data, []byte("%PDF-")) {
+		return ImageMeta{}, ErrInvalidPDF
+	}
+	base := strings.TrimSuffix(filepath.Base(original), filepath.Ext(original))
+	slug := strings.Trim(pdfNameUnsafe.ReplaceAllString(base, "-"), "-")
+	if runes := []rune(slug); len(runes) > 60 {
+		slug = strings.Trim(string(runes[:60]), "-")
+	}
+	if slug == "" {
+		slug = "document"
+	}
+	return s.saveAttachment(noteID, slug+"-"+NewID()[:6]+".pdf", vaultID, data)
+}
+
+func (s *Store) saveAttachment(noteID, name, vaultID string, data []byte) (ImageMeta, error) {
+	doc, err := s.read(noteID)
+	if err != nil {
+		return ImageMeta{}, err
+	}
 	dir := s.imageDir(doc.Meta.Path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return ImageMeta{}, fmt.Errorf("create image dir: %w", err)
+		return ImageMeta{}, fmt.Errorf("create attachment dir: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-		return ImageMeta{}, fmt.Errorf("write image: %w", err)
+		return ImageMeta{}, fmt.Errorf("write attachment: %w", err)
 	}
-	meta := ImageMeta{
+	return ImageMeta{
 		Name:      name,
 		Path:      doc.Meta.Path,
 		URL:       s.imageURL(vaultID, doc.Meta.Path, name),
 		Size:      int64(len(data)),
 		UpdatedAt: time.Now().UTC(),
-	}
-	return meta, nil
+	}, nil
 }
 
 // ListImages walks the vault and returns every image file, annotated with the
@@ -191,7 +231,7 @@ func (s *Store) MigrateImagesForBody(body, oldPath, newPath string) (string, err
 	for _, m := range imageURLRe.FindAllStringSubmatch(body, -1) {
 		rel := m[2]
 		fileName := filepath.Base(rel)
-		if !IsImageName(fileName) {
+		if !IsAttachmentName(fileName) {
 			continue
 		}
 		folder := strings.Trim(path.Dir(rel), "./")
@@ -224,7 +264,7 @@ func (s *Store) MigrateImagesTo(body string, dst *Store, dstVaultID string) (str
 	for _, m := range imageURLRe.FindAllStringSubmatch(body, -1) {
 		rel := m[2]
 		fileName := filepath.Base(rel)
-		if !IsImageName(fileName) {
+		if !IsAttachmentName(fileName) {
 			continue
 		}
 		folder := strings.Trim(path.Dir(rel), "./")
@@ -258,7 +298,7 @@ func (s *Store) CopyImagesTo(body, srcVaultID string, dst *Store, dstVaultID str
 			continue
 		}
 		rel := m[2]
-		if !IsImageName(filepath.Base(rel)) {
+		if !IsAttachmentName(filepath.Base(rel)) {
 			continue
 		}
 		src, ok := s.safeImagePath(rel)
