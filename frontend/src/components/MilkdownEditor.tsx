@@ -798,7 +798,10 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         const view = ctx.get(editorViewCtx);
         const { state } = view;
         let tr = state.tr;
-        if (!state.selection.empty) tr = tr.deleteSelection();
+        // Selected text is replaced by the command; a selected node (a tapped
+        // image, a table) stays and the "/" goes right after it.
+        if (state.selection instanceof NodeSelection) tr = tr.setSelection(TextSelection.near(tr.doc.resolve(state.selection.to)));
+        else if (!state.selection.empty) tr = tr.deleteSelection();
         const $pos = tr.selection.$from;
         if ($pos.parent.type.name !== "paragraph" || (!mobile && $pos.parent.content.size > 0)) {
           const after = $pos.after($pos.depth);
@@ -1067,38 +1070,39 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       });
     };
 
+    // Removes the typed "/query" before a sheet command runs. The live range
+    // needs a focused editor; tapping the sheet can blur it, so fall back to
+    // the range the sheet was opened for, but only while that text still is
+    // a "/query" (a stale range must never delete other text).
+    const deleteSlashQuery = (view: EditorView) => {
+      let range: { from: number; to: number } | null = computeSlashState(view);
+      const stored = slashRef.current;
+      if (!range && stored && stored.to <= view.state.doc.content.size) {
+        const text = view.state.doc.textBetween(stored.from, stored.to);
+        if (/^\/[a-zA-Z0-9-]*$/.test(text)) range = stored;
+      }
+      if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
+    };
+
     const selectSlashItem = (item: SlashItem) => {
       const editor = crepeRef.current?.editor;
       if (!editor) return;
       const action = item.id;
+      editor.action((ctx) => deleteSlashQuery(ctx.get(editorViewCtx)));
+      applySlash(null);
       if (action === "date" || action === "mention") {
-        editor.action((ctx) => {
-          const view = ctx.get(editorViewCtx);
-          const range = computeSlashState(view);
-          if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
-        });
-        applySlash(null);
         if (action === "date") insertDateNow();
         else startMentionNow();
         return;
       }
       if (action === "image") {
-        applySlash(null);
         slashImageRef.current?.click();
         return;
       }
       editor.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        // Recompute the "/query" range from the live state instead of trusting
-        // the last snapshot: if the caret moved or the sheet was opened from
-        // the "+" button the stored range can be stale, and deleting it would
-        // abort the whole command. A missing range just skips the deletion.
-        const range = computeSlashState(view);
-        if (range) view.dispatch(view.state.tr.delete(range.from, range.to));
         runFormatAction(ctx, action);
-        view.focus();
+        ctx.get(editorViewCtx).focus();
       });
-      applySlash(null);
     };
 
     // Sheet rows act on a tap — pointerup close to where the finger went
@@ -1877,6 +1881,20 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       return (
         <>
           <Milkdown />
+          {/* Image picker of the phone "/" sheet. Outside the sheet: the sheet
+              closes when "Image" is chosen, and an unmounted input never
+              reports the picked file. */}
+          <input
+            ref={slashImageRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadImageFile(file);
+              e.target.value = "";
+            }}
+          />
           {mention &&
             mentionEntries.length > 0 &&
             createPortal(
@@ -2087,17 +2105,6 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
                     </span>
                   </button>
                 ))}
-                <input
-                  ref={slashImageRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) uploadImageFile(file);
-                    e.target.value = "";
-                  }}
-                />
               </div>
               </div>,
               document.body,
