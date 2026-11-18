@@ -62,7 +62,7 @@ Images stay in the Notepad's folder; the new note links to them there.
 
 While the composer is empty, a microphone button takes the place of the send button. Record, then tap the check mark to stop. The recording is sent to your AI endpoint for transcription, and the text lands in the composer so you can correct it before posting. The audio itself is not stored, only the text.
 
-- Requires an AI connection in **Settings › AI** on that device. The endpoint must offer `/v1/audio/transcriptions` (OpenAI and compatible services). See [AI](./ai).
+- Requires an AI connection in **Settings › AI** on that device. The endpoint must offer `/v1/audio/transcriptions` (OpenAI and compatible services, including llama.cpp with an audio model). Recordings are sent as WAV. See [AI](./ai#voice-memos).
 - The model is set in **Settings › AI › Voice memos › Transcription model** (default `whisper-1`).
 - Browsers only allow microphone access on https origins or `localhost`. Over plain http the button explains this instead of recording.
 - A recording stops automatically after 10 minutes. The server accepts audio files up to 25 MB.

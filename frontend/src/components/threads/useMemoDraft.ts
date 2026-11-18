@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
+import { toWav16k } from "@/lib/audio-wav";
 import { cacheImage } from "@/lib/image-cache";
 import { joinMemo, splitMemo } from "@/lib/notepad";
 import { useNotes } from "@/lib/notes-context";
@@ -202,6 +203,10 @@ export function useMemoDraft<E extends { text: string }>({
     const abort = new AbortController();
     transcribeAbort.current = abort;
     try {
+      // WAV for every endpoint (see lib/audio-wav.ts); the original clip
+      // if this browser can't decode its own recording.
+      const wav = await toWav16k(clip.blob);
+      if (abort.signal.aborted) return;
       const text = (
         await api.transcribeAudio(
           {
@@ -209,8 +214,8 @@ export function useMemoDraft<E extends { text: string }>({
             apiKey: settings.aiApiKey,
             model: settings.aiTranscribeModel.trim() || "whisper-1",
           },
-          clip.blob,
-          clip.fileName,
+          wav ?? clip.blob,
+          wav ? "voice-memo.wav" : clip.fileName,
           abort.signal,
         )
       ).trim();

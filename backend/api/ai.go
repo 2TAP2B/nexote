@@ -288,7 +288,14 @@ func (h *Handler) aiTranscribe(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("transcription failed (%s): %s", resp.Status, upstreamErrorMessage(raw)))
+		msg := upstreamErrorMessage(raw)
+		// llama.cpp answers this when the model it has loaded can't take audio
+		// (no audio encoder / mmproj); the "model" field doesn't switch models
+		// on a single-model server.
+		if strings.Contains(strings.ToLower(msg), "does not support audio") {
+			msg += " The model loaded on your AI server can't take audio: load one with audio input (llama.cpp: with its mmproj file), or set Settings › AI › Transcription model to such a model if your server switches models by name."
+		}
+		writeError(w, http.StatusBadGateway, fmt.Errorf("transcription failed (%s): %s", resp.Status, msg))
 		return
 	}
 	var out struct {

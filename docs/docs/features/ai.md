@@ -44,4 +44,6 @@ The answer streams in as it is generated.
 
 ## Voice memos
 
-In [Quick notes](./quick-notes#voice-memos), recordings are transcribed through `/api/ai/transcribe`, which sends the audio to the service's `/v1/audio/transcriptions` endpoint. The model is set in **Settings › AI › Voice memos › Transcription model** (default `whisper-1`). Audio files can be up to 25 MB; only the text is kept.
+In [Quick notes](./quick-notes#voice-memos), recordings are transcribed through `/api/ai/transcribe`, which sends the audio to the service's `/v1/audio/transcriptions` endpoint. The model is set in **Settings › AI › Voice memos › Transcription model** (default `whisper-1`). The browser converts each recording to 16 kHz mono WAV before sending it, a format every compatible service reads. Audio files can be up to 25 MB; only the text is kept.
+
+With **llama.cpp** (`llama-server`), the model the server has loaded must accept audio: start it with an audio-capable model and its `mmproj` file. A single-model server ignores the model name Nexote sends; with llama-swap or router mode, set the transcription model to the name your server lists. Otherwise the server answers "The current model does not support audio input".
