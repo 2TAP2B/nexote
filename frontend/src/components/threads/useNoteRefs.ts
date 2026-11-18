@@ -4,22 +4,24 @@ import { useCallback, useMemo } from "react";
 
 import { isCollectionsVault } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
-import { useThreads } from "@/lib/threads";
+import { isThreadMeta } from "@/lib/threads";
 import type { NoteRef } from "../mobile/MemoBubble";
+import { useAllThreads } from "./useAllThreads";
 
 /**
- * What memos can link to ([[Title]]) and "@" suggests: the threads of
- * `threadsVaultId` (null: none) first, then every regular vault note of the
- * active space and the journal. Threads live in the personal store, which is
- * in no vault list, so they're added from the threads cache.
+ * What memos can link to ([[Title]]) and "@" suggests: every thread first
+ * (those of `preferVaultId` ahead, so a thread's links stay in its vault),
+ * then every regular vault note of the active space and the journal. Thread
+ * notes kept in a vault count as threads only: they open in the thread view.
  */
-export function useNoteRefs(threadsVaultId: string | null) {
+export function useNoteRefs(preferVaultId: string | null) {
   const { vaults, allVaultData, journalNotes } = useNotes();
-  const { threads } = useThreads(threadsVaultId);
+  const { threads } = useAllThreads();
 
   const noteRefs = useMemo(() => {
     const refs: NoteRef[] = [];
-    for (const t of threads) {
+    const ordered = [...threads].sort((a, b) => Number(b.vaultId === preferVaultId) - Number(a.vaultId === preferVaultId));
+    for (const t of ordered) {
       if (t.title) {
         refs.push({ id: t.id, title: t.title, vaultId: t.vaultId, where: "Threads", updatedAt: t.updatedAt, thread: true });
       }
@@ -27,7 +29,7 @@ export function useNoteRefs(threadsVaultId: string | null) {
     for (const v of vaults) {
       if (isCollectionsVault(v)) continue;
       for (const n of allVaultData[v.id]?.notes ?? []) {
-        if (!n.title) continue;
+        if (!n.title || isThreadMeta(n)) continue;
         refs.push({
           id: n.id,
           title: n.title,
@@ -41,7 +43,7 @@ export function useNoteRefs(threadsVaultId: string | null) {
       if (n.title) refs.push({ id: n.id, title: n.title, vaultId: null, where: "Journal", updatedAt: n.updatedAt });
     }
     return refs;
-  }, [threads, vaults, allVaultData, journalNotes]);
+  }, [threads, preferVaultId, vaults, allVaultData, journalNotes]);
 
   // [[Title]] → note: same title (any case); the first match wins (threads,
   // then the active space's vaults, then the journal).

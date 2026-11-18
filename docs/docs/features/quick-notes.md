@@ -27,7 +27,7 @@ Further lines of a memo are indented by two spaces. Links to notes are `[[Title]
 | Private — only you (default) | Stored in your personal store. Only you can see it, it is the same in every space, and it never appears in a note tree. |
 | A vault or folder | Stored in any vault or folder you can write to, in any space. Members of that space can read it. |
 
-Changing the location moves the existing Notepad. When it lives in a vault, **Show in note tree** (on by default) controls whether it appears in the tree and note lists.
+Changing the location moves the existing Notepad. When it lives in a vault, **Show in note tree** (on by default) controls whether it appears in the tree and note lists. The location is a setting of each device, like the other settings; new threads go to a **Threads** folder at that location.
 
 ## Writing memos
 
@@ -72,17 +72,17 @@ While the composer is empty, a microphone button takes the place of the send but
 
 A thread is a memo that grew replies, for following a thought over days. **Swipe a memo to the left** to turn it into a thread; a toast offers Undo. The memo leaves the Notepad and stays in the stream as a thread card with its title, the latest post and the number of replies. A new reply moves the card down to the reply's time.
 
-Tap a card to open the thread. It looks like the quick notes: the posts are bubbles, the first one marked **Started**, and the composer adds replies (text, images, `@` links, voice memos). Long-press a post to edit, copy or delete it. Tap the title to rename the thread; **More** also deletes it.
+Tap a card to open the thread. It looks like the quick notes: the posts are bubbles, the first one marked **Started**, and the composer adds replies (text, images, `@` links, voice memos). Long-press a post to edit, copy or delete it. Tap the title to rename the thread; **More** also deletes it. On phones, **swipe right** anywhere outside the composer to close the thread and go back.
 
 **Swipe a reply to the left** to start a new thread from it. The reply is replaced by a link to the new thread, so the two stay connected. On desktop, the same is a button next to each reply.
 
 ### Tags
 
-Write `#tags` in memos and replies. A thread's tags are the tags of all its posts. Tapping a tag in the quick notes filters the stream to memos and threads with that tag; tapping one inside a thread opens the Threads view filtered by it.
+Write `#tags` in memos and replies. A thread's tags are the tags of all its posts. Tapping a tag in the quick notes filters the stream to memos and threads with that tag. Notes and threads share their tags: the sidebar's **Tags** view counts both, and a tag lists its notes and then its threads (a thread opens in the thread view). Tapping a tag inside a thread opens the Tags view on that tag.
 
 ### Threads view
 
-The sidebar's **Threads** view (ribbon icon on desktop, sidebar strip on phones) lists all threads, most recent activity first, with a search field and the tags of all threads to filter by. Clicking a thread opens it: on desktop in a panel beside the note, on phones full screen. Threads also show up in the command palette's search. **Settings › Features › Sidebar › Threads** hides the view.
+The sidebar's **Threads** view (ribbon icon on desktop, sidebar strip on phones) lists all threads, most recent activity first, with a search field and the tags of all threads to filter by. It shows every thread you have, wherever it was written: in your personal store and in any vault, so threads started on your phone show on the desktop too, even if each device keeps its Notepad somewhere else. Clicking a thread opens it: on desktop in a panel beside the note, on phones full screen. Threads also show up in the quick notes stream and the command palette's search, but not in **Recent** or the dashboard's recently edited notes. **Settings › Features › Sidebar › Threads** hides the view.
 
 ### Storage
 

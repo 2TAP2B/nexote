@@ -18,12 +18,13 @@ import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar, type PagerFocus } from "@/components/useSwipeSidebar";
 import QuickCapturePane from "./QuickCapturePane";
 import ThreadView from "@/components/threads/ThreadView";
-import { threadRefFrom, threadsViewTagFrom, type ThreadRef } from "@/components/threads/threadEvents";
+import { threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
+import { useSwipeToClose } from "@/components/threads/useSwipeToClose";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { replaceOrAddTitleHeading } from "@/lib/note-utils";
-import { OPEN_THREAD_EVENT, OPEN_THREADS_VIEW_EVENT } from "@/lib/threads";
+import { OPEN_THREAD_EVENT } from "@/lib/threads";
 
 import MobileBottomPill from "./MobileBottomPill";
 import MobileNoteView from "./MobileNoteView";
@@ -89,9 +90,11 @@ export default function MobileApp() {
   const [sidebarView, setSidebarView] = useState<SidebarView>("tree");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   // Threads: the thread in the full-screen overlay (also highlighted in the
-  // Threads view), and a tag filter requested for the Threads view ("" = none).
+  // Threads view). Swiping it right closes it, back to the pane underneath.
   const [openThreadRef, setOpenThreadRef] = useState<ThreadRef | null>(null);
-  const [threadTag, setThreadTag] = useState<string | null>(null);
+  const threadOverlayRef = useRef<HTMLDivElement>(null);
+  const closeThread = useCallback(() => setOpenThreadRef(null), []);
+  useSwipeToClose(threadOverlayRef, closeThread, openThreadRef !== null);
 
   // Persist the sidebar section (tree/recent/shortcuts/bookmarks/tags/tasks/
   // collections/journal) + selected tag across reloads, so the app reopens where
@@ -216,10 +219,13 @@ export default function MobileApp() {
       blurPagerField();
       setPagerFocus("sidebar");
     };
+    // A #tag (editor, thread, palette): the Tags view lists its notes and
+    // threads; a thread overlay would cover it.
     const onSelectTag = (e: Event) => {
       const detail = (e as CustomEvent).detail as string;
       if (detail) setSelectedTag(detail);
       setSidebarView("tags");
+      setOpenThreadRef(null);
       blurPagerField();
       setPagerFocus("sidebar");
     };
@@ -243,22 +249,12 @@ export default function MobileApp() {
       blurPagerField();
       setOpenThreadRef(ref);
     };
-    // Like a "Go to" view: the sidebar on the Threads view, now filtered.
-    // Closes the thread overlay so a #tag tapped in a thread shows the list.
-    const onOpenThreadsView = (e: Event) => {
-      setThreadTag(threadsViewTagFrom(e));
-      setSidebarView("threads");
-      setOpenThreadRef(null);
-      blurPagerField();
-      setPagerFocus("sidebar");
-    };
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
     window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
-    window.addEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
     const onNewCollection = () => setCollectionFormOpen(true);
     window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
@@ -268,7 +264,6 @@ export default function MobileApp() {
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
       window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
-      window.removeEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
       window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
@@ -363,8 +358,6 @@ export default function MobileApp() {
             selectedTag={selectedTag}
             onSelectView={setSidebarView}
             onSelectTagConsumed={() => setSelectedTag(null)}
-            threadTag={threadTag}
-            onThreadTagConsumed={() => setThreadTag(null)}
             openThreadId={openThreadRef?.id ?? null}
           />
 
@@ -507,8 +500,11 @@ export default function MobileApp() {
       {openThreadRef &&
         createPortal(
           <div
+            ref={threadOverlayRef}
             role="dialog"
             aria-label="Thread"
+            // The pager (document listener) keeps out; useSwipeToClose owns the swipe.
+            data-no-swipe=""
             className="mob-shell-root fixed inset-0 z-[55] flex flex-col overflow-hidden"
             style={{ background: "var(--mob-bg)" }}
           >
@@ -517,7 +513,7 @@ export default function MobileApp() {
               vaultId={openThreadRef.vaultId}
               id={openThreadRef.id}
               variant="mobile"
-              onClose={() => setOpenThreadRef(null)}
+              onClose={closeThread}
             />
           </div>,
           document.body,

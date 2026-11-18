@@ -29,12 +29,12 @@ import {
   postStamp,
   postTags,
   replyLabel,
-  useThreads,
   type Thread,
 } from "@/lib/threads";
 import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "../threads/MemoChrome";
 import { ThreadCard } from "../threads/ThreadCard";
 import { errorText, useMemoDraft } from "../threads/useMemoDraft";
+import { useAllThreads } from "../threads/useAllThreads";
 import { useNoteRefs } from "../threads/useNoteRefs";
 import { MemoBubble, type NoteRef } from "./MemoBubble";
 import { MemoComposer } from "./MemoComposer";
@@ -167,7 +167,9 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
 
   // Memos and threads in one stream by time (a thread at its last post), oldest
   // first. The sort is stable, so memos of the same minute keep pad order.
-  const { threads } = useThreads(locVault);
+  // Every thread, not only those next to this device's Notepad: another
+  // device may keep its Notepad (and so its threads) elsewhere.
+  const { threads } = useAllThreads();
   const stream = useMemo(() => {
     const items: StreamItem[] = [
       ...entries.map((entry): StreamItem => ({ kind: "memo", key: `${entry.day} ${entry.time.padStart(5, "0")}`, entry })),
@@ -192,7 +194,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     if (list) list.scrollTop = list.scrollHeight;
   }, [visible.length, lastKey, focused, vv.isKeyboardOpen]);
 
-  // The Notepad's threads too, so [[Thread title]] links resolve to them.
+  // Threads too, so [[Thread title]] links resolve to them (the Notepad's first).
   const { resolve, suggest } = useNoteRefs(locVault);
 
   const ensureTarget = (): Promise<Target> => {
@@ -635,7 +637,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                 const prev = visible[i - 1];
                 return (
                   <li
-                    key={item.kind === "memo" ? `m-${item.entry.day}-${item.entry.start}` : `t-${item.thread.id}`}
+                    key={item.kind === "memo" ? `m-${item.entry.day}-${item.entry.start}` : `t-${item.thread.vaultId}-${item.thread.id}`}
                     className="flex flex-col"
                   >
                     {(!prev || day !== dayOf(prev)) && (

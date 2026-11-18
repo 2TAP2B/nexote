@@ -35,12 +35,12 @@ import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import MobileApp from "@/components/mobile/MobileApp";
 import ThreadView from "@/components/threads/ThreadView";
-import { threadRefFrom, threadsViewTagFrom, type ThreadRef } from "@/components/threads/threadEvents";
+import { threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, NotesProvider, useNotes, type TreeSort } from "@/lib/notes-context";
 import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
-import { OPEN_THREAD_EVENT, OPEN_THREADS_VIEW_EVENT } from "@/lib/threads";
+import { OPEN_THREAD_EVENT } from "@/lib/threads";
 
 // One address for every device: the touch interface (phones, tablets, narrow
 // windows) or the desktop one, chosen once when the app starts (Settings ›
@@ -108,10 +108,8 @@ function AppShell() {
     else if (sidebarView === "threads" && !settings.showThreadsSection) setSidebarView("tree");
   }, [sidebarView, settings.showTagsSection, settings.showTasksSection, settings.showThreadsSection]);
   const [tagSelection, setTagSelection] = useState<string | null>(null);
-  // Threads: the thread in the right panel (also highlighted in the Threads
-  // view), and a tag filter requested for the Threads view ("" = none).
+  // Threads: the thread in the right panel (also highlighted in the Threads view).
   const [openThreadRef, setOpenThreadRef] = useState<ThreadRef | null>(null);
-  const [threadTag, setThreadTag] = useState<string | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
@@ -144,21 +142,19 @@ function AppShell() {
     const onSelectView = (e: Event) => {
       const detail = (e as CustomEvent).detail as SidebarView;
       if (detail) setSidebarView(detail);
-    };    const onSelectTag = (e: Event) => {
+    };
+    // A #tag in the editor or a thread: the sidebar must be showing to list it.
+    const onSelectTag = (e: Event) => {
       const detail = (e as CustomEvent).detail as string;
       if (detail) {
         setTagSelection(detail);
         setSidebarView("tags");
+        setCollapsed(false);
       }
     };
     const onOpenThread = (e: Event) => {
       const ref = threadRefFrom(e);
       if (ref) setOpenThreadRef(ref);
-    };
-    const onOpenThreadsView = (e: Event) => {
-      setThreadTag(threadsViewTagFrom(e));
-      setSidebarView("threads");
-      setCollapsed(false);
     };
     const onOpenCollection = (e: Event) => {
       const folder = (e as CustomEvent).detail as string;
@@ -175,7 +171,6 @@ function AppShell() {
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
     window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
-    window.addEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
     const onNewCollection = () => setCollectionFormOpen(true);
     window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
@@ -186,7 +181,6 @@ function AppShell() {
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
       window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
-      window.removeEventListener(OPEN_THREADS_VIEW_EVENT, onOpenThreadsView);
       window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
@@ -381,8 +375,6 @@ function AppShell() {
                 view={sidebarView}
                 selectedTag={tagSelection}
                 onSelectTagConsumed={() => setTagSelection(null)}
-                threadTag={threadTag}
-                onThreadTagConsumed={() => setThreadTag(null)}
                 openThreadId={openThreadRef?.id ?? null}
                 onSelectView={setSidebarView}
                 onControlsReady={setTreeControls}

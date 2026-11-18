@@ -958,7 +958,8 @@ html:has(.mob-shell-root) body {
 
 /* Embedded PDFs (editor/pdfEmbed.ts): a header with icon, name and "Open",
  * then the browser's PDF viewer (desktop; drag the bottom edge to resize).
- * On touch devices only the card shows and a tap anywhere opens the PDF. */
+ * On touch devices the card shows the first page (pdf.js) and a tap anywhere
+ * opens the PDF. */
 .milkdown .ProseMirror .nexote-pdf {
   position: relative;
   margin: 16px 0;
@@ -1004,6 +1005,8 @@ html:has(.mob-shell-root) body {
   content: "";
   position: absolute;
   inset: 0;
+  /* Above the (positioned) page preview, so a tap on the page opens it too. */
+  z-index: 1;
 }
 .milkdown .ProseMirror .nexote-pdf-frame {
   display: block;
@@ -1014,6 +1017,32 @@ html:has(.mob-shell-root) body {
   border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   resize: vertical;
   background: #fff;
+}
+
+/* Pages are white in either theme, like on paper. Very tall pages are
+ * capped and shown whole. */
+.milkdown .ProseMirror .nexote-pdf-preview {
+  position: relative;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: #fff;
+}
+.milkdown .ProseMirror .nexote-pdf-preview canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 80vh;
+  object-fit: contain;
+  object-position: top;
+}
+.milkdown .ProseMirror .nexote-pdf-pages {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
 }
 
 /* Callouts ("> [!info] Title", editor/callout.ts): a tinted box in the type's

@@ -90,7 +90,7 @@ Live updates use a server-sent event stream at `/api/events`. If your proxy buff
 
 ## Updating
 
-Every push to the `main` branch creates the next patch release (`v0.1.0`, `v0.1.1`, ...) and publishes the image with two tags: `latest` and the version without the `v` prefix (for example `0.1.0`). The version and commit are shown in **Settings › About**.
+Each release (`v0.6.0`, `v0.6.1`, ...) publishes the image with two tags: `latest` and the version without the `v` prefix (for example `0.6.0`). New features come as minor releases, bugfixes as patch releases. The version and commit are shown in **Settings › About**.
 
 To update to the newest release:
 

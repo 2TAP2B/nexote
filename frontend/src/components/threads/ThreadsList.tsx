@@ -1,11 +1,10 @@
 "use client";
 
 import { MessagesSquare, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import { useNotes } from "@/lib/notes-context";
-import { notepadLocation } from "@/lib/notepad";
-import { lastActivity, openThread, replyLabel, threadPreview, threadTags, useThreads, type Thread } from "@/lib/threads";
+import { lastActivity, openThread, replyLabel, threadPreview, threadTags } from "@/lib/threads";
+import { useAllThreads } from "./useAllThreads";
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
@@ -22,35 +21,20 @@ function activityLabel(stamp: string): string {
 }
 
 /**
- * The Threads sidebar view: every thread of the Notepad's vault, newest
+ * The Threads sidebar view: every thread (personal store and vaults), newest
  * activity first, with a search field and a tag filter.
  */
 export default function ThreadsList({
   touch = false,
   openThreadId,
-  initialTag,
-  onInitialTagConsumed,
 }: {
   touch?: boolean;
   /** The thread showing in the thread view, highlighted. */
   openThreadId?: string | null;
-  /** A tag filter requested from outside (OPEN_THREADS_VIEW_EVENT), applied once. */
-  initialTag?: string | null;
-  onInitialTagConsumed?: () => void;
 }) {
-  const { settings } = useNotes();
-  const vaultId = notepadLocation(settings).vaultId;
-  const { threads, loaded, error } = useThreads(vaultId);
+  const { threads, loaded, error } = useAllThreads();
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (initialTag === undefined || initialTag === null) return;
-    // "" = show the view unfiltered.
-    setTag(initialTag || null);
-    setQuery("");
-    onInitialTagConsumed?.();
-  }, [initialTag, onInitialTagConsumed]);
 
   const rows = useMemo(
     () =>
@@ -139,7 +123,7 @@ export default function ThreadsList({
           Couldn&apos;t load threads: {error}
         </p>
       )}
-      {!loaded && !error && (
+      {!loaded && !error && rows.length === 0 && (
         <p className="px-3 py-2" style={{ fontSize: fs.body, color: "var(--muted-foreground)" }}>
           Loading…
         </p>
@@ -162,7 +146,7 @@ export default function ThreadsList({
           const active = t.id === openThreadId;
           const snippet = threadPreview(t);
           return (
-            <li key={t.id}>
+            <li key={`${t.vaultId}/${t.id}`}>
               <button
                 type="button"
                 data-thread-id={t.id}

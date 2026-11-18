@@ -1,7 +1,6 @@
-# Every push to main becomes a release: the next patch version after the
-# latest v* tag (v0.1.0 -> v0.1.1 -> ...), with the commits since that tag as
-# release notes. A commit that already carries a v* tag (e.g. a manual minor
-# bump) is released under that tag instead of a new one.
+# Pushing a v* tag creates its release, with the commits since the previous
+# v* tag as release notes. Pushes to main alone release nothing: each change
+# request becomes a minor release (v0.6.0), bugfixes a patch (v0.6.1).
 #
 # The Docker image is built in the same workflow: releases created with the
 # workflow's GITHUB_TOKEN don't trigger other workflows, so a separate
@@ -10,7 +9,7 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
 
 concurrency:
   group: release
@@ -30,16 +29,12 @@ jobs:
 
       - name: Pick the version
         id: version
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if tag=$(git describe --exact-match --tags --match 'v*' HEAD 2>/dev/null); then
-            echo "tag=$tag" >> "$GITHUB_OUTPUT"
-            previous=$(git tag --list 'v*' --sort=-v:refname | grep -vx "$tag" | head -n1 || true)
-          else
-            previous=$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)
-            IFS=. read -r major minor patch <<< "${previous#v}"
-            echo "tag=v${major:-0}.${minor:-0}.$(( ${patch:-0} + 1 ))" >> "$GITHUB_OUTPUT"
-          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          previous=$(git tag --list 'v*' --sort=-v:refname | grep -vx "$TAG" | head -n1 || true)
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
 
       - name: Create the release

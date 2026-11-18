@@ -114,7 +114,7 @@ Paste an image from the clipboard, use the image block's upload button, or the i
 
 Embed a PDF with the PDF button in the toolbar, **PDF** in the `/` menu, or by pasting or dropping a PDF file into the note. Like images, the file is stored next to the note and moves with it; PDFs can be up to 50 MB (images up to 20 MB).
 
-On desktop the PDF shows in an inline viewer; drag its bottom edge to make it taller. Phones and tablets have no inline PDF viewer, so there the PDF is a card that opens it in the system viewer. **Open** opens the PDF in a new tab on any device.
+On desktop the PDF shows in an inline viewer; drag its bottom edge to make it taller. Phones and tablets have no inline PDF viewer, so there the PDF is a card with a preview of its first page and the page count; tap it to open the PDF in the system viewer. **Open** opens the PDF in a new tab on any device.
 
 In the file, a PDF is an image link on its own line, the form Obsidian also embeds:
 

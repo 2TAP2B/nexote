@@ -488,14 +488,42 @@ const SLASH_ITEMS: SlashItem[] = [
   { id: "pdf", label: "PDF", hint: "embed a file", icon: FileText, keywords: "pdf document file attachment embed" },
 ];
 
-// Opens the system file picker. The input is attached to the document for
-// the duration (iOS fires no change event on a detached input) and is not
-// tied to any menu, which may close before a file is chosen.
-function pickFile(accept: string): Promise<File | null> {
+type OpenFilePicker = (options: {
+  types: { accept: Record<string, string[]> }[];
+  excludeAcceptAllOption?: boolean;
+}) => Promise<FileSystemFileHandle[]>;
+
+// File System Access picker; not in TypeScript's DOM types yet.
+const hasOpenFilePicker = (w: Window): w is Window & { showOpenFilePicker: OpenFilePicker } =>
+  "showOpenFilePicker" in w && typeof w.showOpenFilePicker === "function";
+
+// Opens the system file picker for the given MIME types (each with its
+// extensions). Call it synchronously from the tap or key press that asked for
+// it: browsers only open pickers during a user activation.
+// Where showOpenFilePicker exists (Chrome; on Android since 132, secure
+// contexts only) it is used: Chrome starts the system document picker
+// directly, while for <input type=file> it first checks camera and recorder
+// apps (and with camera permission prepares a capture file) and then goes
+// through Android's app chooser, the slow part on phones.
+// Otherwise a hidden input, attached to the document for the duration (iOS
+// fires no change event on a detached input) and not tied to any menu, which
+// may close before a file is chosen. Its accept list holds the MIME types
+// only.
+function pickFile(accept: Record<string, string[]>): Promise<File | null> {
+  if (hasOpenFilePicker(window)) {
+    return window.showOpenFilePicker({ types: [{ accept }], excludeAcceptAllOption: true }).then(
+      ([handle]) => handle?.getFile() ?? null,
+      (err: unknown) => {
+        // AbortError: the picker was closed without a file.
+        if (!(err instanceof DOMException && err.name === "AbortError")) console.error("[nexote-pick]", err);
+        return null;
+      },
+    );
+  }
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = accept;
+    input.accept = Object.keys(accept).join(",");
     input.style.display = "none";
     const done = (file: File | null) => {
       input.remove();
@@ -1123,7 +1151,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         });
     };
     const pickPdfNow = () => {
-      void pickFile("application/pdf,.pdf").then((file) => {
+      void pickFile({ "application/pdf": [".pdf"] }).then((file) => {
         if (file) uploadPdfFile(file);
       });
     };

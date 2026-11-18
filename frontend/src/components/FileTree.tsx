@@ -28,6 +28,7 @@ import {
   LayoutGrid,
   List,
   ListTodo,
+  MessagesSquare,
   Music,
   Palette,
   Settings2,
@@ -48,11 +49,13 @@ import { useNotes, type TreeSort } from "@/lib/notes-context";
 import { haptic } from "@/lib/haptics";
 import { MobileActionSheet, type SheetAction } from "./mobile/MobileActionSheet";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
-import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TaskItem, type VaultMeta } from "@/lib/api";
 import { makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
+import { isThreadMeta, lastActivity, openThread, replyLabel, threadPreview, threadTags } from "@/lib/threads";
 
 import { type SidebarView } from "./Ribbon";
 import ThreadsList from "./threads/ThreadsList";
+import { useAllThreads, useSharedTags } from "./threads/useAllThreads";
 
 function getVaultIcon(iconName?: string) {
   return getIcon(iconName, Database);
@@ -206,9 +209,7 @@ type FileTreeProps = {
   view?: SidebarView;
   selectedTag?: string | null;
   onSelectTagConsumed?: () => void;
-  /** Threads view: a tag filter requested from outside, and the thread showing in the thread view. */
-  threadTag?: string | null;
-  onThreadTagConsumed?: () => void;
+  /** The thread showing in the thread view (highlighted in the Threads and Tags views). */
   openThreadId?: string | null;
   onControlsReady?: (c: TreeControls) => void;
   onSelectView?: (view: SidebarView) => void;
@@ -221,8 +222,6 @@ export default function FileTree({
   view = "tree",
   selectedTag,
   onSelectTagConsumed,
-  threadTag,
-  onThreadTagConsumed,
   openThreadId,
   onControlsReady,
   onSelectView,
@@ -260,7 +259,6 @@ export default function FileTree({
     renameVault,
     setVaultIcon,
     journalNotes,
-    tagsByVault,
     refreshTags,
     removeTagFromNote,
     renameTagInVault,
@@ -394,8 +392,10 @@ export default function FileTree({
     return byName;
   }, [allCollectionNotes, collections]);
 
+  // Threads kept in a vault are notes too, but they open in the thread view
+  // and have their own list: not "recent notes".
   const recentNotes = useMemo(
-    () => allVaultNotes.filter((n) => !shortcuts.has(n.id)),
+    () => allVaultNotes.filter((n) => !shortcuts.has(n.id) && !isThreadMeta(n)),
     [allVaultNotes, shortcuts],
   );
 
@@ -1254,11 +1254,11 @@ export default function FileTree({
             />
           ) : view === "tags" ? (
             <TagsView
-              tagsByVault={tagsByVault}
               allVaultData={allVaultData}
               vaults={vaults}
               activeId={activeId}
               notesById={notesById}
+              openThreadId={openThreadId}
               initialSelectedTag={selectedTag}
               onInitialTagConsumed={onSelectTagConsumed}
               treeSelectedNav={treeSelectedNav}
@@ -1279,12 +1279,7 @@ export default function FileTree({
               onToggle={toggleTaskItem}
             />
           ) : view === "threads" ? (
-            <ThreadsList
-              touch={touch}
-              openThreadId={openThreadId}
-              initialTag={threadTag}
-              onInitialTagConsumed={onThreadTagConsumed}
-            />
+            <ThreadsList touch={touch} openThreadId={openThreadId} />
           ) : view === "collections" ? (
             <CollectionsView
               collections={collections}
@@ -2729,14 +2724,16 @@ function RecentFilesList({
   );
 }
 // --- Tags View ---
-// Shows tags from all vaults as a flat alphabetical list. Clicking a tag
-// shows notes that carry it. Context menu: rename / delete tag.
+// Shows tags from all vaults and every thread as one flat alphabetical list
+// (notes and threads share tags). Clicking a tag shows the notes that carry
+// it, then its threads (they open in the thread view). Context menu: rename /
+// delete tag.
 function TagsView({
-  tagsByVault,
   allVaultData,
   vaults,
   activeId,
   notesById,
+  openThreadId,
   initialSelectedTag,
   onInitialTagConsumed,
   treeSelectedNav,
@@ -2747,11 +2744,11 @@ function TagsView({
   onDeleteTag,
   onRefreshTags,
 }: {
-  tagsByVault: Record<string, TagCount[]>;
   allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
   vaults: VaultMeta[];
   activeId: string | null;
   notesById: Record<string, { body?: string; title?: string }>;
+  openThreadId?: string | null;
   initialSelectedTag?: string | null;
   onInitialTagConsumed?: () => void;
   treeSelectedNav?: string | null;
@@ -2767,22 +2764,8 @@ function TagsView({
     for (const v of vaults) onRefreshTags(v.id);
   }, [vaults, onRefreshTags]);
 
-  const allTags = useMemo(() => {
-    const map = new Map<string, { name: string; count: number; vaults: string[] }>();
-    for (const v of vaults) {
-      const tags = tagsByVault[v.id] ?? [];
-      for (const t of tags) {
-        const existing = map.get(t.name);
-        if (existing) {
-          existing.count += t.count;
-          if (!existing.vaults.includes(v.id)) existing.vaults.push(v.id);
-        } else {
-          map.set(t.name, { name: t.name, count: t.count, vaults: [v.id] });
-        }
-      }
-    }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [tagsByVault, vaults]);
+  const allTags = useSharedTags(vaults);
+  const { threads } = useAllThreads();
 
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
@@ -2802,13 +2785,23 @@ function TagsView({
       const data = allVaultData[v.id];
       if (!data) continue;
       for (const n of data.notes) {
-        if (n.tags?.includes(selectedTag)) {
+        // Thread notes kept in a vault are listed with the threads below.
+        if (n.tags?.includes(selectedTag) && !isThreadMeta(n)) {
           result.push({ vaultId: v.id, vaultName: v.name, id: n.id, title: n.title, updatedAt: n.updatedAt, snippet: n.snippet, icon: n.icon });
         }
       }
     }
     return result.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }, [selectedTag, allVaultData, vaults]);
+
+  const matchingThreads = useMemo(() => {
+    if (!selectedTag) return [];
+    return threads
+      .filter((t) => threadTags(t).includes(selectedTag))
+      .map((t) => ({ thread: t, activity: lastActivity(t) }))
+      .sort((a, b) => b.activity.localeCompare(a.activity))
+      .map((r) => r.thread);
+  }, [selectedTag, threads]);
 
   if (selectedTag) {
     return (
@@ -2827,9 +2820,11 @@ function TagsView({
           style={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)", paddingLeft: 14 }}
         >
           #{selectedTag} · {matchingNotes.length} {matchingNotes.length === 1 ? "note" : "notes"}
+          {matchingThreads.length > 0 &&
+            ` · ${matchingThreads.length} ${matchingThreads.length === 1 ? "thread" : "threads"}`}
         </div>
         <ul>
-          {matchingNotes.length === 0 && (
+          {matchingNotes.length === 0 && matchingThreads.length === 0 && (
             <li className="px-3 py-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
               No notes with this tag.
             </li>
@@ -2893,6 +2888,70 @@ function TagsView({
             );
           })}
         </ul>
+        {matchingThreads.length > 0 && (
+          <>
+            <div
+              className="px-3 pb-1 pt-3"
+              style={{ fontSize: 12, fontWeight: 500, color: "var(--muted-foreground)", paddingLeft: 14 }}
+            >
+              Threads
+            </div>
+            <ul>
+              {matchingThreads.map((t) => {
+                const active = t.id === openThreadId;
+                const preview = threadPreview(t);
+                return (
+                  <li key={`${t.vaultId}/${t.id}`}>
+                    {/* Threads open in the thread view, never the editor. */}
+                    <button
+                      type="button"
+                      data-thread-id={t.id}
+                      onClick={() => openThread(t)}
+                      className={[
+                        "tree-row group flex w-full flex-col gap-0.5 transition-colors",
+                        active ? "tree-active" : "",
+                      ].join(" ")}
+                      style={{
+                        paddingLeft: 14,
+                        paddingRight: 14,
+                        paddingTop: 7,
+                        paddingBottom: 7,
+                        borderRadius: 5,
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <MessagesSquare
+                          className={active ? "h-3.5 w-3.5 shrink-0 text-primary" : "h-3.5 w-3.5 shrink-0"}
+                          style={active ? undefined : { color: "var(--muted-foreground)" }}
+                        />
+                        <span
+                          className="tree-row-title min-w-0 flex-1 truncate text-left"
+                          style={{ fontSize: 13, fontWeight: active ? undefined : 500, color: active ? undefined : "var(--foreground)" }}
+                        >
+                          {t.title || "Untitled thread"}
+                        </span>
+                        <span
+                          className="shrink-0"
+                          style={{ fontSize: 11, color: active ? undefined : "var(--muted-foreground)", opacity: 0.7 }}
+                        >
+                          {replyLabel(t)}
+                        </span>
+                      </div>
+                      {preview && (
+                        <span
+                          className="truncate text-left"
+                          style={{ fontSize: 12, color: active ? undefined : "var(--muted-foreground)", opacity: 0.7, paddingLeft: 22 }}
+                        >
+                          {preview}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </div>
     );
   }

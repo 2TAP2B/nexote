@@ -12,7 +12,6 @@ import {
   createThread,
   deleteThread,
   mutateThread,
-  OPEN_THREADS_VIEW_EVENT,
   openThread,
   parseThread,
   removeThreadPost,
@@ -202,8 +201,9 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     void (note.vaultId ? openNoteInVault(note.vaultId, note.id) : openTab(note.id));
   };
 
+  // The Tags view, like a #tag in the editor: notes and threads share tags.
   const openTag = (tag: string) => {
-    window.dispatchEvent(new CustomEvent(OPEN_THREADS_VIEW_EVENT, { detail: { tag } }));
+    window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: tag }));
     onClose();
   };
 
@@ -392,7 +392,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                   key={tag}
                   type="button"
                   onClick={() => openTag(tag)}
-                  title={`Threads tagged #${tag}`}
+                  title={`Notes and threads tagged #${tag}`}
                   className="shrink-0 rounded-full px-2 py-px font-medium"
                   style={{
                     background: "color-mix(in oklab, var(--mob-accent) 15%, transparent)",

@@ -106,7 +106,7 @@ The backend uses only the Go standard library for HTTP, with method-pattern rout
 
 ## Releases
 
-Every push to `main` creates the next patch release (`v0.1.0`, `v0.1.1`, ...) and publishes the Docker image `ghcr.io/2tap2b/nexote` for `linux/amd64` and `linux/arm64`, tagged `latest` and with the version number.
+Pushing a `v*` tag creates the GitHub release (with the commits since the previous tag as notes) and publishes the Docker image `ghcr.io/2tap2b/nexote` for `linux/amd64` and `linux/arm64`, tagged `latest` and with the version number. Pushes to `main` alone don't release. Features get a minor version (`v0.6.0`), bugfixes a patch (`v0.6.1`).
 
 ## License
 

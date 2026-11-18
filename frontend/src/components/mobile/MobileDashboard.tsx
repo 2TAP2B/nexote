@@ -19,7 +19,9 @@ import {
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
+import { isThreadMeta } from "@/lib/threads";
 import { useCanEdit } from "@/components/useCanEdit";
+import { useSharedTags } from "@/components/threads/useAllThreads";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
 
@@ -86,7 +88,6 @@ export default function MobileDashboard({
     openNoteInVault,
     openJournalNote,
     tasks,
-    tagsByVault,
     refreshTags,
     toggleTaskItem,
     settings,
@@ -112,8 +113,9 @@ export default function MobileDashboard({
     const items: RecentEntry[] = [];
     for (const v of vaults) {
       for (const n of allVaultData[v.id]?.notes ?? []) {
-        // Collection items live in their gallery, not the note lists.
-        if (n.collection) continue;
+        // Collection items live in their gallery, not the note lists; threads
+        // kept in a vault have their own (Threads view, quick notes).
+        if (n.collection || isThreadMeta(n)) continue;
         items.push({ id: n.id, title: n.title, path: n.path, updatedAt: n.updatedAt, vaultId: v.id, source: "vault" });
       }
     }
@@ -160,16 +162,10 @@ export default function MobileDashboard({
     [tasks],
   );
 
-  // Tags of the active space's vaults (other spaces' tags stay loaded).
-  const allTags = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const v of vaults) {
-      for (const t of tagsByVault[v.id] ?? []) counts.set(t.name, (counts.get(t.name) ?? 0) + t.count);
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, count]) => ({ name, count }));
-  }, [tagsByVault, vaults]);
+  // Tags of the active space's vaults (other spaces' tags stay loaded) and of
+  // every thread: one namespace, like the Tags view.
+  const sharedTags = useSharedTags(vaults);
+  const allTags = useMemo(() => [...sharedTags].sort((a, b) => b.count - a.count), [sharedTags]);
 
   const openTaskNote = (task: (typeof tasks)[number]) => {
     if (task.vaultId === "journal") void openJournalNote(task.noteId);

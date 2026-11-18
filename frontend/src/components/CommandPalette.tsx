@@ -27,8 +27,8 @@ import { useTheme } from "next-themes";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { api, type SearchHit } from "@/lib/api";
 import { makeSnippet } from "@/lib/note-utils";
-import { notepadLocation } from "@/lib/notepad";
-import { openThread, useThreads } from "@/lib/threads";
+import { isThreadMeta, openThread } from "@/lib/threads";
+import { useAllThreads, useSharedTags } from "@/components/threads/useAllThreads";
 import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
 import { useCanEdit } from "@/components/useCanEdit";
 
@@ -54,7 +54,7 @@ type Item =
   | { kind: "tag"; name: string };
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
-  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, spaces, switchSpace, activeVault, tagsByVault, settings, activeSpaceId } = useNotes();
+  const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, spaces, switchSpace, activeVault, settings, activeSpaceId } = useNotes();
   const { canEditSpace } = useCanEdit();
   const { theme, setTheme } = useTheme();
   // Track the visual viewport: when the touch keyboard opens (iOS keeps the
@@ -64,8 +64,11 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  // Threads (in the Notepad's vault) open in the thread view, never the editor.
-  const { threads } = useThreads(notepadLocation(settings).vaultId);
+  // Threads (from every vault and the personal store) open in the thread
+  // view, never the editor.
+  const { threads } = useAllThreads();
+  // #tag search: notes and threads share one tag namespace.
+  const sharedTags = useSharedTags(vaults);
 
   useEffect(() => {
     if (open) {
@@ -259,17 +262,8 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     // Disabled entirely when the tags feature toggle is off.
     if (settings.showTagsOnPalette && q.startsWith("#")) {
       const tagQuery = q.slice(1);
-      const allTags = new Map<string, number>();
-      for (const v of vaults) {
-        for (const t of tagsByVault[v.id] ?? []) {
-          allTags.set(t.name, (allTags.get(t.name) ?? 0) + t.count);
-        }
-      }
-      const matched = [...allTags.entries()]
-        .filter(([name]) => !tagQuery || name.includes(tagQuery))
-        .sort((a, b) => a[0].localeCompare(b[0]));
-      for (const [name] of matched) {
-        result.push({ kind: "tag", name });
+      for (const { name } of sharedTags) {
+        if (!tagQuery || name.includes(tagQuery)) result.push({ kind: "tag", name });
       }
       return result;
     }
@@ -316,7 +310,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     if (q) {
       // Sorted by updatedAt desc locally (instant).
       const localMatched = [...notes]
-        .filter((n) => n.title.toLowerCase().includes(q) && !threadIds.has(n.id))
+        .filter((n) => n.title.toLowerCase().includes(q) && !isThreadMeta(n))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       for (const n of localMatched) {
         const k = key(undefined, n.id);
@@ -339,7 +333,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
     } else {
       const sorted = [...notes]
-        .filter((n) => !threadIds.has(n.id))
+        .filter((n) => !isThreadMeta(n))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       // If empty query, limit notes to 8 so commands are visible
       for (const n of sorted.slice(0, 8)) {
@@ -357,7 +351,7 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
     }
 
     return result;
-  }, [commands, notes, spaces, activeSpaceId, activeVault, tagsByVault, query, settings, canEditSpace, threads]);
+  }, [commands, notes, spaces, activeSpaceId, activeVault, sharedTags, query, settings, canEditSpace, threads]);
 
   useEffect(() => {
     setIndex((i) => Math.min(i, Math.max(0, items.length - 1)));

@@ -73,8 +73,10 @@ export function ToolbarMenu({
         bottom,
         width,
         maxHeight: Math.max(160, anchor.top - 16),
-        background: touch ? "var(--mob-surface, var(--popover))" : "var(--popover)",
-        color: touch ? "var(--mob-text, var(--popover-foreground))" : "var(--popover-foreground)",
+        // Portaled to <body>, outside the touch shell's --mob-* scope: use the
+        // theme's opaque colors (there is no --popover in this theme).
+        background: touch ? "var(--sidebar)" : "var(--background)",
+        color: "var(--foreground)",
         border: "1px solid var(--border)",
       }}
     >

@@ -36,8 +36,6 @@ type Props = {
   selectedTag: string | null;
   onSelectView: (view: SidebarView) => void;
   onSelectTagConsumed: () => void;
-  threadTag: string | null;
-  onThreadTagConsumed: () => void;
   openThreadId: string | null;
 };
 
@@ -61,8 +59,6 @@ export default function MobileSidebar({
   selectedTag,
   onSelectView,
   onSelectTagConsumed,
-  threadTag,
-  onThreadTagConsumed,
   openThreadId,
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
@@ -195,8 +191,6 @@ export default function MobileSidebar({
             view={view}
             selectedTag={selectedTag}
             onSelectTagConsumed={onSelectTagConsumed}
-            threadTag={threadTag}
-            onThreadTagConsumed={onThreadTagConsumed}
             openThreadId={openThreadId}
             onControlsReady={onControlsReady}
             onSelectView={onSelectView}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { api, type Note, type NoteMeta } from "./api";
 import { localDateKey, makeSnippet } from "./note-utils";
@@ -31,8 +31,6 @@ export const THREADS_CHANGED_EVENT = "nexote:threads-changed";
 export const NOTE_CHANGE_EVENT = "nexote:note-change";
 /** Opens a thread in the thread view (detail: `{ vaultId, id }`). */
 export const OPEN_THREAD_EVENT = "nexote:open-thread";
-/** Shows the Threads sidebar view, optionally filtered (detail: `{ tag?: string }`). */
-export const OPEN_THREADS_VIEW_EVENT = "nexote:open-threads-view";
 
 export type ThreadPost = {
   /** "" for text before the first post heading. */
@@ -222,7 +220,8 @@ export const isThreadMeta = (n: Pick<NoteMeta, "type">) => n.type === THREAD_TYP
 // --- Shared cache: one list per vault, loaded once for every view ---------
 
 type Snapshot = { threads: Thread[]; loaded: boolean; error: string | null };
-type Entry = { snapshot: Snapshot; listeners: Set<() => void>; loading: Promise<void> | null };
+// stale: a change arrived while no view listened, so the next one reloads.
+type Entry = { snapshot: Snapshot; listeners: Set<() => void>; loading: Promise<void> | null; stale: boolean };
 
 const EMPTY: Snapshot = { threads: [], loaded: false, error: null };
 const cache = new Map<string, Entry>();
@@ -230,7 +229,7 @@ const cache = new Map<string, Entry>();
 function entryFor(vaultId: string): Entry {
   let entry = cache.get(vaultId);
   if (!entry) {
-    entry = { snapshot: EMPTY, listeners: new Set(), loading: null };
+    entry = { snapshot: EMPTY, listeners: new Set(), loading: null, stale: false };
     cache.set(vaultId, entry);
   }
   return entry;
@@ -247,6 +246,7 @@ function publish(vaultId: string, patch: Partial<Snapshot> | ((s: Snapshot) => P
 export function loadThreads(vaultId: string): Promise<void> {
   const entry = entryFor(vaultId);
   entry.loading ??= (async () => {
+    entry.stale = false;
     try {
       const metas = ((await api.list(vaultId)).notes ?? []).filter(isThreadMeta);
       const notes = await Promise.all(metas.map((m) => api.get(vaultId, m.id)));
@@ -282,7 +282,11 @@ if (typeof window !== "undefined") {
     const detail = (event as CustomEvent<{ vaultId?: string; id?: string; updatedAt?: string }>).detail;
     if (!detail?.vaultId || !detail.id) return;
     const entry = cache.get(detail.vaultId);
-    if (!entry || entry.listeners.size === 0 || !entry.snapshot.loaded) return;
+    if (!entry || !entry.snapshot.loaded) return;
+    if (entry.listeners.size === 0) {
+      entry.stale = true;
+      return;
+    }
     const known = entry.snapshot.threads.find((t) => t.id === detail.id);
     if (known && detail.updatedAt && Date.parse(known.updatedAt) >= Date.parse(detail.updatedAt)) return;
     const vaultId = detail.vaultId;
@@ -315,10 +319,76 @@ export function useThreads(vaultId: string | null): Snapshot & { reload: () => P
     () => EMPTY,
   );
   useEffect(() => {
-    if (vaultId && !entryFor(vaultId).snapshot.loaded) void loadThreads(vaultId);
+    if (!vaultId) return;
+    const entry = entryFor(vaultId);
+    if (!entry.snapshot.loaded || entry.stale) void loadThreads(vaultId);
   }, [vaultId]);
   const reload = useCallback(() => (vaultId ? loadThreads(vaultId) : Promise.resolve()), [vaultId]);
   return { ...snapshot, reload };
+}
+
+/**
+ * Every thread of several vaults as one list (each keeps its `vaultId`),
+ * from the same per-vault cache; loads the vaults not loaded yet. `loaded`
+ * once all are; `error` is the first vault's that failed.
+ */
+export function useThreadsIn(vaultIds: readonly string[]): Snapshot {
+  // The joined ids, so a new array listing the same vaults keeps the subscription.
+  const key = vaultIds.join("\n");
+  const ids = useMemo(() => (key ? key.split("\n") : []), [key]);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const entries = ids.map(entryFor);
+      for (const entry of entries) entry.listeners.add(listener);
+      return () => {
+        for (const entry of entries) entry.listeners.delete(listener);
+      };
+    },
+    [ids],
+  );
+  // useSyncExternalStore needs the same object while no vault changed.
+  const getSnapshot = useMemo(() => {
+    let parts: Snapshot[] = [];
+    let merged: Snapshot = EMPTY;
+    return () => {
+      const next = ids.map((id) => entryFor(id).snapshot);
+      if (next.length === parts.length && next.every((s, i) => s === parts[i])) return merged;
+      parts = next;
+      merged = {
+        threads: next.flatMap((s) => s.threads),
+        loaded: next.every((s) => s.loaded),
+        error: next.find((s) => s.error)?.error ?? null,
+      };
+      return merged;
+    };
+  }, [ids]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY);
+  useEffect(() => {
+    for (const id of ids) {
+      const entry = entryFor(id);
+      if (!entry.snapshot.loaded || entry.stale) void loadThreads(id);
+    }
+  }, [ids]);
+  return snapshot;
+}
+
+/**
+ * Reloads a loaded vault whose note list disagrees with the cache (a thread
+ * missing, gone or newer): changes no note event brought, e.g. made while
+ * this device was offline.
+ */
+export function syncThreads(vaultId: string, metas: Pick<NoteMeta, "id" | "type" | "updatedAt">[]) {
+  const entry = cache.get(vaultId);
+  if (!entry?.snapshot.loaded || entry.loading) return;
+  const known = new Map(entry.snapshot.threads.map((t) => [t.id, Date.parse(t.updatedAt)]));
+  const listed = metas.filter(isThreadMeta);
+  const differs =
+    listed.length !== known.size ||
+    listed.some((m) => {
+      const at = known.get(m.id);
+      return at === undefined || at < Date.parse(m.updatedAt);
+    });
+  if (differs) void loadThreads(vaultId);
 }
 
 // --- Writes ------------------------------------------------------------------

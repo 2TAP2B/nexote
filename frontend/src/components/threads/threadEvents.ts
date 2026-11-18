@@ -10,11 +10,3 @@ export function threadRefFrom(e: Event): ThreadRef | null {
   const { vaultId, id } = d;
   return typeof vaultId === "string" && typeof id === "string" && vaultId && id ? { vaultId, id } : null;
 }
-
-/** The tag of an OPEN_THREADS_VIEW_EVENT; "" = no filter. */
-export function threadsViewTagFrom(e: Event): string {
-  if (!(e instanceof CustomEvent)) return "";
-  const d: unknown = e.detail;
-  if (typeof d !== "object" || d === null || !("tag" in d)) return "";
-  return typeof d.tag === "string" ? d.tag.replace(/^#/, "").toLowerCase() : "";
-}
