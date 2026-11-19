@@ -309,27 +309,50 @@ function makeTocWatchPlugin(noteId: string) {
   );
 }
 
-// Structural tags that carry no formatting of their own. Mobile browsers wrap
-// copied plain text in a payload made up of these (plus <meta>), e.g. iOS
-// emits <meta charset='utf-8'><pre>text</pre> and Android wraps lines in
-// <div>s. Genuinely formatted clipboard content (bold, links, lists, images,
-// code blocks, …) contains other elements, so it is left to the normal
-// clipboard handling.
-const plainTextWrapperTags = new Set(["meta", "style", "head", "body", "pre", "div", "p", "span", "br"]);
+// Structural tags that carry no formatting of their own. Plain text copied
+// from editors arrives wrapped in these: iOS emits <pre>text</pre>, Android
+// and code editors in the browser (GitHub, CodeMirror) one <div> per line,
+// desktop editors <span>s with inline styles or &nbsp; runs. Genuinely
+// formatted clipboard content (headings, bold, links, lists, images, …)
+// contains other elements and is left to the normal HTML paste.
+const plainTextWrapperTags = new Set(["html", "head", "body", "meta", "style", "pre", "div", "p", "span", "br", "font"]);
 
-// True when the clipboard's HTML payload carries no formatting and just
-// wraps the same plain text. In that case the text/plain content should win
-// so the markdown parser can render it instead of inserting the source literally.
+// Lines or spans that only Markdown source has: headings, list and task
+// markers, quotes, fences, tables, **bold**, [links](url).
+const MARKDOWN_HINT =
+  /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|```|~~~|\|.*\|)|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\n]+\)/;
+
+// True when the clipboard's HTML just wraps the same plain text without
+// formatting: then text/plain should win so the Markdown parser renders it
+// instead of pasting the source literally. Whitespace is ignored in the
+// comparison (per-line <div>s carry no newlines in their text). A <code>
+// wrapper (Markdown source shown as code on a web page) counts only when
+// the text looks like Markdown; other code stays a code block.
 function isPlainTextWrapper(html: string, text: string): boolean {
   if (!html) return true;
   const el = document.createElement("div");
   el.innerHTML = html;
-  const stripped = (el.textContent ?? "").replace(/\s+/g, " ").trim();
-  if (stripped.length === 0 || stripped !== text.replace(/\s+/g, " ").trim()) return false;
+  const squash = (s: string) => s.replace(/\s+/g, "");
+  const stripped = squash(el.textContent ?? "");
+  if (stripped.length === 0 || stripped !== squash(text)) return false;
+  const markdownish = MARKDOWN_HINT.test(text);
   for (const n of Array.from(el.querySelectorAll("*"))) {
-    if (!plainTextWrapperTags.has(n.tagName.toLowerCase())) return false;
+    const tag = n.tagName.toLowerCase();
+    if (tag === "code" && markdownish) continue;
+    if (!plainTextWrapperTags.has(tag)) return false;
   }
   return true;
+}
+
+/** The language VS Code (and Cursor, VSCodium) put on the clipboard, or null. */
+function vscodeMode(data: string): string | null {
+  if (!data) return null;
+  try {
+    const parsed: unknown = JSON.parse(data);
+    return parsed && typeof parsed === "object" && "mode" in parsed && typeof parsed.mode === "string" ? parsed.mode : "";
+  } catch {
+    return null;
+  }
 }
 
 // The plain-text clipboard (what mail and chat apps paste) is the selection
@@ -1497,17 +1520,30 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
             }
 
             // Markdown pastes: milkdown's clipboard plugin parses plain text
-            // as markdown only when the clipboard carries no HTML. Mobile
-            // browsers wrap copied plain text in an HTML payload that is just
-            // the same text with no formatting; in that case parse text/plain
-            // with the markdown parser so headings, lists, tasks and code
-            // blocks render instead of appearing as literal source.
+            // as markdown only when the clipboard carries no HTML. Editors,
+            // browsers and phones wrap copied plain text in HTML that is just
+            // the same text without formatting; then parse text/plain with
+            // the markdown parser so headings, lists, tasks and code blocks
+            // render instead of appearing as literal source.
             if (view.state.selection.$from.node().type.spec.code) return false;
-            const text = event.clipboardData?.getData("text/plain") ?? "";
+            const text = (event.clipboardData?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n");
             const html = event.clipboardData?.getData("text/html") ?? "";
-            if (html && text.trim() && isPlainTextWrapper(html, text)) {
+            // VS Code marks its clipboard with the file's language: Markdown
+            // is parsed, anything else becomes one code block in that
+            // language (milkdown's own handling of it garbles the text).
+            const mode = vscodeMode(event.clipboardData?.getData("vscode-editor-data") ?? "");
+            if (mode !== null && mode !== "markdown" && text) {
+              const schema = ctx.get(schemaCtx);
+              const codeBlock = schema.nodes.code_block;
+              if (codeBlock) {
+                const node = codeBlock.create({ language: mode === "plaintext" ? "" : mode }, schema.text(text));
+                view.dispatch(view.state.tr.replaceSelectionWith(node).scrollIntoView().setMeta("paste", true).setMeta("uiEvent", "paste"));
+                return true;
+              }
+            }
+            if (text.trim() && html && (mode === "markdown" || isPlainTextWrapper(html, text))) {
               try {
-                const doc = ctx.get(parserCtx)(text.replace(/\r\n?/g, "\n"));
+                const doc = ctx.get(parserCtx)(text);
                 if (doc && typeof doc !== "string") {
                   const domParser = DOMParser.fromSchema(ctx.get(schemaCtx));
                   const dom = DOMSerializer.fromSchema(ctx.get(schemaCtx)).serializeFragment(doc.content);
