@@ -126,6 +126,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/me/passkeys/{id}", h.removePasskey)
 	mux.HandleFunc("PUT /api/me/avatar", h.setMyAvatar)
 	mux.HandleFunc("DELETE /api/me/avatar", h.removeMyAvatar)
+	mux.HandleFunc("GET /api/me/prefs", h.getMyPrefs)
+	mux.HandleFunc("PATCH /api/me/prefs", h.updateMyPrefs)
 	mux.HandleFunc("GET /api/users", h.listDirectory)
 	mux.HandleFunc("GET /api/users/{id}/avatar", h.getUserAvatar)
 

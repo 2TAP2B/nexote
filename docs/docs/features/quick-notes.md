@@ -27,7 +27,7 @@ Further lines of a memo are indented by two spaces. Links to notes are `[[Title]
 | Private — only you (default) | Stored in your personal store. Only you can see it, it is the same in every space, and it never appears in a note tree. |
 | A vault or folder | Stored in any vault or folder you can write to, in any space. Members of that space can read it. |
 
-Changing the location moves the existing Notepad. When it lives in a vault, **Show in note tree** (on by default) controls whether it appears in the tree and note lists. The location is a setting of each device, like the other settings; new threads go to a **Threads** folder at that location.
+Changing the location moves the existing Notepad. When it lives in a vault, **Show in note tree** (on by default) controls whether it appears in the tree and note lists. The location belongs to your account, so every device uses the same Notepad; new threads go to a **Threads** folder at that location.
 
 ## Writing memos
 
@@ -90,7 +90,7 @@ Posts are Markdown: **bold**, *italics*, ~~strikethrough~~, lists and task lists
 
 ### Comments
 
-Each post can have comments, for discussing one topic of a thread without starting a new thread. **Swipe a post to the left**, use **Comment** in its sheet, or on desktop the comment button next to the post; the composer then says which post you are commenting on. Comments appear indented under their post, with their time; long-press one to edit, copy or delete it.
+Each post can have comments, for discussing one topic of a thread without starting a new thread. **Swipe a post to the left**, use **Comment** in its sheet, or on desktop the comment button next to the post. A post with comments shows a chip with their count (desktop shows them right away); tapping it opens the topic with its comments on a page of their own — the header names the topic, and the composer writes another comment there. Long-press a comment to edit, copy or delete it.
 
 Comments stay inside the thread: they don't show in the quick notes and don't move the thread's card. In the file a comment is a sub-section of its post:
 

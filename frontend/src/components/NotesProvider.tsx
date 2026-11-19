@@ -15,7 +15,14 @@ import { localDateKey, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
 import { NOTE_CHANGE_EVENT } from "@/lib/threads";
+import { useAuth } from "@/components/auth/AuthProvider";
 import type { InterfaceMode } from "@/lib/shell";
+
+// Settings that must be one per account (the Notepad has to be the same
+// note on every device), kept server-side and applied over the local ones.
+const ACCOUNT_SETTINGS = ["notepadVault", "notepadFolder", "notepadInTree", "memoNoteVault", "memoNoteFolder"] as const;
+type AccountSetting = (typeof ACCOUNT_SETTINGS)[number];
+const isAccountSetting = (k: string): k is AccountSetting => (ACCOUNT_SETTINGS as readonly string[]).includes(k);
 
 type Draft = { title: string; body: string };
 
@@ -485,6 +492,14 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   }, [settings]);
 
   const updateSettings = useCallback((patch: Partial<AppSettings>) => {
+    // The account's settings are written to the server as well, so every
+    // device reads the same values. Booleans travel as "true"/"false".
+    const prefs: Record<string, string> = {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (!isAccountSetting(k) || v === undefined) continue;
+      prefs[k] = typeof v === "boolean" || typeof v === "number" ? String(v) : v;
+    }
+    if (Object.keys(prefs).length > 0) void api.updatePrefs(prefs).catch(() => {});
     setSettings((prev) => {
       const next = { ...prev, ...patch };
       try {
@@ -495,6 +510,52 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, []);
+
+  // Pull the account's preferences over this device's settings: the server
+  // wins, so every device points at the same Notepad. When the account has
+  // none yet (first use), this device's choice is uploaded.
+  const { user } = useAuth();
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { prefs } = await api.getPrefs();
+        if (cancelled) return;
+        if (Object.keys(prefs).length === 0) {
+          const local: Record<string, string> = {};
+          for (const k of ACCOUNT_SETTINGS) {
+            const v = settingsRef.current[k];
+            local[k] = typeof v === "boolean" ? String(v) : v;
+          }
+          void api.updatePrefs(local).catch(() => {});
+          return;
+        }
+        const patch: Partial<AppSettings> = {};
+        for (const [k, v] of Object.entries(prefs)) {
+          if (!isAccountSetting(k)) continue;
+          if (k === "notepadInTree") patch.notepadInTree = v === "true";
+          else {
+            const key = k as "notepadVault" | "notepadFolder" | "memoNoteVault" | "memoNoteFolder";
+            patch[key] = v;
+          }
+        }
+        setSettings((prev) => {
+          const next = { ...prev, ...patch };
+          try {
+            localStorage.setItem("nexote:settings", JSON.stringify(next));
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+      } catch {
+        // Offline or old backend: the device's own settings stay.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const activeVault = useMemo(
     () => vaults.find((v) => v.id === activeVaultId) ?? null,

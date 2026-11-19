@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronLeft, CircleCheck, Copy, MessageSquareReply, MoreHorizontal, Pencil, Pin, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { copyText } from "@/lib/clipboard";
 import { makeSnippet } from "@/lib/note-utils";
@@ -96,6 +96,16 @@ const COMMENT_EDIT_LABELS: ComposerLabels = {
   field: "Edit the comment",
 };
 
+// On the comment page the header shows the topic, so the composer needs no
+// banner; the placeholder says that a send adds a comment there.
+const DETAIL_LABELS: ComposerLabels = {
+  ...REPLY_LABELS,
+  send: "Comment",
+  save: "Comment",
+  placeholder: "Write a comment…",
+  editPlaceholder: "Write a comment…",
+};
+
 // What the composer edits: a post or a comment, as it was when opened (the
 // save looks it up by that content in the latest body).
 type Edit =
@@ -188,6 +198,8 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   // The post a new comment goes under (null: the composer replies). Its
   // content as it was when picked: the save finds it in the latest body.
   const [commentOn, setCommentOn] = useState<ThreadPost | null>(null);
+  // The post whose comments are open (null: the thread's timeline).
+  const [detailPostKey, setDetailPostKey] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet | null>(null);
   // The post briefly tinted after jumping to it from the pinned bar.
   const [flashKey, setFlashKey] = useState<string | null>(null);
@@ -196,6 +208,13 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   const selected = posts.filter((p) => selectedKeys.has(postKey(p)));
   const editingKey = draft.editing?.kind === "post" ? postKey(draft.editing.post) : null;
   const commentOnKey = commentOn ? postKey(commentOn) : null;
+  // The post whose comment page is open, from the latest posts (deleted: back).
+  const detailPost = detailPostKey === null ? null : (posts.find((p) => postKey(p) === detailPostKey) ?? null);
+  // The comment page's header leaves comment mode; the send then has no post
+  // target anymore, so the draft must not fire a comment.
+  useEffect(() => {
+    if (detailPostKey !== null && commentOn !== null && postKey(commentOn) !== detailPostKey) setCommentOn(null);
+  }, [detailPostKey, commentOn]);
   // The comment of this post open in the composer, if any.
   const editingCommentOf = (post: ThreadPost) =>
     draft.editing?.kind === "comment" && postKey(draft.editing.post) === postKey(post) ? commentKey(draft.editing.comment) : null;
@@ -270,7 +289,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   };
 
   const send = () => {
-    const target = commentOn;
+    const target = commentOn ?? (detailPost?.day ? detailPost : null);
     void draft.submit(
       async (text, edit) => {
         await mutateThread(ref, (body) => {
@@ -530,11 +549,28 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     </>
   ) : (
     <>
-      <HeaderButton label={mobile ? "Back" : "Close thread"} onClick={close}>
-        {mobile ? <ChevronLeft size={22} /> : <X size={20} />}
+      <HeaderButton
+        label={detailPost ? "Back to the thread" : mobile ? "Back" : "Close thread"}
+        onClick={detailPost ? () => setDetailPostKey(null) : close}
+      >
+        {detailPost || mobile ? <ChevronLeft size={22} /> : <X size={20} />}
       </HeaderButton>
       <div className="flex min-w-0 flex-1 flex-col">
-        {titleDraft !== null ? (
+        {detailPost ? (
+          <>
+            <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>
+              {thread?.title}
+            </span>
+            <span
+              className={"truncate text-lg font-semibold leading-tight" + (detailPost.flags.done ? " line-through opacity-60" : "")}
+              style={{ color: "var(--mob-text)" }}
+            >
+              {postSnippet(detailPost.text)}
+            </span>
+          </>
+        ) : (
+          <>
+            {titleDraft !== null ? (
           <input
             autoFocus
             value={titleDraft}
@@ -571,7 +607,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
             {thread?.done && <CircleCheck size={16} aria-label="Solved" className="shrink-0" style={{ color: DONE_GREEN }} />}
           </div>
         )}
-        {thread && (
+        {thread && !detailPost && (
           <div className="flex min-w-0 items-center gap-1 overflow-x-auto pt-0.5 text-xs" style={{ scrollbarWidth: "none" }}>
             {thread.pinned && (
               <Pin size={12} aria-label="Pinned" className="shrink-0" style={{ color: "var(--mob-accent)" }} />
@@ -600,13 +636,15 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
             )}
           </div>
         )}
+          </>
+        )}
       </div>
-      {thread && posts.length > 0 && (
+      {!detailPost && thread && posts.length > 0 && (
         <HeaderButton label="Select posts" onClick={() => setSelectMode(true)}>
           <CircleCheck size={19} />
         </HeaderButton>
       )}
-      {thread && (
+      {!detailPost && thread && (
         <div ref={menuRef} className="relative">
           <HeaderButton label="More" onClick={() => setMenuOpen((open) => !open)}>
             <MoreHorizontal size={20} />
@@ -667,6 +705,91 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     </>
   );
 
+  // Phone timeline: the stream's dot-and-line block for one post. Reused by
+  // the comment page, which shows one post without the thread's other posts.
+  const timelinePost = (post: ThreadPost, i: number, list: ThreadPost[]) => {
+    const key = postKey(post);
+    const first = i === 0;
+    const last = i === list.length - 1;
+    const newDay = first || post.day !== list[i - 1]?.day;
+    const stamp = post.time ? (newDay ? `${dayLabel(post.day)} · ${post.time}` : post.time) : newDay ? dayLabel(post.day) : "";
+    return (
+      <li
+        key={`${post.day}-${post.start}`}
+        data-post-key={key}
+        className="-mx-1 flex gap-1 rounded-xl px-1 transition-colors duration-500"
+        style={flashKey === key ? { background: FLASH } : undefined}
+      >
+        {selectMode && (
+          <SelectCircle label="Select post" selected={selectedKeys.has(key)} onToggle={() => toggleSelected(post)} />
+        )}
+        <div aria-hidden className="relative flex w-5 shrink-0 justify-center">
+          <span
+            className="relative z-[1] mt-[5px] h-2.5 w-2.5 rounded-full"
+            style={
+              isPriorityLevel(post.flags.priority)
+                ? { background: PRIORITIES[post.flags.priority].color }
+                : first
+                  ? { background: "var(--mob-accent)" }
+                  : { background: "var(--mob-bg)", border: "2px solid var(--mob-accent)" }
+            }
+          />
+          {!last && (
+            <span
+              className="absolute bottom-[-5px] top-[15px] w-[2px] rounded-full"
+              style={{ background: "color-mix(in srgb, var(--mob-accent) 30%, transparent)" }}
+            />
+          )}
+        </div>
+        <div className="min-w-0 flex-1 pb-5">
+          <div className="flex items-center gap-1.5 px-2 text-[12px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+            {stamp && <span>{stamp}</span>}
+            {first && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--mob-accent)" }}>
+                Started
+              </span>
+            )}
+            <PostMarkIcons flags={post.flags} />
+          </div>
+          <div className={post.flags.done ? "opacity-[0.55] [&_.nexote-post-md]:line-through" : undefined}>
+            <MemoBubble
+              text={post.text}
+              variant="timeline"
+              markdown
+              editing={editingKey === key || commentOnKey === key}
+              selected={selectedKeys.has(key)}
+              selecting={selectMode}
+              resolve={resolve}
+              onOpenNote={openNote}
+              onOpenImage={setViewer}
+              onOpenTag={openTag}
+              onToggleSelect={() => toggleSelected(post)}
+              onLongPress={() => setSheet({ kind: "post", key })}
+              onSwipeLeft={post.day ? () => startComment(post) : undefined}
+              swipeLabel="Comment"
+              swipeIcon={<MessageSquareReply size={18} />}
+            />
+          </div>
+        </div>
+      </li>
+    );
+  };
+
+  // The comments of one post (used by the comment page in both layouts).
+  const CommentsBlock = ({ post, indent }: { post: ThreadPost; indent: string }) => (
+    <PostComments
+      comments={post.comments}
+      postDay={post.day}
+      editingKey={editingCommentOf(post)}
+      onMenu={(comment) => setSheet({ kind: "comment", postKey: postKey(post), comment })}
+      resolve={resolve}
+      onOpenNote={openNote}
+      onOpenImage={setViewer}
+      onOpenTag={openTag}
+      className={indent}
+    />
+  );
+
   let content: React.ReactNode;
   if (!thread) {
     content = (
@@ -677,90 +800,81 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     );
   } else if (posts.length === 0) {
     content = <Notice title="No posts yet" text="Write the first one below." />;
-  } else if (mobile) {
-    // Phone: a timeline instead of chat bubbles (unlike quick notes). Each
-    // post has its time on top and a dot on the rail; the line runs on to the
-    // next post's dot, so a thread reads as one thought over time.
-    content = (
+  } else if (detailPost) {
+    // One topic with its comments. Phone: the timeline block; desktop: the
+    // post's bubble, then the comments under it.
+    content = mobile ? (
       <ol className="flex flex-col">
-        {posts.map((post, i) => {
-          const key = postKey(post);
-          const first = i === 0;
-          const last = i === posts.length - 1;
-          const newDay = first || post.day !== posts[i - 1].day;
-          const stamp = post.time ? (newDay ? `${dayLabel(post.day)} · ${post.time}` : post.time) : newDay ? dayLabel(post.day) : "";
-          return (
-            <li
-              key={`${post.day}-${post.start}`}
-              data-post-key={key}
-              className="-mx-1 flex gap-1 rounded-xl px-1 transition-colors duration-500"
-              style={flashKey === key ? { background: FLASH } : undefined}
-            >
-              {selectMode && (
-                <SelectCircle label="Select post" selected={selectedKeys.has(key)} onToggle={() => toggleSelected(post)} />
-              )}
-              <div aria-hidden className="relative flex w-5 shrink-0 justify-center">
-                <span
-                  className="relative z-[1] mt-[5px] h-2.5 w-2.5 rounded-full"
-                  style={
-                    isPriorityLevel(post.flags.priority)
-                      ? { background: PRIORITIES[post.flags.priority].color }
-                      : first
-                        ? { background: "var(--mob-accent)" }
-                        : { background: "var(--mob-bg)", border: "2px solid var(--mob-accent)" }
-                  }
-                />
-                {!last && (
-                  <span
-                    className="absolute bottom-[-5px] top-[15px] w-[2px] rounded-full"
-                    style={{ background: "color-mix(in srgb, var(--mob-accent) 30%, transparent)" }}
-                  />
-                )}
-              </div>
-              <div className="min-w-0 flex-1 pb-5">
-                <div className="flex items-center gap-1.5 px-2 text-[12px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
-                  {stamp && <span>{stamp}</span>}
-                  {first && (
-                    <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--mob-accent)" }}>
-                      Started
-                    </span>
-                  )}
-                  <PostMarkIcons flags={post.flags} />
-                </div>
-                <div className={post.flags.done ? "opacity-[0.55] [&_.nexote-post-md]:line-through" : undefined}>
-                  <MemoBubble
-                    text={post.text}
-                    variant="timeline"
-                    markdown
-                    editing={editingKey === key || commentOnKey === key}
-                    selected={selectedKeys.has(key)}
-                    selecting={selectMode}
-                    resolve={resolve}
-                    onOpenNote={openNote}
-                    onOpenImage={setViewer}
-                    onOpenTag={openTag}
-                    onToggleSelect={() => toggleSelected(post)}
-                    onLongPress={() => setSheet({ kind: "post", key })}
-                    onSwipeLeft={post.day ? () => startComment(post) : undefined}
-                    swipeLabel="Comment"
-                    swipeIcon={<MessageSquareReply size={18} />}
-                  />
-                </div>
-                <PostComments
-                  comments={post.comments}
-                  postDay={post.day}
-                  editingKey={editingCommentOf(post)}
-                  onMenu={(comment) => setSheet({ kind: "comment", postKey: key, comment })}
+        {timelinePost(detailPost, posts.indexOf(detailPost) === 0 ? 0 : -1, [detailPost])}
+        <CommentsBlock post={detailPost} indent="ml-8" />
+      </ol>
+    ) : (
+      <ol className="flex flex-col gap-1.5">
+        <li className="flex flex-col items-end">
+          <div className="group flex min-w-0 flex-1 flex-col items-end">
+            <div className={"flex w-full items-center justify-end gap-1.5"}>
+              <div
+                className={
+                  "flex min-w-0 flex-1 justify-end" +
+                  (detailPost.flags.done ? " opacity-[0.55] [&_.nexote-post-md]:line-through" : "")
+                }
+              >
+                <MemoBubble
+                  text={detailPost.text}
+                  markdown
+                  editing={editingKey === postKey(detailPost) || commentOnKey === postKey(detailPost)}
+                  selected={selectedKeys.has(postKey(detailPost))}
+                  selecting={selectMode}
                   resolve={resolve}
                   onOpenNote={openNote}
                   onOpenImage={setViewer}
                   onOpenTag={openTag}
-                  className="ml-2 mt-1"
+                  onToggleSelect={() => toggleSelected(detailPost)}
+                  onLongPress={() => setSheet({ kind: "post", key: postKey(detailPost) })}
                 />
               </div>
-            </li>
-          );
-        })}
+            </div>
+            <span className="mr-1 mt-0.5 flex items-center gap-1 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+              <PostMarkIcons flags={detailPost.flags} />
+              {detailPost.time}
+            </span>
+            <CommentsBlock post={detailPost} indent="mr-1 mt-1 w-fit max-w-[75%]" />
+          </div>
+        </li>
+      </ol>
+    );
+  } else if (mobile) {
+    // Phone: a timeline instead of chat bubbles (unlike quick notes). Each
+    // post has its time on top and a dot on the rail; the line runs on to the
+    // next post's dot, so a thread reads as one thought over time. Comments
+    // hide behind a count: tapping it opens the post with them.
+    content = (
+      <ol className="flex flex-col">
+        {posts.map((post, i) => (
+          <Fragment key={`${post.day}-${post.start}`}>
+            {timelinePost(post, i, posts)}
+            {post.comments.length > 0 && (
+              <li className="-mt-3 flex gap-1">
+                <span aria-hidden className="w-5 shrink-0" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailPostKey(postKey(post));
+                    requestAnimationFrame(() => listRef.current?.scrollTo({ top: 0 }));
+                  }}
+                  className="ml-2 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium"
+                  style={{
+                    background: "var(--mob-surface)",
+                    color: "var(--mob-accent)",
+                  }}
+                >
+                  <MessageSquareReply size={13} />
+                  {post.comments.length === 1 ? "1 comment" : `${post.comments.length} comments`}
+                </button>
+              </li>
+            )}
+          </Fragment>
+        ))}
       </ol>
     );
   } else {
@@ -841,6 +955,8 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                       {post.time}
                     </span>
                   )}
+                  {/* On the phone the comments hide behind a count; on
+                      desktop they show inline, so there is no page to open. */}
                   {/* Under the bubble, narrower, text reading left to right
                       from a thin rule: asides to the post. */}
                   <PostComments
@@ -934,7 +1050,9 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
               onRemoveAttachment={draft.removeAttachment}
               fullscreen={fullscreen}
               onFullscreenChange={setFullscreen}
-              editing={composerEditing}
+              // On the comment page the header names the topic; the plain
+              // placeholder says what a send does. No banner.
+              editing={detailPost ? null : composerEditing}
               onCancelEdit={cancelComposerMode}
               canSend={draft.canSend}
               posting={draft.posting}
@@ -942,9 +1060,9 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
               suggest={suggest}
               keyboardOpen={keyboardOpen}
               voice={draft.voice}
-              labels={composerLabels}
+              labels={detailPost && !draft.editing ? DETAIL_LABELS : composerLabels}
               allowFullscreen={mobile}
-              composing={!draft.editing && commentOn !== null}
+              composing={false}
             />
           )}
         </div>

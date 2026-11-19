@@ -61,6 +61,41 @@ func (h *Handler) updateMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"user": toPublicUser(&u)})
 }
 
+// getMyPrefs returns the account's cross-device preferences ({} when none).
+func (h *Handler) getMyPrefs(w http.ResponseWriter, r *http.Request) {
+	u, err := h.Accounts.User(currentUser(r).ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	prefs := u.Prefs
+	if prefs == nil {
+		prefs = map[string]string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"prefs": prefs})
+}
+
+// updateMyPrefs merges {"prefs": {...}} into the account's preferences.
+func (h *Handler) updateMyPrefs(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Prefs map[string]string `json:"prefs"`
+	}
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	prefs, err := h.Accounts.SetPrefs(currentUser(r).ID, in.Prefs)
+	if errors.Is(err, accounts.ErrInvalidPref) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"prefs": prefs})
+}
+
 // addPasskeyBegin starts registering another passkey (another device) for
 // the logged-in user.
 func (h *Handler) addPasskeyBegin(w http.ResponseWriter, r *http.Request) {

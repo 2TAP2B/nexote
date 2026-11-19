@@ -684,6 +684,11 @@ export const api = {
   // --- The logged-in account ---
   me: () => request<{ user: AuthUser; passkeys: PasskeyInfo[] }>("/api/me"),
   updateMe: (input: { displayName: string }) => request<{ user: AuthUser }>("/api/me", json("PATCH", input)),
+  /** Cross-device preferences ({} when none): where the Notepad lives, … */
+  getPrefs: () => request<{ prefs: Record<string, string> }>("/api/me/prefs"),
+  updatePrefs: (
+    patch: Partial<Record<"notepadVault" | "notepadFolder" | "notepadInTree" | "memoNoteVault" | "memoNoteFolder", string>>,
+  ) => request<{ prefs: Record<string, string> }>("/api/me/prefs", json("PATCH", { prefs: patch })),
   /** Profile picture (PNG, JPEG, GIF or WebP up to 2 MB); multipart like image uploads. */
   setAvatar: async (picture: Blob) => {
     const form = new FormData();

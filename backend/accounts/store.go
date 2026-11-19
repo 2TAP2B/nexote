@@ -47,6 +47,9 @@ type User struct {
 	// Identities links external logins (OIDC issuer + subject). Reserved for
 	// the OIDC login method; nothing creates them yet.
 	Identities []Identity `json:"identities,omitempty"`
+	// Prefs are the account's settings that must agree across its devices
+	// (where the quick-notes Notepad lives, …). See prefs.go.
+	Prefs map[string]string `json:"prefs,omitempty"`
 }
 
 // Passkey is one registered WebAuthn credential of a user.
