@@ -7,7 +7,8 @@ import { createPortal } from "react-dom";
 import CommandPalette from "@/components/CommandPalette";
 import CollectionFormDialog from "@/components/CollectionFormDialog";
 import CollectionGallery from "@/components/CollectionGallery";
-import DeleteConfirm from "@/components/DeleteConfirm";
+import { ConfirmSheet } from "@/components/mobile/ConfirmSheet";
+import { InputSheet } from "@/components/mobile/InputSheet";
 import FileTree, { type TreeControls } from "@/components/FileTree";
 import { NotebookSheet } from "@/components/mobile/NotebookPicker";
 import { notebookKey } from "@/lib/notebooks";
@@ -23,7 +24,6 @@ import { useSwipeToClose } from "@/components/threads/useSwipeToClose";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
-import { replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { OPEN_THREAD_EVENT } from "@/lib/threads";
 
 import MobileBottomPill from "./MobileBottomPill";
@@ -52,7 +52,7 @@ export default function MobileApp() {
     openNoteInVault,
     isJournalNote,
     refreshNoteBody,
-    save,
+    renameNote,
     notesById,
     listCollections,
     activeSpaceId,
@@ -82,6 +82,7 @@ export default function MobileApp() {
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [collectionFormOpen, setCollectionFormOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [renameNoteId, setRenameNoteId] = useState<string | null>(null);
   const [treeControls, setTreeControls] = useState<TreeControls | null>(null);
   const [moveTo, setMoveTo] = useState<string | null>(null);
   // Sidebar view + selected tag — lifted here so the CommandPalette can switch
@@ -440,14 +441,7 @@ export default function MobileApp() {
           }}
           onRename={(id) => {
             setOverflowOpen(false);
-            const note = notesById[id];
-            const current = note?.title ?? "Untitled";
-            const next = window.prompt("Rename note", current);
-            if (!next || next.trim() === current) return;
-            const title = next.trim() || "Untitled";
-            if (note) {
-              void save(id, { title, body: replaceOrAddTitleHeading(note.body, title) });
-            }
+            setRenameNoteId(id);
           }}
           onHistory={(id) => {
             setOverflowOpen(false);
@@ -480,19 +474,28 @@ export default function MobileApp() {
         />
       )}
 
-      <DeleteConfirm
-        open={pendingDelete !== null}
-        noteId={pendingDelete}
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={async (id) => {
-          setPendingDelete(null);
-          if (journalNotes.some((n) => n.id === id)) {
-            await removeJournal(id);
-          } else {
-            await remove(id);
-          }
-        }}
-      />
+      {renameNoteId !== null && (
+        <InputSheet
+          title="Rename note"
+          initial={notesById[renameNoteId]?.title ?? "Untitled"}
+          placeholder="Untitled"
+          submitLabel="Rename"
+          onClose={() => setRenameNoteId(null)}
+          onSubmit={(title) => void renameNote(renameNoteId, title)}
+        />
+      )}
+
+      {pendingDelete !== null && (
+        <ConfirmSheet
+          title={`Delete “${notesById[pendingDelete]?.title || "Untitled"}”?`}
+          message="This cannot be undone."
+          onClose={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const id = pendingDelete;
+            void (journalNotes.some((n) => n.id === id) ? removeJournal(id) : remove(id));
+          }}
+        />
+      )}
 
       {/* The open thread, full screen. Portaled out of the pager (its
           transform would anchor a fixed overlay to the track); above the

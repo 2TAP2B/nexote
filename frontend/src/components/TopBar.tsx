@@ -11,16 +11,8 @@ type TopBarProps = {
   onOpenDashboard: () => void;
 };
 
-function replaceOrAddTitleHeading(body: string, title: string): string {
-  const heading = `## ${title}`;
-  if (/^##? .+$/m.test(body)) {
-    return body.replace(/^##? .+$/m, heading);
-  }
-  return body ? `${heading}\n\n${body}` : heading;
-}
-
 export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) {
-  const { openTabs, activeId, notesById, openTab, closeTab, create, creating, save } =
+  const { openTabs, activeId, notesById, openTab, closeTab, create, creating, renameNote } =
     useNotes();
   const { canEditSpace, canEditNote } = useCanEdit();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -58,10 +50,7 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
   const commitRename = () => {
     if (!renamingId) return;
     const t = titleDraft.trim() || "Untitled";
-    const note = notesById[renamingId];
-    if (t !== note?.title && note) {
-      void save(renamingId, { title: t, body: replaceOrAddTitleHeading(note.body, t) });
-    }
+    if (t !== notesById[renamingId]?.title) void renameNote(renamingId, t);
     setRenamingId(null);
   };
 

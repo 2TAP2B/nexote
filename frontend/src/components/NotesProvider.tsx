@@ -11,7 +11,7 @@ import {
 } from "react";
 
 import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
-import { localDateKey } from "@/lib/note-utils";
+import { localDateKey, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
 import { NOTE_CHANGE_EVENT } from "@/lib/threads";
@@ -186,6 +186,8 @@ type NotesContextValue = {
   setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
   refreshNoteBody: (id: string) => Promise<void>;
+  /** New title plus the matching title heading; works for notes never opened. */
+  renameNote: (id: string, title: string) => Promise<void>;
   // Multi-vault data for the advanced tree
   allVaultData: Record<string, { notes: NoteMeta[]; folders: FolderMeta[] }>;
   journalNotes: NoteMeta[];
@@ -1916,6 +1918,32 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     [activeVaultId, refresh, refreshTasks, refreshTags],
   );
 
+  // Renames a note: title and title heading. A note that was never opened
+  // has no body in the cache; it is loaded first, so renaming from the tree
+  // or a menu always works (it used to do nothing for those).
+  const renameNote = useCallback(
+    async (id: string, title: string) => {
+      let note: Note | undefined = notesByIdRef.current[id];
+      if (!note) {
+        try {
+          if (journalIdsRef.current.has(id)) note = await api.journalGet(id);
+          else {
+            const vaultId = noteVaultMapRef.current[id] ?? activeVaultId;
+            if (!vaultId) return;
+            note = await api.get(vaultId, id);
+          }
+          const loaded = note;
+          setNotesById((prev) => (prev[id] ? prev : { ...prev, [id]: loaded }));
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Failed to rename note");
+          return;
+        }
+      }
+      await save(id, { title, body: replaceOrAddTitleHeading(note.body, title) });
+    },
+    [activeVaultId, save],
+  );
+
   const forceSave = useCallback(async () => {
     if (!activeId || activeId === DASHBOARD_ID) return;
     await save(activeId, draftRef.current);
@@ -2119,6 +2147,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setDraft,
       refresh,
       refreshNoteBody,
+      renameNote,
       allVaultData: shownVaultData,
       journalNotes,
       tagsByVault,
@@ -2198,6 +2227,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       setDraft,
       refresh,
       refreshNoteBody,
+      renameNote,
       shownVaultData,
       journalNotes,
       tagsByVault,

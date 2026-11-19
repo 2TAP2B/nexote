@@ -47,10 +47,12 @@ import { createPortal } from "react-dom";
 
 import { useNotes, type TreeSort } from "@/lib/notes-context";
 import { haptic } from "@/lib/haptics";
+import { ConfirmSheet } from "./mobile/ConfirmSheet";
+import { InputSheet } from "./mobile/InputSheet";
 import { MobileActionSheet, type SheetAction } from "./mobile/MobileActionSheet";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
 import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TaskItem, type VaultMeta } from "@/lib/api";
-import { makeSnippet, replaceOrAddTitleHeading } from "@/lib/note-utils";
+import { makeSnippet } from "@/lib/note-utils";
 import { isThreadMeta, lastActivity, openThread, replyLabel, threadPreview, threadTags } from "@/lib/threads";
 
 import { type SidebarView } from "./Ribbon";
@@ -246,7 +248,7 @@ export default function FileTree({
     removeJournal,
     notesById,
     refresh,
-    save,
+    renameNote,
     toggleBookmark,
     toggleShortcut,
     setNoteIcon,
@@ -628,6 +630,17 @@ export default function FileTree({
     id: string;
     value: string;
   } | null>(null);
+  // Touch: a rename opens a bottom sheet instead of the inline field. A
+  // field focused inside the pager makes the browser scroll the panes to it
+  // (half tree, half note); the sheet lives outside the pager.
+  const [renameSheet, setRenameSheet] = useState<{ id: string; value: string } | null>(null);
+  const beginRename = useCallback(
+    (r: { id: string; value: string } | null) => {
+      if (r && touch) setRenameSheet(r);
+      else setRenaming(r);
+    },
+    [touch],
+  );
 
   // Drag state.
   const [dragNoteId, setDragNoteId] = useState<string | null>(null);
@@ -853,7 +866,7 @@ export default function FileTree({
             label: "Rename vault",
             icon: <Edit3 size={14} />,
             onClick: () => {
-              setRenaming({ id: `vault:${vaultId}`, value: vaultName });
+              beginRename({ id: `vault:${vaultId}`, value: vaultName });
             },
           },
           {
@@ -1081,14 +1094,9 @@ export default function FileTree({
         await renameFolder(oldPath, newPath);
         return;
       }
-      const cached = notesById[id];
-      if (!cached) return;
-      await save(id, {
-        title: newTitle,
-        body: replaceOrAddTitleHeading(cached.body, newTitle),
-      });
+      await renameNote(id, newTitle);
     },
-    [notesById, save, renameVault, renameFolder],
+    [renameNote, renameVault, renameFolder],
   );
 
   // Move a note to a new path via context, then refresh.
@@ -1373,7 +1381,7 @@ export default function FileTree({
                         dragOverPath={dragOverPath}
                         onContextMenu={(x, y, items, title) => setCtxMenu({ x, y, items, title })}
                         renaming={renaming}
-                        setRenaming={setRenaming}
+                        setRenaming={beginRename}
                         onRename={handleRename}
                         onMoveNote={handleMoveNote}
                         onMoveTo={handleMoveTo}
@@ -1430,7 +1438,7 @@ export default function FileTree({
                         dragOverPath={dragOverPath}
                         onContextMenu={(x, y, items, title) => setCtxMenu({ x, y, items, title })}
                         renaming={renaming}
-                        setRenaming={setRenaming}
+                        setRenaming={beginRename}
                         onRename={handleRename}
                         onMoveNote={(id, path) => {
                           switchVault(vault.id);
@@ -1469,19 +1477,50 @@ export default function FileTree({
         </div>
       </div>
 
-      <DeleteConfirm
-        open={pendingDelete !== null}
-        noteId={pendingDelete}
-        onCancel={() => setPendingDelete(null)}
-        onConfirm={async (id) => {
-          setPendingDelete(null);
-          if (journalNotes.some((n) => n.id === id)) {
-            await removeJournal(id);
-          } else {
-            await remove(id);
+      {touch ? (
+        pendingDelete !== null && (
+          <ConfirmSheet
+            title={`Delete “${notesById[pendingDelete]?.title || journalNotes.find((n) => n.id === pendingDelete)?.title || "Untitled"}”?`}
+            message="This cannot be undone."
+            onClose={() => setPendingDelete(null)}
+            onConfirm={() => {
+              const id = pendingDelete;
+              void (journalNotes.some((n) => n.id === id) ? removeJournal(id) : remove(id));
+            }}
+          />
+        )
+      ) : (
+        <DeleteConfirm
+          open={pendingDelete !== null}
+          noteId={pendingDelete}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={async (id) => {
+            setPendingDelete(null);
+            if (journalNotes.some((n) => n.id === id)) {
+              await removeJournal(id);
+            } else {
+              await remove(id);
+            }
+          }}
+        />
+      )}
+
+      {renameSheet && (
+        <InputSheet
+          title={
+            renameSheet.id.startsWith("vault:")
+              ? "Rename vault"
+              : renameSheet.id.startsWith("folder:")
+                ? "Rename folder"
+                : "Rename note"
           }
-        }}
-      />
+          initial={renameSheet.value}
+          placeholder={renameSheet.id.startsWith("folder:") || renameSheet.id.startsWith("vault:") ? "Name" : "Untitled"}
+          submitLabel="Rename"
+          onClose={() => setRenameSheet(null)}
+          onSubmit={(value) => void handleRename(renameSheet.id, value)}
+        />
+      )}
 
       <FolderCreateDialog
         open={folderDialog.open}
