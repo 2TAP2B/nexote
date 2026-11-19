@@ -1522,12 +1522,27 @@ export default function FileTree({
         />
       )}
 
-      <FolderCreateDialog
-        open={folderDialog.open}
-        parentPath={folderDialog.parentPath}
-        onClose={() => setFolderDialog({ open: false })}
-        onCreate={handleCreateFolder}
-      />
+      {touch ? (
+        // Touch: a sheet outside the pager. The in-place dialog was trapped
+        // in the sidebar pane and its field made the panes scroll.
+        folderDialog.open && (
+          <InputSheet
+            title="New folder"
+            subtitle={folderDialog.parentPath ? `in ${folderDialog.parentPath}` : undefined}
+            placeholder="Folder name"
+            submitLabel="Create"
+            onClose={() => setFolderDialog({ open: false })}
+            onSubmit={(name) => handleCreateFolder(folderDialog.parentPath ? `${folderDialog.parentPath}/${name}` : name)}
+          />
+        )
+      ) : (
+        <FolderCreateDialog
+          open={folderDialog.open}
+          parentPath={folderDialog.parentPath}
+          onClose={() => setFolderDialog({ open: false })}
+          onCreate={handleCreateFolder}
+        />
+      )}
 
       <MoveToDialog
         open={moveTo !== null}

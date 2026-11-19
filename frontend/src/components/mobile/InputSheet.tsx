@@ -12,6 +12,7 @@ import { BottomSheet } from "./BottomSheet";
  */
 export function InputSheet({
   title,
+  subtitle,
   initial = "",
   placeholder,
   submitLabel = "Save",
@@ -19,6 +20,7 @@ export function InputSheet({
   onClose,
 }: {
   title: string;
+  subtitle?: string;
   initial?: string;
   placeholder?: string;
   submitLabel?: string;
@@ -44,7 +46,7 @@ export function InputSheet({
   const canSubmit = trimmed !== "" && trimmed !== initial.trim();
 
   return (
-    <BottomSheet title={title} onClose={onClose}>
+    <BottomSheet title={title} subtitle={subtitle} onClose={onClose}>
       {({ dismiss, closeNow }) => {
         const submit = () => {
           if (!canSubmit) {

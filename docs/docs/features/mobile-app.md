@@ -70,7 +70,7 @@ The note menu (the three-dot button in the top bar) contains:
 - Select all, Open in new tab, Table of contents, Note history.
 - For editors: Rename, Move to..., Make a copy, Generate AI title (when [AI](./ai) is set up) and Delete.
 
-Renaming a note, folder or vault opens a sheet with the name ready to edit, and deleting a note asks in a sheet first; both work the same from the note menu and from the note tree.
+Renaming a note, folder or vault and naming a new folder open a sheet with the name ready to edit, and deleting a note asks in a sheet first; they work the same from the note menu, the note tree and the bottom bar.
 
 ## Editor toolbar
 
