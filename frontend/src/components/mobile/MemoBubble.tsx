@@ -27,11 +27,12 @@ const MOVE_TOLERANCE_PX = 8;
 /**
  * One quick-capture memo or thread post: its images, then its text with
  * linked notes and #tags as tappable chips. A long press (touch) or
- * right-click selects it; while memos are selected, a tap toggles the
- * selection instead of opening links. With `onSwipeLeft`, swiping it left
- * runs that (start a thread). `variant="timeline"` drops the bubble: full
- * width text on the page (the phone's thread view); `markdown` renders the
- * text as Markdown (threads).
+ * right-click runs `onLongPress` (the item's menu) — or selects it when no
+ * menu is given; while memos are selected, a tap toggles the selection
+ * instead of opening links. With `onSwipeLeft`, swiping it left runs that
+ * (start a thread; `swipeIcon`/`swipeLabel` hint at it).
+ * `variant="timeline"` drops the bubble: full width text on the page (the
+ * phone's thread view); `markdown` renders the text as Markdown (threads).
  */
 export function MemoBubble({
   text: memo,
@@ -43,8 +44,10 @@ export function MemoBubble({
   onOpenImage,
   onOpenTag,
   onToggleSelect,
+  onLongPress,
   onSwipeLeft,
   swipeLabel = "Start a thread",
+  swipeIcon,
   variant = "bubble",
   markdown = false,
 }: {
@@ -60,8 +63,11 @@ export function MemoBubble({
   onOpenImage: (url: string) => void;
   onOpenTag?: (tag: string) => void;
   onToggleSelect: () => void;
+  /** Long press / right-click: opens the item's menu instead of selecting. */
+  onLongPress?: () => void;
   onSwipeLeft?: () => void;
   swipeLabel?: string;
+  swipeIcon?: ReactNode;
   variant?: "bubble" | "timeline";
   markdown?: boolean;
 }) {
@@ -81,7 +87,9 @@ export function MemoBubble({
   const longPress = () => {
     cancelPress();
     pressed.current = true;
-    onToggleSelect();
+    // While selecting, a long press keeps toggling like a tap would.
+    if (onLongPress && !selecting) onLongPress();
+    else onToggleSelect();
   };
 
   const imageGrid = (
@@ -114,7 +122,7 @@ export function MemoBubble({
           }}
           title={swipeLabel}
         >
-          <MessagesSquare size={18} />
+          {swipeIcon ?? <MessagesSquare size={18} />}
         </span>
       )}
     <div

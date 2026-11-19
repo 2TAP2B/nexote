@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronDown, LayoutDashboard, Plus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronDown, LayoutDashboard, MessageSquareText, Plus, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -9,9 +9,23 @@ import { useCanEdit } from "@/components/useCanEdit";
 type TopBarProps = {
   onOpenPalette: () => void;
   onOpenDashboard: () => void;
+  /** Quick notes fill the main area (the pinned tab after the dashboard shows active). */
+  quickNotesActive: boolean;
+  /** Quick notes or a thread cover the editor: no note tab shows active. */
+  mainViewOpen: boolean;
+  onOpenQuickNotes: () => void;
+  /** Any tab click, also on the already active tab: it leaves quick notes / a thread. */
+  onTabClick: () => void;
 };
 
-export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) {
+export default function TopBar({
+  onOpenPalette,
+  onOpenDashboard,
+  quickNotesActive,
+  mainViewOpen,
+  onOpenQuickNotes,
+  onTabClick,
+}: TopBarProps) {
   const { openTabs, activeId, notesById, openTab, closeTab, create, creating, renameNote } =
     useNotes();
   const { canEditSpace, canEditNote } = useCanEdit();
@@ -62,15 +76,19 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
           const isDashboard = id === DASHBOARD_ID;
           const note = notesById[id];
           const title = isDashboard ? "Dashboard" : note?.title || "Untitled";
-          const active = id === activeId;
+          const active = id === activeId && !mainViewOpen;
           const isRenaming = renamingId === id;
           return (
+            <Fragment key={id}>
             <div
-              key={id}
               role="tab"
               tabIndex={0}
               aria-selected={active}
-              onClick={() => { if (!isRenaming) void openTab(id); }}
+              onClick={() => {
+                if (isRenaming) return;
+                onTabClick();
+                void openTab(id);
+              }}
               onMouseDown={(e) => {
                 if (e.button === 1 && !isDashboard) {
                   e.preventDefault();
@@ -154,6 +172,31 @@ export default function TopBar({ onOpenPalette, onOpenDashboard }: TopBarProps) 
                 </button>
               )}
             </div>
+            {isDashboard && (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={quickNotesActive}
+                aria-label="Quick notes"
+                title="Quick notes"
+                onClick={onOpenQuickNotes}
+                className="flex shrink-0 cursor-pointer items-center"
+                style={{
+                  width: 44,
+                  height: 34,
+                  marginTop: 3,
+                  marginBottom: 3,
+                  background: quickNotesActive ? "var(--background)" : "transparent",
+                  borderRadius: 8,
+                  marginLeft: 3,
+                  paddingLeft: 10,
+                  paddingRight: 10,
+                }}
+              >
+                <MessageSquareText size={15} className="shrink-0" style={{ opacity: quickNotesActive ? 1 : 0.55 }} />
+              </button>
+            )}
+            </Fragment>
           );
         })}
 

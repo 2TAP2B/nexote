@@ -42,19 +42,21 @@ import { useAllThreads } from "../threads/useAllThreads";
 import { useNoteRefs } from "../threads/useNoteRefs";
 import { MemoBubble, type NoteRef } from "./MemoBubble";
 import { MemoComposer } from "./MemoComposer";
-import { MobileActionSheet } from "./MobileActionSheet";
+import { MobileActionSheet, type SheetAction } from "./MobileActionSheet";
 import { NotebookPicker } from "./NotebookPicker";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
 
 // Quick capture: a chat-style pad in the dashboard's right pane (swipe left on
-// the dashboard). Enter posts the text into the "Notepad" note — created on the
+// the dashboard) or, on the desktop (`variant="desktop"`), full size in the
+// main area. Enter posts the text into the "Notepad" note — created on the
 // first post or image — without leaving the dashboard. "@" links a note, the
 // image button (or pasting) attaches images, the mic records a voice memo that
 // the AI endpoint transcribes into the text, and the expand button writes in
-// full screen. Tap the circle next to a memo (or long-press it) to select it;
-// the bar on top then copies, edits, makes a note of, adds to a thread or
-// deletes the selection. Threads (lib/threads) show in the stream as cards at
-// their last activity; swiping a memo left starts one; a #tag filters both.
+// full screen. A long press (or right-click) on a memo opens its menu; the
+// header's select button picks several, and the bar on top then copies,
+// edits, makes a note of, adds to a thread or deletes the selection. Threads
+// (lib/threads) show in the stream as cards at their last post — never their
+// comments; swiping a memo left (or its menu) starts one; a #tag filters both.
 // Pinned memos and threads sit in the bar under the header; memo text renders
 // as Markdown.
 
@@ -70,6 +72,18 @@ type StreamItem =
 
 const dayOf = (item: StreamItem) => item.key.slice(0, 10).trim();
 
+// MemoBubble and MemoComposer paint with the touch shell's palette, which only
+// exists under .mob-shell-root: the desktop view maps it to the theme, the
+// same way ThreadView does.
+const DESKTOP_PALETTE = {
+  "--mob-bg": "var(--background)",
+  "--mob-surface": "var(--muted)",
+  "--mob-card": "var(--sidebar)",
+  "--mob-text": "var(--foreground)",
+  "--mob-muted": "var(--muted-foreground)",
+  "--mob-accent": "var(--primary)",
+} as React.CSSProperties;
+
 function dayLabel(day: string): string {
   if (day === localDateKey()) return "Today";
   if (!day) return "Earlier";
@@ -82,9 +96,21 @@ function hasTag(item: StreamItem, tag: string): boolean {
   return t.tags.some((x) => x.toLowerCase() === tag) || t.posts.some((p) => postTags(p.text).includes(tag));
 }
 
-export default function QuickCapturePane({ focused, onBack }: { focused: boolean; onBack: () => void }) {
+export default function QuickCapturePane({
+  focused,
+  onBack,
+  variant = "mobile",
+}: {
+  focused: boolean;
+  onBack: () => void;
+  /** "desktop": fills the main area in a centered column (no pager, no touch keyboard). */
+  variant?: "mobile" | "desktop";
+}) {
   const { allVaults, refresh, refreshNoteBody, openNoteInVault, openTab, settings, updateSettings } = useNotes();
+  const desktop = variant === "desktop";
   const vv = useVisualViewport();
+  // The touch keyboard only matters in the phone's pager.
+  const keyboardOpen = !desktop && vv.isKeyboardOpen;
   const [body, setBody] = useState("");
   const [fullscreen, setFullscreenState] = useState(false);
   // "Exit full screen" acts on pointerdown; the tap's click then lands on
@@ -98,9 +124,11 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   // The memos waiting for the first-time notebook choice.
   const [picking, setPicking] = useState<NotepadEntry[] | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(new Set());
-  // Selection circles show only in selection mode (header button or long press).
+  // Selection circles show only in selection mode (the header's select button).
   const [selectMode, setSelectMode] = useState(false);
   const [viewer, setViewer] = useState<string | null>(null);
+  // The memo whose menu is open (long press / right-click).
+  const [menuEntry, setMenuEntry] = useState<NotepadEntry | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // The Notepad note once known or created here. Creation is shared, so an
   // image upload and a post can't create two notes.
@@ -154,9 +182,22 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     if (!focused) clearSelection();
   }, [focused]);
 
+  // Escape leaves selection mode first. Capture phase and preventDefault: the
+  // desktop host leaves quick notes on an unhandled Escape.
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      clearSelection();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [selectMode]);
+
   const entries = useMemo(() => parseNotepad(body), [body]);
   const selected = useMemo(() => entries.filter((e) => selectedKeys.has(memoKey(e))), [entries, selectedKeys]);
-  // Selecting toggles a memo; it also starts selection mode (long press).
+  // Selecting toggles a memo (and keeps selection mode on).
   const toggleSelected = (entry: NotepadEntry) => {
     setSelectMode(true);
     setSelectedKeys((prev) => {
@@ -198,7 +239,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [visible.length, lastKey, focused, vv.isKeyboardOpen]);
+  }, [visible.length, lastKey, focused, keyboardOpen]);
 
   const awayFromLatest = useScrolledAway(listRef, "bottom");
   const jumpToLatest = () => {
@@ -319,7 +360,8 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     );
 
   const openNote = (note: NoteRef) => {
-    // Threads open in the thread overlay, over this pane.
+    // Threads open in the thread view: over this pane on the phone, in its
+    // place on the desktop (its back returns here).
     if (note.thread && note.vaultId) {
       openThread({ vaultId: note.vaultId, id: note.id });
       return;
@@ -565,24 +607,55 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     action(list);
   };
 
+  const copyMemos = (list: NotepadEntry[]) =>
+    void copyText(list.map((e) => e.text).join("\n\n")).then((ok) => showToast(ok ? "Copied" : "Couldn't copy"));
+
+  // A memo's menu: the same actions as the selection bar, for one memo.
+  const memoSections = (entry: NotepadEntry): SheetAction[][] => [
+    [
+      { label: "Edit", icon: <Pencil size={19} />, onClick: () => startEdit(entry) },
+      { label: "Copy", icon: <Copy size={19} />, onClick: () => copyMemos([entry]) },
+      entry.pinned
+        ? { label: "Unpin", icon: <PinOff size={19} />, onClick: () => void pinMemos([entry], false) }
+        : { label: "Pin", icon: <Pin size={19} />, onClick: () => void pinMemos([entry], true) },
+    ],
+    [
+      ...(threading ? [] : [{ label: "Start thread", icon: <MessagesSquare size={19} />, onClick: () => void startThread(entry) }]),
+      ...(threads.length > 0
+        ? [{ label: "Add to thread…", icon: <MessageSquarePlus size={19} />, onClick: () => setThreadPicking([entry]) }]
+        : []),
+      { label: "Make note", icon: <FilePlus size={19} />, onClick: () => makeNote([entry]) },
+    ],
+    [{ label: "Delete", icon: <Trash2 size={19} />, danger: true, onClick: () => void deleteMemos([entry]) }],
+  ];
+
   return (
     <section
       aria-label="Quick notes"
-      className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden"
-      style={{
-        background: "var(--mob-bg)",
-        borderLeft: "1px solid var(--mob-surface)",
-        // Horizontal drags belong to the swipe back to the dashboard.
-        touchAction: "pan-y",
-      }}
+      className={
+        desktop
+          ? "relative flex h-full w-full flex-col overflow-hidden"
+          : "relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden"
+      }
+      style={
+        desktop
+          ? { ...DESKTOP_PALETTE, background: "var(--mob-bg)" }
+          : {
+              background: "var(--mob-bg)",
+              borderLeft: "1px solid var(--mob-surface)",
+              // Horizontal drags belong to the swipe back to the dashboard.
+              touchAction: "pan-y",
+            }
+      }
     >
       {/* Exactly the visible area while the keyboard is open: iOS overlays the
           keyboard and may pan the visual viewport down (offsetTop), which would
-          otherwise expose empty space below the composer. */}
+          otherwise expose empty space below the composer. The desktop keeps a
+          readable column in the middle of the main area. */}
       <div
-        className="relative flex min-h-0 flex-col"
+        className={"relative flex min-h-0 flex-col" + (desktop ? " mx-auto w-full max-w-3xl" : "")}
         style={
-          vv.isKeyboardOpen
+          keyboardOpen
             ? { height: `calc(100% - ${vv.inset}px)`, transform: `translateY(${vv.top}px)` }
             : { height: "100%" }
         }
@@ -590,7 +663,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
         <div
           className="flex shrink-0 items-center gap-3 px-3"
           style={{
-            paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
+            paddingTop: desktop ? 8 : "calc(env(safe-area-inset-top, 0px) + 8px)",
             paddingBottom: 8,
             borderBottom: "1px solid var(--mob-surface)",
           }}
@@ -611,11 +684,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
               <HeaderButton
                 label="Copy"
                 disabled={selected.length === 0}
-                onClick={onSelection((list) => {
-                  void copyText(list.map((e) => e.text).join("\n\n")).then((ok) =>
-                    showToast(ok ? "Copied" : "Couldn't copy"),
-                  );
-                })}
+                onClick={onSelection(copyMemos)}
               >
                 <Copy size={18} />
               </HeaderButton>
@@ -711,7 +780,8 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                 </p>
                 <p className="text-xs" style={{ color: "var(--mob-muted)" }}>
                   Type below and press Enter — each memo is added to &quot;{NOTEPAD_TITLE}&quot; with the time. Type @ to
-                  link a note; add photos with the image button. Swipe a memo left to start a thread.
+                  link a note; add photos with the image button.{" "}
+                  {desktop ? "Right-click a memo to start a thread." : "Swipe a memo left to start a thread."}
                 </p>
               </div>
             ) : visible.length === 0 ? (
@@ -775,6 +845,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
                               onOpenImage={setViewer}
                               onOpenTag={filterByTag}
                               onToggleSelect={() => toggleSelected(item.entry)}
+                              onLongPress={() => setMenuEntry(item.entry)}
                               onSwipeLeft={threading ? undefined : () => void startThread(item.entry)}
                             />
                             <span
@@ -841,12 +912,20 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           posting={posting}
           onSend={() => void post()}
           suggest={suggest}
-          keyboardOpen={vv.isKeyboardOpen}
+          keyboardOpen={keyboardOpen}
           voice={voice}
         />
       </div>
 
       {viewer && <ImageViewer url={viewer} onClose={() => setViewer(null)} />}
+      {menuEntry && (
+        <MobileActionSheet
+          title={makeSnippet(splitMemo(menuEntry.text).text, 80) || "Image"}
+          subtitle={`${dayLabel(menuEntry.day)} ${menuEntry.time}`}
+          sections={memoSections(menuEntry)}
+          onClose={() => setMenuEntry(null)}
+        />
+      )}
       {picking && (
         <NotebookPicker
           onClose={() => setPicking(null)}

@@ -78,6 +78,7 @@ export function MemoComposer({
   voice,
   labels = MEMO_LABELS,
   allowFullscreen = true,
+  composing = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -105,6 +106,11 @@ export function MemoComposer({
   labels?: ComposerLabels;
   /** False hides the expand button (desktop: the panel is the writing room). */
   allowFullscreen?: boolean;
+  /**
+   * The banner shows, but this writes something new (a comment), so the
+   * composer behaves as for a new post: mic, send arrow, labels.send.
+   */
+  composing?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
@@ -163,14 +169,14 @@ export function MemoComposer({
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   };
 
-  const sendLabel = editing ? labels.save : labels.send;
+  const sendLabel = editing && !composing ? labels.save : labels.send;
   const sendDisabled = !canSend || posting;
   const send = () => {
     if (!sendDisabled) onSend();
   };
   const sendIcon = posting ? (
     <Loader2 size={20} className="animate-spin" />
-  ) : editing ? (
+  ) : editing && !composing ? (
     <Check size={20} />
   ) : (
     <ArrowUp size={20} />
@@ -249,7 +255,7 @@ export function MemoComposer({
   );
   // The compact bar offers the mic where the send button goes while there is
   // nothing to send, like voice messages in chat apps.
-  const showMic = !editing && !value.trim() && attachments.length === 0;
+  const showMic = (!editing || composing) && !value.trim() && attachments.length === 0;
   const attachmentStrip = attachments.length > 0 && (
     <div className={`flex gap-2 overflow-x-auto pb-1 ${fullscreen ? "px-4 pt-2" : "mb-2"}`}>
       {attachments.map((a) => (
@@ -341,7 +347,7 @@ export function MemoComposer({
             style={{ background: "var(--mob-accent)", color: "#fff" }}
           >
             {posting ? <Loader2 size={18} className="animate-spin" /> : null}
-            {editing ? "Save" : "Post"}
+            {composing ? labels.send : editing ? "Save" : "Post"}
           </button>
         </div>
       )}

@@ -19,7 +19,7 @@ import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar, type PagerFocus } from "@/components/useSwipeSidebar";
 import QuickCapturePane from "./QuickCapturePane";
 import ThreadView from "@/components/threads/ThreadView";
-import { threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
+import { OPEN_QUICK_NOTES_EVENT, threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
 import { useSwipeToClose } from "@/components/threads/useSwipeToClose";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
@@ -188,6 +188,9 @@ export default function MobileApp() {
   // they switched from (the spaces pane sends them to the tree).
   const prevActiveIdRef = useRef<string | null | undefined>(undefined);
   const prevSpaceIdRef = useRef(activeSpaceId);
+  // The palette's "Quick notes" switched to the dashboard: that switch shows
+  // its quick-notes pane, not the editor pane (see onOpenQuickNotes below).
+  const quickNotesPendingRef = useRef(false);
   useEffect(() => {
     const spaceChanged = prevSpaceIdRef.current !== activeSpaceId;
     prevSpaceIdRef.current = activeSpaceId;
@@ -197,6 +200,13 @@ export default function MobileApp() {
     }
     if (prevActiveIdRef.current === activeId) return;
     prevActiveIdRef.current = activeId ?? null;
+    if (quickNotesPendingRef.current) {
+      quickNotesPendingRef.current = false;
+      if (activeId === DASHBOARD_ID) {
+        setPagerFocus("toc");
+        return;
+      }
+    }
     if (spaceChanged) return;
     setPagerFocus("editor");
     // A note opened from a thread (a [[link]]) shows instead of the thread.
@@ -250,12 +260,26 @@ export default function MobileApp() {
       blurPagerField();
       setOpenThreadRef(ref);
     };
+    // Quick notes live in the dashboard's right pane ("toc" slot).
+    const onOpenQuickNotes = () => {
+      blurPagerField();
+      setOpenThreadRef(null);
+      setGalleryCollection(null);
+      // prevActiveIdRef follows the active tab (see the effect above).
+      if (prevActiveIdRef.current === DASHBOARD_ID) {
+        setPagerFocus("toc");
+        return;
+      }
+      quickNotesPendingRef.current = true;
+      void openTab(DASHBOARD_ID);
+    };
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
     window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
+    window.addEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
     const onNewCollection = () => setCollectionFormOpen(true);
     window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
@@ -265,6 +289,7 @@ export default function MobileApp() {
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
       window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
+      window.removeEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
       window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);

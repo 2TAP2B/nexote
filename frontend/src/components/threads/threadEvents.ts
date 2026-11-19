@@ -1,5 +1,8 @@
 // Reading the details of the thread events (lib/threads.ts) in the shells.
 
+/** Opens quick notes (command palette): the desktop main area, or the touch dashboard's pane. */
+export const OPEN_QUICK_NOTES_EVENT = "nexote:open-quick-notes";
+
 export type ThreadRef = { vaultId: string; id: string };
 
 /** The `{ vaultId, id }` of an OPEN_THREAD_EVENT, or null when malformed. */

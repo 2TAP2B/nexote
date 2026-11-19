@@ -3,7 +3,7 @@
 import { Check, CircleCheck, MessagesSquare, Pin, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { lastActivity, openThread, replyLabel, threadPreview, threadTags, type Thread } from "@/lib/threads";
+import { commentLabel, lastActivity, openThread, replyLabel, threadPreview, threadTags, type Thread } from "@/lib/threads";
 import ContextMenu, { type MenuItem } from "../ContextMenu";
 import { MobileActionSheet, type SheetAction } from "../mobile/MobileActionSheet";
 import { isPriorityLevel, PRIORITIES, PRIORITY_LEVELS, PriorityBadge, type PriorityLevel } from "./priority";
@@ -324,7 +324,7 @@ function ThreadRow({
           style={{ fontSize: fs.meta, color: "var(--muted-foreground)" }}
         >
           <PriorityBadge priority={t.priority} size={touch ? 12 : 11} />
-          <span className="shrink-0">{replyLabel(t)}</span>
+          <span className="shrink-0">{[replyLabel(t), commentLabel(t)].filter(Boolean).join(" · ")}</span>
           {tags.slice(0, 3).map((name) => (
             <span key={name} className="truncate" style={{ color: "var(--primary)", opacity: 0.85 }}>
               #{name}

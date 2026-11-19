@@ -42,13 +42,23 @@ export type PostFlags = {
 
 export const NO_FLAGS: PostFlags = { pinned: false, priority: 0, done: false };
 
+/** A comment on a post: "#### 2026-11-19 10:00" under the post's text. */
+export type ThreadComment = {
+  day: string;
+  time: string;
+  text: string;
+};
+
 export type ThreadPost = {
   /** "" for text before the first post heading. */
   day: string;
   time: string;
+  /** The post's own text, without its comments. */
   text: string;
   flags: PostFlags;
-  /** Line range in the body: [start, end), heading included. */
+  /** Comments on this post, oldest first. They live only inside the thread. */
+  comments: ThreadComment[];
+  /** Line range in the body: [start, end), heading and comments included. */
   start: number;
   end: number;
 };
@@ -98,6 +108,10 @@ export function threadsFolder(loc: NotepadLocation): string {
   return loc.folder ? `${loc.folder}/${THREADS_FOLDER}` : THREADS_FOLDER;
 }
 
+// A comment heading: one level below the post heading, so in the file a
+// comment reads as a sub-section of its post.
+const COMMENT_HEADING = /^####\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*$/;
+
 export function parseThread(body: string): ThreadPost[] {
   const lines = body.split("\n");
   const posts: ThreadPost[] = [];
@@ -110,15 +124,22 @@ export function parseThread(body: string): ThreadPost[] {
   const preStart = titleLine >= 0 && /^##\s/.test(lines[titleLine]) ? titleLine + 1 : 0;
   const preEnd = headings[0] ?? lines.length;
   const pre = lines.slice(preStart, preEnd).join("\n").trim();
-  if (pre) posts.push({ day: "", time: "", text: pre, flags: NO_FLAGS, start: preStart, end: preEnd });
+  if (pre) posts.push({ day: "", time: "", text: pre, flags: NO_FLAGS, comments: [], start: preStart, end: preEnd });
   headings.forEach((start, k) => {
     const end = headings[k + 1] ?? lines.length;
     const m = lines[start].match(POST_HEADING);
+    const commentAt: number[] = [];
+    for (let i = start + 1; i < end; i++) if (COMMENT_HEADING.test(lines[i])) commentAt.push(i);
+    const comments = commentAt.map((c, j): ThreadComment => {
+      const cm = lines[c].match(COMMENT_HEADING);
+      return { day: cm?.[1] ?? "", time: cm?.[2] ?? "", text: lines.slice(c + 1, commentAt[j + 1] ?? end).join("\n").trim() };
+    });
     posts.push({
       day: m?.[1] ?? "",
       time: m?.[2] ?? "",
-      text: lines.slice(start + 1, end).join("\n").trim(),
+      text: lines.slice(start + 1, commentAt[0] ?? end).join("\n").trim(),
       flags: parseFlags(m?.[3] ?? ""),
+      comments,
       start,
       end,
     });
@@ -126,9 +147,10 @@ export function parseThread(body: string): ThreadPost[] {
   return posts;
 }
 
-function postLines(post: PostRef & { flags?: PostFlags }): string[] {
+function postLines(post: PostRef & { flags?: PostFlags; comments?: ThreadComment[] }): string[] {
   const head = post.day ? [`### ${post.day} ${post.time}${formatFlags(post.flags ?? NO_FLAGS)}`] : [];
-  return [...head, ...post.text.split("\n"), ""];
+  const comments = (post.comments ?? []).flatMap((c) => [`#### ${c.day} ${c.time}`, ...c.text.split("\n"), ""]);
+  return [...head, ...post.text.split("\n"), "", ...comments];
 }
 
 /** A whole thread file. */
@@ -149,23 +171,52 @@ function findPost(posts: ThreadPost[], target: PostRef) {
   return posts.find((p) => p.day === target.day && p.time === target.time && p.text === target.text);
 }
 
-// Posts are looked up by content in the given (latest) body, so edits made
-// elsewhere meanwhile are kept; null when the post no longer exists there.
-export function replaceThreadPost(body: string, target: PostRef, text: string): string | null {
+// Rewrites one post in place (heading, text, comments); null when the post is
+// gone. Posts are looked up by content in the given (latest) body, so edits
+// made elsewhere meanwhile are kept.
+function rewritePost(body: string, target: PostRef, change: (post: ThreadPost) => ThreadPost | null): string | null {
   const post = findPost(parseThread(body), target);
   if (!post) return null;
+  const next = change(post);
+  if (!next) return null;
   const lines = body.split("\n");
-  lines.splice(post.start, post.end - post.start, ...postLines({ ...post, text }));
+  lines.splice(post.start, post.end - post.start, ...postLines(next));
   return lines.join("\n");
+}
+
+/** New text for a post; its marks and comments stay. */
+export function replaceThreadPost(body: string, target: PostRef, text: string): string | null {
+  return rewritePost(body, target, (post) => ({ ...post, text }));
 }
 
 /** Changes a post's marks (pin, priority, done); null when the post is gone. */
 export function setPostFlags(body: string, target: PostRef, patch: Partial<PostFlags>): string | null {
-  const post = findPost(parseThread(body), target);
-  if (!post || !post.day) return null;
-  const lines = body.split("\n");
-  lines.splice(post.start, post.end - post.start, ...postLines({ ...post, flags: { ...post.flags, ...patch } }));
-  return lines.join("\n");
+  return rewritePost(body, target, (post) => (post.day ? { ...post, flags: { ...post.flags, ...patch } } : null));
+}
+
+/** Adds a comment (now) under a post. A post without a time heading can't hold one. */
+export function addThreadComment(body: string, target: PostRef, text: string, now = new Date()): string | null {
+  return rewritePost(body, target, (post) =>
+    post.day ? { ...post, comments: [...post.comments, { ...postStamp(now), text }] } : null,
+  );
+}
+
+const sameComment = (a: ThreadComment, b: ThreadComment) => a.day === b.day && a.time === b.time && a.text === b.text;
+
+export function replaceThreadComment(body: string, target: PostRef, comment: ThreadComment, text: string): string | null {
+  return rewritePost(body, target, (post) => {
+    const i = post.comments.findIndex((c) => sameComment(c, comment));
+    if (i < 0) return null;
+    return { ...post, comments: post.comments.map((c, j) => (j === i ? { ...c, text } : c)) };
+  });
+}
+
+export function removeThreadComment(body: string, target: PostRef, comment: ThreadComment): string | null {
+  return rewritePost(body, target, (post) => {
+    const i = post.comments.findIndex((c) => sameComment(c, comment));
+    if (i < 0) return null;
+    return { ...post, comments: post.comments.filter((_, j) => j !== i) };
+  });
 }
 
 export function removeThreadPost(body: string, target: PostRef): string | null {
@@ -174,6 +225,12 @@ export function removeThreadPost(body: string, target: PostRef): string | null {
   const lines = body.split("\n");
   lines.splice(post.start, post.end - post.start);
   return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "")}\n`;
+}
+
+/** "1 comment" / "n comments" across a thread; "" for none. */
+export function commentLabel(t: Thread): string {
+  const n = t.posts.reduce((sum, p) => sum + p.comments.length, 0);
+  return n === 0 ? "" : n === 1 ? "1 comment" : `${n} comments`;
 }
 
 /** Replaces the "## title" heading (or adds one). */

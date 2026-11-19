@@ -1,6 +1,6 @@
 # Quick notes
 
-Quick notes are for capturing a thought quickly on a phone. They look like a messenger chat: short memos appear as bubbles, newest at the bottom, and a composer sits at the bottom of the screen. Quick notes are part of the [mobile app](./mobile-app); open the dashboard and swipe left. A memo that keeps growing can become a [thread](#threads).
+Quick notes are for capturing a thought quickly. They look like a messenger chat: short memos appear as bubbles, newest at the bottom, and a composer sits at the bottom. On a phone, open the dashboard and swipe left. On desktop, click the quick notes icon next to the dashboard tab at the top left, or run **Quick notes** from the command palette; they open full size where notes are edited, and opening a note (or Escape) returns to the editor. A memo that keeps growing can become a [thread](#threads).
 
 ![Quick notes in the mobile app](/screenshots/mobile-quick-notes.png)
 
@@ -38,18 +38,21 @@ Changing the location moves the existing Notepad. When it lives in a vault, **Sh
 
 New memos are written into the latest version of the Notepad on the server, so memos from several devices do not overwrite each other.
 
-## Selecting memos
+## Memo actions
 
-Tap **Select memos** in the header, or long-press a memo, to enter selection mode. Circles appear next to the memos; tap them to select. The header then offers:
+**Long-press a memo** (right-click on desktop) for its actions in a sheet, the same kind of menu as a note's ⋮ menu:
 
 | Action | Effect |
 | --- | --- |
-| Edit | Edit the memo (exactly one selected). The memo keeps its time. |
-| Copy | Copy the text of the selected memos. |
-| Make note | Turn the selected memos into one new note. |
-| Delete | Remove the memos. A toast offers Undo for five seconds, as long as the Notepad has not changed since. |
-| Add to thread | Add the selected memos to an existing [thread](#threads) as replies. They keep their original times and leave the Notepad. |
-| Pin / Unpin | Pin the memos to the bar at the top. In the Notepad a pinned memo is `- 09:14 📌 text`. |
+| Edit | Edit the memo. It keeps its time. |
+| Copy | Copy the memo's text. |
+| Pin / Unpin | Pin the memo to the bar at the top. In the Notepad a pinned memo is `- 09:14 📌 text`. |
+| Start thread | Turn the memo into a [thread](#threads), like swiping it left. |
+| Add to thread | Add the memo to an existing thread as a reply. It keeps its original time and leaves the Notepad. |
+| Make note | Turn the memo into a new note. |
+| Delete | Remove the memo. A toast offers Undo for five seconds, as long as the Notepad has not changed since. |
+
+To act on several memos at once, tap **Select memos** in the header, tick the circles, and use the actions in the header (copy, make one note, add to a thread, pin, delete).
 
 Memos show their Markdown formatted. When you have scrolled up, a small arrow at the bottom right jumps back to the latest memo.
 
@@ -79,11 +82,25 @@ While the composer is empty, a microphone button takes the place of the send but
 
 A thread is a memo that grew replies, for following a thought over days. **Swipe a memo to the left** to turn it into a thread; a toast offers Undo. The memo leaves the Notepad and stays in the stream as a thread card with its title, the latest post and the number of replies. A new reply moves the card down to the reply's time.
 
-Tap a card to open the thread. On phones a thread is a timeline: every post shows its time on top (with the date when the day changes) and sits on a line of dots, the first one, marked **Started**, filled. On desktop the posts are bubbles like the quick notes. The composer adds replies (text, images, `@` links, voice memos). Long-press a post to edit, copy or delete it. Tap the title to rename the thread; **More** also deletes it. On phones, **swipe right** anywhere outside the composer to close the thread and go back.
+Tap a card to open the thread (on desktop it opens full size where notes are edited). On phones a thread is a timeline: every post shows its time on top (with the date when the day changes) and sits on a line of dots, the first one, marked **Started**, filled. On desktop the posts are bubbles like the quick notes. The composer adds replies (text, images, `@` links, voice memos). Tap the title to rename the thread; **More** also deletes it. On phones, **swipe right** anywhere outside the composer to close the thread and go back.
+
+**Long-press a post** (right-click on desktop) for its sheet: Comment, Edit, Copy, pin, priority, done and Delete. **Select posts** in the header acts on several at once.
 
 Posts are Markdown: **bold**, *italics*, ~~strikethrough~~, lists and task lists, quotes, headings, code, links, tables and `==highlights==` show formatted. `[[links]]` and `#tags` stay tappable. HTML in a post shows as text.
 
-**Swipe a reply to the left** to start a new thread from it. The reply is replaced by a link to the new thread, so the two stay connected. On desktop, the same is a button next to each reply.
+### Comments
+
+Each post can have comments, for discussing one topic of a thread without starting a new thread. **Swipe a post to the left**, use **Comment** in its sheet, or on desktop the comment button next to the post; the composer then says which post you are commenting on. Comments appear indented under their post, with their time; long-press one to edit, copy or delete it.
+
+Comments stay inside the thread: they don't show in the quick notes and don't move the thread's card. In the file a comment is a sub-section of its post:
+
+```markdown
+### 2026-11-19 09:14
+Login page redesign
+
+#### 2026-11-19 10:02
+Mockups are in the shared folder
+```
 
 ### Pin, priority and solved
 
@@ -98,7 +115,7 @@ Threads and their posts can carry marks for following up on work: **pinned**, a 
 | P5 Someday | gray | moon |
 
 - **A thread:** long-press its card in the quick notes or its row in the Threads view (right-click on desktop), or use **More** inside the thread. A thread's card and row take the priority's color on the left; a solved thread is struck through and moves to the end of the Threads view.
-- **A post:** long-press it, then **Marks** in the header. The post's dot on the timeline takes the priority color, and a done post is struck through. Pinned posts appear in a bar at the top of the thread; tapping it jumps to them.
+- **A post:** long-press it; the sheet has the marks. The post's dot on the timeline takes the priority color, and a done post is struck through. Pinned posts appear in a bar at the top of the thread; tapping it jumps to them.
 
 A thread's marks are properties in its frontmatter (`pinned: true`, `priority: 2`, `status: done`); a post's marks follow its time in the heading, so they read in any Markdown tool: `### 2026-11-19 09:14 📌 P2 ✅`.
 

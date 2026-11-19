@@ -16,7 +16,7 @@ import {
   PanelLeftClose,
   Search,
 } from "lucide-react";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { AuthGate } from "@/components/auth/AuthProvider";
 import { AuthSplash } from "@/components/auth/AuthScreens";
@@ -34,13 +34,16 @@ import TopBar from "@/components/TopBar";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSwipeSidebar } from "@/components/useSwipeSidebar";
 import MobileApp from "@/components/mobile/MobileApp";
+import QuickCapturePane from "@/components/mobile/QuickCapturePane";
 import ThreadView from "@/components/threads/ThreadView";
-import { threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
+import { OPEN_QUICK_NOTES_EVENT, threadRefFrom } from "@/components/threads/threadEvents";
 import { api } from "@/lib/api";
 import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, NotesProvider, useNotes, type TreeSort } from "@/lib/notes-context";
 import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
 import { OPEN_THREAD_EVENT } from "@/lib/threads";
+
+type MainView = { kind: "quick" } | { kind: "thread"; vaultId: string; id: string; fromQuick: boolean };
 
 // One address for every device: the touch interface (phones, tablets, narrow
 // windows) or the desktop one, chosen once when the app starts (Settings ›
@@ -84,7 +87,7 @@ function ShellSwitch({ shell }: { shell: Shell }) {
 }
 
 function AppShell() {
-  const { openDaily, openTab, openNoteInVault, activeNote, create, listCollections } = useNotes();
+  const { openDaily, openTab, openNoteInVault, activeNote, activeId, create, listCollections } = useNotes();
   const { canEditSpace } = useCanEdit();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -108,8 +111,10 @@ function AppShell() {
     else if (sidebarView === "threads" && !settings.showThreadsSection) setSidebarView("tree");
   }, [sidebarView, settings.showTagsSection, settings.showTasksSection, settings.showThreadsSection]);
   const [tagSelection, setTagSelection] = useState<string | null>(null);
-  // Threads: the thread in the right panel (also highlighted in the Threads view).
-  const [openThreadRef, setOpenThreadRef] = useState<ThreadRef | null>(null);
+  // Quick notes or a thread shown full size in place of the editor (the
+  // thread is also highlighted in the Threads view). `fromQuick`: the thread
+  // was opened from quick notes, so going back returns there.
+  const [mainView, setMainView] = useState<MainView | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
@@ -152,16 +157,27 @@ function AppShell() {
         setCollapsed(false);
       }
     };
+    // A thread opened from quick notes (or from a thread opened there) keeps
+    // the way back to quick notes.
     const onOpenThread = (e: Event) => {
       const ref = threadRefFrom(e);
-      if (ref) setOpenThreadRef(ref);
+      if (!ref) return;
+      setMainView((prev) => ({
+        kind: "thread",
+        ...ref,
+        fromQuick: prev?.kind === "quick" || (prev?.kind === "thread" && prev.fromQuick),
+      }));
     };
+    const onOpenQuickNotes = () => setMainView({ kind: "quick" });
     const onOpenCollection = (e: Event) => {
       const folder = (e as CustomEvent).detail as string;
       if (!folder) return;
       void listCollections().then((cols) => {
         const col = cols.find((c) => c.name === folder);
-        if (col) setGalleryCollection(col);
+        if (!col) return;
+        // The gallery shows in the main area too: it replaces quick notes / a thread.
+        setMainView(null);
+        setGalleryCollection(col);
       });
     };
     window.addEventListener("nexote:toggle-sidebar", onToggle);
@@ -171,6 +187,7 @@ function AppShell() {
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
     window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
+    window.addEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
     const onNewCollection = () => setCollectionFormOpen(true);
     window.addEventListener("nexote:new-collection", onNewCollection);
     return () => {
@@ -181,29 +198,42 @@ function AppShell() {
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
       window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
+      window.removeEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
       window.removeEventListener("nexote:new-collection", onNewCollection);
     };
   }, []);
 
-  // Escape closes the thread panel — unless something else used the key
-  // (ThreadView cancelling an edit) or it was typed in a field elsewhere
-  // (the command palette, the editor).
+  // Back from a thread: to quick notes if it was opened there, else the editor.
+  const leaveMainView = useCallback(
+    () => setMainView((prev) => (prev?.kind === "thread" && prev.fromQuick ? { kind: "quick" } : null)),
+    [],
+  );
+
+  // Opening a note (another active tab) shows the editor again. Not on the
+  // first run: the tab restore at startup isn't the user opening a note.
+  const prevActiveIdRef = useRef(activeId);
   useEffect(() => {
-    if (!openThreadRef) return;
+    if (prevActiveIdRef.current === activeId) return;
+    prevActiveIdRef.current = activeId;
+    setMainView(null);
+  }, [activeId]);
+
+  // Escape steps back out of the main view — unless something else used the
+  // key (ThreadView cancelling an edit, a menu or dialog closing on it) or it
+  // was typed in a text field (the composer, the palette, the editor).
+  useEffect(() => {
+    if (!mainView) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
+      // Sheets and dialogs close on Escape themselves, without marking it handled.
+      if (document.querySelector('[aria-modal="true"]')) return;
       const t = e.target;
-      if (
-        t instanceof HTMLElement &&
-        !t.closest("[data-thread-panel]") &&
-        (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA")
-      )
-        return;
-      setOpenThreadRef(null);
+      if (t instanceof HTMLElement && (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      leaveMainView();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openThreadRef]);
+  }, [mainView, leaveMainView]);
 
   // Persist + hydrate sidebar width (drag-to-resize). SSR-safe via effect.
   useEffect(() => {
@@ -314,6 +344,10 @@ function AppShell() {
             <TopBar
               onOpenPalette={() => setPaletteOpen(true)}
               onOpenDashboard={() => void openTab(DASHBOARD_ID)}
+              quickNotesActive={mainView?.kind === "quick"}
+              mainViewOpen={mainView !== null}
+              onOpenQuickNotes={() => setMainView({ kind: "quick" })}
+              onTabClick={() => setMainView(null)}
             />
           </div>
         </div>
@@ -375,7 +409,7 @@ function AppShell() {
                 view={sidebarView}
                 selectedTag={tagSelection}
                 onSelectTagConsumed={() => setTagSelection(null)}
-                openThreadId={openThreadRef?.id ?? null}
+                openThreadId={mainView?.kind === "thread" ? mainView.id : null}
                 onSelectView={setSidebarView}
                 onControlsReady={setTreeControls}
               />
@@ -405,7 +439,24 @@ function AppShell() {
           )}
 
           <main className="flex min-w-0 flex-1 flex-col min-h-0 overflow-hidden">
-            {galleryCollection ? (
+            {/* Quick notes and threads take the editor's place (a thread can't
+                open in the editor); data-thread-panel keeps FileTree's arrow
+                keys out of their buttons. */}
+            {mainView ? (
+              <div data-thread-panel className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+                {mainView.kind === "quick" ? (
+                  <QuickCapturePane variant="desktop" focused onBack={() => setMainView(null)} />
+                ) : (
+                  <ThreadView
+                    key={`${mainView.vaultId}:${mainView.id}`}
+                    vaultId={mainView.vaultId}
+                    id={mainView.id}
+                    variant="desktop"
+                    onClose={leaveMainView}
+                  />
+                )}
+              </div>
+            ) : galleryCollection ? (
               <CollectionGallery
                 embedded
                 open={Boolean(galleryCollection)}
@@ -443,29 +494,11 @@ function AppShell() {
               />
             )}
           </main>
-
-          {/* Thread panel: the chat view of the open thread beside the editor
-              (a thread can't open in the editor). Full screen on narrow windows. */}
-          {openThreadRef && (
-            <aside
-              data-thread-panel
-              aria-label="Thread"
-              className="flex h-full w-[420px] max-w-full shrink-0 flex-col overflow-hidden bg-background max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full"
-              style={{ borderLeft: "1px solid var(--border)" }}
-            >
-              <ThreadView
-                key={`${openThreadRef.vaultId}:${openThreadRef.id}`}
-                vaultId={openThreadRef.vaultId}
-                id={openThreadRef.id}
-                variant="desktop"
-                onClose={() => setOpenThreadRef(null)}
-              />
-            </aside>
-          )}
         </div>
 
-        {/* Floating new-note button (desktop only); viewers can't add notes. */}
-        {canEditSpace && (
+        {/* Floating new-note button (desktop only); viewers can't add notes.
+            Hidden over quick notes and threads: it would cover their send button. */}
+        {canEditSpace && !mainView && (
           <button
             type="button"
             aria-label="New note"

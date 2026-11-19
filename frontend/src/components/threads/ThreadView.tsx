@@ -1,46 +1,50 @@
 "use client";
 
-import { Check, ChevronLeft, CircleCheck, Copy, MessagesSquare, MoreHorizontal, Pencil, Pin, Tags, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, CircleCheck, Copy, MessageSquareReply, MoreHorizontal, Pencil, Pin, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { copyText } from "@/lib/clipboard";
-import { localDateKey, makeSnippet } from "@/lib/note-utils";
-import { notepadLocation, splitMemo } from "@/lib/notepad";
+import { makeSnippet } from "@/lib/note-utils";
+import { splitMemo } from "@/lib/notepad";
 import { useNotes } from "@/lib/notes-context";
 import {
+  addThreadComment,
   appendThreadPost,
-  createThread,
   deleteThread,
   mutateThread,
   openThread,
   parseThread,
+  removeThreadComment,
   removeThreadPost,
   renameThread,
+  replaceThreadComment,
   replaceThreadPost,
   setPostFlags,
   useThreads,
   type PostFlags,
   type PostRef,
-  type Thread,
+  type ThreadComment,
   type ThreadPost,
 } from "@/lib/threads";
 import { MemoBubble, type NoteRef } from "../mobile/MemoBubble";
 import { MemoComposer, type ComposerLabels } from "../mobile/MemoComposer";
-import { MobileActionSheet } from "../mobile/MobileActionSheet";
+import { MobileActionSheet, type SheetAction } from "../mobile/MobileActionSheet";
 import { useVisualViewport } from "../mobile/useVirtualKeyboardInset";
 import { JumpButton, useScrolledAway } from "./JumpButton";
 import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "./MemoChrome";
 import { PinnedBar, type PinnedItem } from "./PinnedBar";
+import { commentKey, dayLabel, PostComments } from "./PostComments";
 import { isPriorityLevel, PRIORITIES, PriorityBadge } from "./priority";
 import { markSections, threadMarkSections } from "./threadActions";
 import { errorText, useMemoDraft } from "./useMemoDraft";
 import { useNoteRefs } from "./useNoteRefs";
 
-// The chat view of one thread (phone overlay and desktop side panel): its
-// posts like a messenger conversation, the first one being the thread's
-// start, and a composer to reply. Long-press / right-click selects posts to
-// edit, copy or delete them; swiping a reply left (or its hover button on
-// desktop) starts a new thread from it, leaving a link in its place.
+// The chat view of one thread (phone overlay, desktop main area): its posts
+// like a messenger conversation, the first one being the thread's start, each
+// with its comments underneath, and a composer to reply. Long-press /
+// right-click opens a post's or comment's menu (comment, edit, copy, marks,
+// delete); swiping a post left (or its hover button on desktop) comments on
+// it. The header's select button picks several posts to copy or delete.
 
 type Props = { vaultId: string; id: string; variant: "mobile" | "desktop"; onClose: () => void };
 
@@ -68,27 +72,56 @@ const REPLY_LABELS: ComposerLabels = {
   field: "Reply to the thread",
 };
 
+// Commenting reuses the composer's edit banner: it names the post the
+// comment goes under, and its Cancel leaves comment mode.
+const commentLabels = (post: string): ComposerLabels => ({
+  send: "Comment",
+  save: "Comment",
+  placeholder: "Write a comment…",
+  editPlaceholder: "Write a comment…",
+  newTitle: "Comment",
+  editTitle: "Comment",
+  editing: () => `Commenting on: ${post}`,
+  field: "Comment on the post",
+});
+
+const COMMENT_EDIT_LABELS: ComposerLabels = {
+  send: "Comment",
+  save: "Save comment",
+  placeholder: "Write a comment…",
+  editPlaceholder: "Edit comment…",
+  newTitle: "Comment",
+  editTitle: "Edit comment",
+  editing: () => "Editing comment",
+  field: "Edit the comment",
+};
+
+// What the composer edits: a post or a comment, as it was when opened (the
+// save looks it up by that content in the latest body).
+type Edit =
+  | { kind: "post"; post: ThreadPost; text: string; time: string }
+  | { kind: "comment"; post: ThreadPost; comment: ThreadComment; text: string; time: string };
+
+// The long-press menu: a post's or one of its comments' (by content: it
+// survives other changes arriving while it's open).
+type Sheet = { kind: "post"; key: string } | { kind: "comment"; postKey: string; comment: ThreadComment };
+
 const NO_POSTS: ThreadPost[] = [];
 
 // Posts are matched by content, not by their (shifting) line numbers, so a
 // selection or an edit survives other posts arriving.
 const postKey = (p: PostRef) => `${p.day}\n${p.time}\n${p.text}`;
 
-const dayLabel = (day: string) =>
-  day === localDateKey()
-    ? "Today"
-    : day
-      ? new Date(`${day}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-      : "Earlier";
-
 const DONE_GREEN = "#22c55e";
 const FLASH = "color-mix(in srgb, var(--mob-accent) 18%, transparent)";
 
-// A post's first line for menus and the pinned bar (images shown as "Photo").
-const postSnippet = (text: string) => makeSnippet(text, 80) || (splitMemo(text).images.length > 0 ? "Photo" : "Post");
+// A post's or comment's first line for menus and the pinned bar (images
+// shown as "Photo").
+const postSnippet = (text: string, empty = "Post") =>
+  makeSnippet(text, 80) || (splitMemo(text).images.length > 0 ? "Photo" : empty);
 
 // "Mon, Nov 17 · 09:14"
-const postWhen = (p: ThreadPost) =>
+const postWhen = (p: { day: string; time: string }) =>
   [
     p.day ? new Date(`${p.day}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "",
     p.time,
@@ -114,18 +147,21 @@ export default function ThreadView(props: Props) {
 }
 
 function ThreadPane({ vaultId, id, variant, onClose }: Props) {
-  const { settings, openNoteInVault, openTab } = useNotes();
+  const { openNoteInVault, openTab } = useNotes();
   const { threads, loaded, error: loadError } = useThreads(vaultId);
   const thread = threads.find((t) => t.id === id) ?? null;
   const posts = thread?.posts ?? NO_POSTS;
   const ref = { vaultId, id };
   const mobile = variant === "mobile";
+  // Desktop shows the thread in the wide editor area: header, stream and
+  // composer share one centered, readable column.
+  const column = mobile ? "" : "mx-auto w-full max-w-3xl";
   const vv = useVisualViewport();
   const keyboardOpen = mobile && vv.isKeyboardOpen;
   const { resolve, suggest } = useNoteRefs(vaultId);
   const { toast, showToast, dismissToast } = useMemoToast();
   // Images go to the thread's own note (its vault's image folder).
-  const draft = useMemoDraft<ThreadPost>({
+  const draft = useMemoDraft<Edit>({
     ensureTarget: () => Promise.resolve(ref),
     currentTarget: () => ref,
     targetErrorText: "Couldn't upload to the thread",
@@ -149,15 +185,29 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const awayFromLatest = useScrolledAway(listRef, "bottom");
-  // The post whose marks sheet is open (by key: it survives the save).
-  const [marksKey, setMarksKey] = useState<string | null>(null);
+  // The post a new comment goes under (null: the composer replies). Its
+  // content as it was when picked: the save finds it in the latest body.
+  const [commentOn, setCommentOn] = useState<ThreadPost | null>(null);
+  const [sheet, setSheet] = useState<Sheet | null>(null);
   // The post briefly tinted after jumping to it from the pinned bar.
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimer = useRef<number | undefined>(undefined);
 
   const selected = posts.filter((p) => selectedKeys.has(postKey(p)));
-  const editingKey = draft.editing ? postKey(draft.editing) : null;
-  const isEditing = (list: ThreadPost[]) => editingKey !== null && list.some((p) => postKey(p) === editingKey);
+  const editingKey = draft.editing?.kind === "post" ? postKey(draft.editing.post) : null;
+  const commentOnKey = commentOn ? postKey(commentOn) : null;
+  // The comment of this post open in the composer, if any.
+  const editingCommentOf = (post: ThreadPost) =>
+    draft.editing?.kind === "comment" && postKey(draft.editing.post) === postKey(post) ? commentKey(draft.editing.comment) : null;
+  // The composer works on one of these posts (an edit of it or of one of its
+  // comments, or a comment for it).
+  const composerOn = (list: ThreadPost[]) => {
+    const keys = new Set(list.map(postKey));
+    return {
+      editing: draft.editing !== null && keys.has(postKey(draft.editing.post)),
+      commenting: commentOnKey !== null && keys.has(commentOnKey),
+    };
+  };
 
   const toggleSelected = (post: ThreadPost) => {
     setSelectMode(true);
@@ -219,14 +269,41 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     onClose();
   };
 
-  const send = () =>
+  const send = () => {
+    const target = commentOn;
     void draft.submit(
       async (text, edit) => {
-        await mutateThread(ref, (body) => (edit ? replaceThreadPost(body, edit, text) : appendThreadPost(body, text)));
+        await mutateThread(ref, (body) => {
+          if (edit?.kind === "comment") return replaceThreadComment(body, edit.post, edit.comment, text);
+          if (edit) return replaceThreadPost(body, edit.post, text);
+          return target ? addThreadComment(body, target, text) : appendThreadPost(body, text);
+        });
       },
-      "Couldn't save to the thread",
-      () => setFullscreen(false),
+      target ? "Couldn't save the comment" : "Couldn't save to the thread",
+      () => {
+        if (target) setCommentOn(null);
+        setFullscreen(false);
+      },
     );
+  };
+
+  const startEditPost = (post: ThreadPost) => {
+    setCommentOn(null);
+    draft.startEdit({ kind: "post", post, text: post.text, time: post.time });
+  };
+
+  const startEditComment = (post: ThreadPost, comment: ThreadComment) => {
+    setCommentOn(null);
+    draft.startEdit({ kind: "comment", post, comment, text: comment.text, time: comment.time });
+  };
+
+  // Comment mode: the next send goes under this post. Text typed so far stays.
+  const startComment = (post: ThreadPost) => {
+    if (draft.editing) draft.cancelEdit();
+    draft.setError(null);
+    setCommentOn(post);
+    requestAnimationFrame(() => draft.inputRef.current?.focus({ preventScroll: true }));
+  };
 
   const openNote = (note: NoteRef) => {
     // Threads only open in the thread view; the editor can't show them.
@@ -287,7 +364,9 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
       return;
     }
     draft.setError(null);
-    if (isEditing(list)) draft.cancelEdit();
+    const on = composerOn(list);
+    if (on.editing) draft.cancelEdit();
+    if (on.commenting) setCommentOn(null);
     let before = "";
     try {
       const saved = await mutateThread(ref, (body) => {
@@ -317,43 +396,79 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     }
   };
 
-  // "Swipe a reply": the post becomes a thread of its own and a link to it
-  // takes its place here.
-  const startThreadFrom = async (post: ThreadPost) => {
+  const deleteComment = async (post: ThreadPost, comment: ThreadComment) => {
     draft.setError(null);
-    if (isEditing([post])) draft.cancelEdit();
-    const home = notepadLocation(settings);
-    // [[links]] to threads resolve within one vault: a thread kept outside the
-    // Notepad's vault spawns its threads next to itself.
-    const loc = home.vaultId === vaultId ? home : { vaultId, folder: "" };
-    let created: Thread;
+    if (editingCommentOf(post) === commentKey(comment)) draft.cancelEdit();
+    let before = "";
     try {
-      created = await createThread(loc, [post]);
+      const saved = await mutateThread(ref, (body) => {
+        before = body;
+        return removeThreadComment(body, post, comment);
+      });
+      showToast("Comment deleted", { label: "Undo", run: () => void restore(before, saved.body) });
     } catch (e) {
-      draft.setError(errorText(e, "Couldn't start the thread"));
-      return;
-    }
-    const open = { label: "Open", run: () => openThread(created) };
-    try {
-      await mutateThread(ref, (body) => replaceThreadPost(body, post, `[[${created.title}]]`));
-      showToast("Thread started", open);
-    } catch (e) {
-      // The new thread exists either way; the post just stays here as well.
-      showToast("Thread started — the post stays here too", open);
-      draft.setError(errorText(e, "Couldn't replace the post with a link"));
+      draft.setError(errorText(e, "Couldn't delete the comment"));
     }
   };
 
-  const copyPosts = (list: ThreadPost[]) => {
-    void copyText(list.map((p) => p.text).join("\n\n")).then((ok) => showToast(ok ? "Copied" : "Couldn't copy"));
+  const copy = (text: string) => {
+    void copyText(text).then((ok) => showToast(ok ? "Copied" : "Couldn't copy"));
+  };
+  const copyPosts = (list: ThreadPost[]) => copy(list.map((p) => p.text).join("\n\n"));
+
+  // The post / comment whose menu is open, from the latest posts (gone: no menu).
+  const sheetPost =
+    sheet === null ? null : (posts.find((p) => postKey(p) === (sheet.kind === "post" ? sheet.key : sheet.postKey)) ?? null);
+  const sheetComment =
+    sheet?.kind === "comment" && sheetPost
+      ? (sheetPost.comments.find((c) => commentKey(c) === commentKey(sheet.comment)) ?? null)
+      : null;
+
+  // Comments and marks live under a post's heading; text before the first
+  // heading (day "") has neither.
+  const postSheetSections = (post: ThreadPost): SheetAction[][] => [
+    [
+      ...(post.day
+        ? [{ label: "Comment", icon: <MessageSquareReply size={19} />, onClick: () => startComment(post) }]
+        : []),
+      { label: "Edit", icon: <Pencil size={19} />, onClick: () => startEditPost(post) },
+      { label: "Copy", icon: <Copy size={19} />, onClick: () => copyPosts([post]) },
+    ],
+    ...(post.day
+      ? markSections(
+          post.flags,
+          (patch) =>
+            void mutateThread(ref, (b) => setPostFlags(b, post, patch)).catch((e: unknown) =>
+              draft.setError(errorText(e, "Couldn't change the post")),
+            ),
+          "post",
+        )
+      : []),
+    [{ label: "Delete", icon: <Trash2 size={19} />, danger: true, onClick: () => void deletePosts([post]) }],
+  ];
+
+  const commentSheetSections = (post: ThreadPost, comment: ThreadComment): SheetAction[][] => [
+    [
+      { label: "Edit", icon: <Pencil size={19} />, onClick: () => startEditComment(post, comment) },
+      { label: "Copy", icon: <Copy size={19} />, onClick: () => copy(comment.text) },
+    ],
+    [{ label: "Delete", icon: <Trash2 size={19} />, danger: true, onClick: () => void deleteComment(post, comment) }],
+  ];
+
+  // What the composer is doing: editing a post or comment, commenting, replying.
+  const composerEditing = draft.editing ?? (commentOn ? { time: commentOn.time } : null);
+  const composerLabels =
+    draft.editing?.kind === "comment"
+      ? COMMENT_EDIT_LABELS
+      : !draft.editing && commentOn
+        ? commentLabels(postSnippet(commentOn.text))
+        : REPLY_LABELS;
+  const cancelComposerMode = () => {
+    if (draft.editing) draft.cancelEdit();
+    else setCommentOn(null);
   };
 
   const single = selected.length === 1 ? selected[0] : null;
-  // The first post is the thread itself: starting a thread from it is moot.
-  const canSpinOff = single !== null && posts.indexOf(single) > 0;
-  // Marks live in a post's heading; text before the first heading has none.
-  const marksable = single !== null && single.day !== "";
-  const marksPost = marksKey === null ? null : (posts.find((p) => postKey(p) === marksKey) ?? null);
   const threadMarks = thread ? threadMarkSections(thread, draft.setError) : [];
 
   const jumpToLatest = () => {
@@ -396,19 +511,9 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
       <span className="min-w-0 flex-1 truncate text-lg font-semibold" style={{ color: "var(--mob-text)" }}>
         {selected.length ? `${selected.length} selected` : "Select posts"}
       </span>
-      {marksable && (
-        <HeaderButton label="Marks" onClick={onSelection((list) => setMarksKey(postKey(list[0])))}>
-          <Tags size={18} />
-        </HeaderButton>
-      )}
       {single && (
-        <HeaderButton label="Edit" onClick={onSelection((list) => draft.startEdit(list[0]))}>
+        <HeaderButton label="Edit" onClick={onSelection((list) => startEditPost(list[0]))}>
           <Pencil size={18} />
-        </HeaderButton>
-      )}
-      {canSpinOff && (
-        <HeaderButton label="Start a thread from this" onClick={onSelection((list) => void startThreadFrom(list[0]))}>
-          <MessagesSquare size={18} />
         </HeaderButton>
       )}
       <HeaderButton label="Copy" disabled={selected.length === 0} onClick={onSelection(copyPosts)}>
@@ -627,7 +732,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                     text={post.text}
                     variant="timeline"
                     markdown
-                    editing={editingKey === key}
+                    editing={editingKey === key || commentOnKey === key}
                     selected={selectedKeys.has(key)}
                     selecting={selectMode}
                     resolve={resolve}
@@ -635,10 +740,23 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                     onOpenImage={setViewer}
                     onOpenTag={openTag}
                     onToggleSelect={() => toggleSelected(post)}
-                    onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
-                    swipeLabel="Start a thread from this"
+                    onLongPress={() => setSheet({ kind: "post", key })}
+                    onSwipeLeft={post.day ? () => startComment(post) : undefined}
+                    swipeLabel="Comment"
+                    swipeIcon={<MessageSquareReply size={18} />}
                   />
                 </div>
+                <PostComments
+                  comments={post.comments}
+                  postDay={post.day}
+                  editingKey={editingCommentOf(post)}
+                  onMenu={(comment) => setSheet({ kind: "comment", postKey: key, comment })}
+                  resolve={resolve}
+                  onOpenNote={openNote}
+                  onOpenImage={setViewer}
+                  onOpenTag={openTag}
+                  className="ml-2 mt-1"
+                />
               </div>
             </li>
           );
@@ -682,16 +800,16 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                   )}
                   <div className="flex w-full items-center justify-end gap-1.5">
                     {/* No swipe with a mouse: desktop offers the same on hover. */}
-                    {!mobile && !first && !selectMode && (
+                    {!mobile && post.day && !selectMode && (
                       <button
                         type="button"
-                        aria-label="Start a thread from this"
-                        title="Start a thread from this"
-                        onClick={() => void startThreadFrom(post)}
+                        aria-label="Comment"
+                        title="Comment"
+                        onClick={() => startComment(post)}
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                         style={{ background: "var(--mob-surface)", color: "var(--mob-muted)" }}
                       >
-                        <MessagesSquare size={16} />
+                        <MessageSquareReply size={16} />
                       </button>
                     )}
                     <div
@@ -702,7 +820,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                       <MemoBubble
                         text={post.text}
                         markdown
-                        editing={editingKey === key}
+                        editing={editingKey === key || commentOnKey === key}
                         selected={selectedKeys.has(key)}
                         selecting={selectMode}
                         resolve={resolve}
@@ -710,8 +828,10 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                         onOpenImage={setViewer}
                         onOpenTag={openTag}
                         onToggleSelect={() => toggleSelected(post)}
-                        onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
-                        swipeLabel="Start a thread from this"
+                        onLongPress={() => setSheet({ kind: "post", key })}
+                        onSwipeLeft={post.day ? () => startComment(post) : undefined}
+                        swipeLabel="Comment"
+                        swipeIcon={<MessageSquareReply size={18} />}
                       />
                     </div>
                   </div>
@@ -721,6 +841,20 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                       {post.time}
                     </span>
                   )}
+                  {/* Under the bubble, narrower, text reading left to right
+                      from a thin rule: asides to the post. */}
+                  <PostComments
+                    comments={post.comments}
+                    postDay={post.day}
+                    editingKey={editingCommentOf(post)}
+                    onMenu={(comment) => setSheet({ kind: "comment", postKey: key, comment })}
+                    resolve={resolve}
+                    onOpenNote={openNote}
+                    onOpenImage={setViewer}
+                    onOpenTag={openTag}
+                    // Shrinks to its text, right under the bubble it belongs to.
+                    className="mr-1 mt-1 w-fit max-w-[75%]"
+                  />
                 </div>
               </div>
             </li>
@@ -749,17 +883,19 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
         }
       >
         <div
-          className="flex shrink-0 items-center gap-3 px-3"
+          className="shrink-0 px-3"
           style={{
             paddingTop: mobile ? "calc(env(safe-area-inset-top, 0px) + 8px)" : 8,
             paddingBottom: 8,
             borderBottom: "1px solid var(--mob-surface)",
           }}
         >
-          {header}
+          <div className={"flex items-center gap-3 " + column}>{header}</div>
         </div>
 
-        <PinnedBar items={pinnedItems} title="Pinned posts" />
+        <div className={"shrink-0 " + column}>
+          <PinnedBar items={pinnedItems} title="Pinned posts" />
+        </div>
 
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div
@@ -767,7 +903,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
             style={{ touchAction: "pan-y" }}
           >
-            {content}
+            {mobile ? content : <div className={"flex min-h-full flex-col " + column}>{content}</div>}
           </div>
           <JumpButton
             show={awayFromLatest}
@@ -780,35 +916,38 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
 
         <MemoToast toast={toast} onDismiss={dismissToast} />
 
-        <DraftError
-          error={draft.error}
-          canRetry={draft.canRetryTranscription}
-          onRetry={draft.retryTranscription}
-          onDiscard={draft.discardFailedClip}
-        />
-
-        {thread && (
-          <MemoComposer
-            value={draft.input}
-            onChange={draft.setInput}
-            inputRef={draft.inputRef}
-            attachments={draft.attachments}
-            onAttach={(files) => void draft.attach(files)}
-            onRemoveAttachment={draft.removeAttachment}
-            fullscreen={fullscreen}
-            onFullscreenChange={setFullscreen}
-            editing={draft.editing}
-            onCancelEdit={draft.cancelEdit}
-            canSend={draft.canSend}
-            posting={draft.posting}
-            onSend={send}
-            suggest={suggest}
-            keyboardOpen={keyboardOpen}
-            voice={draft.voice}
-            labels={REPLY_LABELS}
-            allowFullscreen={mobile}
+        <div className={"shrink-0 " + column}>
+          <DraftError
+            error={draft.error}
+            canRetry={draft.canRetryTranscription}
+            onRetry={draft.retryTranscription}
+            onDiscard={draft.discardFailedClip}
           />
-        )}
+
+          {thread && (
+            <MemoComposer
+              value={draft.input}
+              onChange={draft.setInput}
+              inputRef={draft.inputRef}
+              attachments={draft.attachments}
+              onAttach={(files) => void draft.attach(files)}
+              onRemoveAttachment={draft.removeAttachment}
+              fullscreen={fullscreen}
+              onFullscreenChange={setFullscreen}
+              editing={composerEditing}
+              onCancelEdit={cancelComposerMode}
+              canSend={draft.canSend}
+              posting={draft.posting}
+              onSend={send}
+              suggest={suggest}
+              keyboardOpen={keyboardOpen}
+              voice={draft.voice}
+              labels={composerLabels}
+              allowFullscreen={mobile}
+              composing={!draft.editing && commentOn !== null}
+            />
+          )}
+        </div>
       </div>
 
       {viewer && <ImageViewer url={viewer} onClose={() => setViewer(null)} />}
@@ -823,20 +962,23 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
           ]}
         />
       )}
-      {marksPost && (
+      {sheetPost && sheetComment ? (
         <MobileActionSheet
-          title={postSnippet(marksPost.text)}
-          subtitle={postWhen(marksPost)}
-          onClose={() => setMarksKey(null)}
-          sections={markSections(
-            marksPost.flags,
-            (patch) =>
-              void mutateThread(ref, (b) => setPostFlags(b, marksPost, patch)).catch((e: unknown) =>
-                draft.setError(errorText(e, "Couldn't change the post")),
-              ),
-            "post",
-          )}
+          title={postSnippet(sheetComment.text, "Comment")}
+          subtitle={postWhen(sheetComment)}
+          onClose={() => setSheet(null)}
+          sections={commentSheetSections(sheetPost, sheetComment)}
         />
+      ) : (
+        sheetPost &&
+        sheet?.kind === "post" && (
+          <MobileActionSheet
+            title={postSnippet(sheetPost.text)}
+            subtitle={postWhen(sheetPost)}
+            onClose={() => setSheet(null)}
+            sections={postSheetSections(sheetPost)}
+          />
+        )
       )}
     </section>
   );
@@ -844,7 +986,8 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
 
 function Notice({ title, text }: { title: string; text: string }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+    // flex-1: fills the desktop column, whose height is only a minimum.
+    <div className="flex h-full flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
       <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
         {title}
       </p>

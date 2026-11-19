@@ -12,6 +12,7 @@ import {
   Layers,
   LayoutDashboard,
   ListTodo,
+  MessageSquareText,
   MessagesSquare,
   PanelLeftClose,
   Search,
@@ -29,6 +30,7 @@ import { api, type SearchHit } from "@/lib/api";
 import { makeSnippet } from "@/lib/note-utils";
 import { isThreadMeta, openThread } from "@/lib/threads";
 import { useAllThreads, useSharedTags } from "@/components/threads/useAllThreads";
+import { OPEN_QUICK_NOTES_EVENT } from "@/components/threads/threadEvents";
 import { useVisualViewport } from "@/components/mobile/useVirtualKeyboardInset";
 import { useCanEdit } from "@/components/useCanEdit";
 
@@ -136,6 +138,12 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
           <LayoutDashboard className="h-4 w-4 shrink-0 text-muted-foreground" />
         ),
         run: () => void openTab(DASHBOARD_ID),
+      },
+      {
+        id: "quick-notes",
+        label: "Quick notes",
+        icon: <MessageSquareText className="h-4 w-4 shrink-0 text-muted-foreground" />,
+        run: () => window.dispatchEvent(new CustomEvent(OPEN_QUICK_NOTES_EVENT)),
       },
       {
         id: "go-notetree",
