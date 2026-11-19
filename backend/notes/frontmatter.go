@@ -43,6 +43,12 @@ type Meta struct {
 	Icon       string            `yaml:"icon,omitempty"`
 	Collection string            `yaml:"collection,omitempty"`
 	Fields    map[string]string `yaml:"fields,omitempty"`
+	// Pinned, Priority (1 highest … 5) and Status ("done") organise
+	// quick-notes threads (pinned to the top, colored by priority, struck
+	// through when solved); any note may carry them.
+	Pinned   bool   `yaml:"pinned,omitempty"`
+	Priority int    `yaml:"priority,omitempty"`
+	Status   string `yaml:"status,omitempty"`
 }
 
 // Document is a parsed note: its metadata plus the markdown body.

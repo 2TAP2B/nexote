@@ -1,11 +1,11 @@
 "use client";
 
-import { CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Trash2, X } from "lucide-react";
+import { CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Pin, PinOff, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, isCollectionsVault } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
-import { localDateKey } from "@/lib/note-utils";
+import { localDateKey, makeSnippet } from "@/lib/note-utils";
 import {
   appendNotepadEntry,
   findNotepad,
@@ -15,6 +15,8 @@ import {
   parseNotepad,
   removeNotepadEntries,
   replaceNotepadEntry,
+  setNotepadEntryPinned,
+  splitMemo,
   type NotepadEntry,
 } from "@/lib/notepad";
 import type { Notebook } from "@/lib/notebooks";
@@ -31,7 +33,9 @@ import {
   replyLabel,
   type Thread,
 } from "@/lib/threads";
+import { JumpButton, useScrolledAway } from "../threads/JumpButton";
 import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "../threads/MemoChrome";
+import { PinnedBar, type PinnedItem } from "../threads/PinnedBar";
 import { ThreadCard } from "../threads/ThreadCard";
 import { errorText, useMemoDraft } from "../threads/useMemoDraft";
 import { useAllThreads } from "../threads/useAllThreads";
@@ -51,6 +55,8 @@ import { useVisualViewport } from "./useVirtualKeyboardInset";
 // the bar on top then copies, edits, makes a note of, adds to a thread or
 // deletes the selection. Threads (lib/threads) show in the stream as cards at
 // their last activity; swiping a memo left starts one; a #tag filters both.
+// Pinned memos and threads sit in the bar under the header; memo text renders
+// as Markdown.
 
 type Target = { vaultId: string; id: string };
 
@@ -193,6 +199,60 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
   }, [visible.length, lastKey, focused, vv.isKeyboardOpen]);
+
+  const awayFromLatest = useScrolledAway(listRef, "bottom");
+  const jumpToLatest = () => {
+    const list = listRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  };
+
+  // A pinned memo picked in the bar: scrolled into view and briefly lit. The
+  // tag filter goes if it hides the memo; the scroll waits for that render.
+  // `n` lets picking the same memo again run it again.
+  const [flash, setFlash] = useState<{ key: string; n: number } | null>(null);
+  const showMemo = (entry: NotepadEntry) => {
+    if (tagFilter && !postTags(entry.text).includes(tagFilter)) setTagFilter(null);
+    setFlash((prev) => ({ key: memoKey(entry), n: (prev?.n ?? 0) + 1 }));
+  };
+  useEffect(() => {
+    if (!flash) return;
+    const rows = listRef.current?.querySelectorAll<HTMLElement>("[data-memo]") ?? [];
+    Array.from(rows)
+      .find((row) => row.dataset.memo === flash.key)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = window.setTimeout(() => setFlash(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+
+  // The bar shows every pin, whatever the tag filter: threads by last
+  // activity, then memos newest first.
+  const memoStamp = (e: NotepadEntry) => `${e.day} ${e.time.padStart(5, "0")}`;
+  const pinnedItems: PinnedItem[] = [
+    ...threadsByActivity
+      .filter((t) => t.pinned)
+      .map(
+        (t): PinnedItem => ({
+          key: `t-${t.vaultId}-${t.id}`,
+          text: t.title || "Untitled thread",
+          sub: replyLabel(t),
+          icon: <MessagesSquare size={14} className="shrink-0" />,
+          done: t.done,
+          onSelect: () => openThread(t),
+        }),
+      ),
+    ...entries
+      .filter((e) => e.pinned)
+      .sort((a, b) => memoStamp(b).localeCompare(memoStamp(a)))
+      .map(
+        (e): PinnedItem => ({
+          key: `m-${memoKey(e)}`,
+          // Plain text: the bar shows no Markdown.
+          text: makeSnippet(splitMemo(e.text).text, 80) || "Image",
+          sub: `${dayLabel(e.day)} ${e.time}`,
+          onSelect: () => showMemo(e),
+        }),
+      ),
+  ];
 
   // Threads too, so [[Thread title]] links resolve to them (the Notepad's first).
   const { resolve, suggest } = useNoteRefs(locVault);
@@ -352,6 +412,27 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
       });
     } catch (e) {
       setError(errorText(e, "Couldn't delete"));
+    }
+  };
+
+  // Pins or unpins memos in the notepad's latest version, written once.
+  const pinMemos = async (list: NotepadEntry[], pinned: boolean) => {
+    const target = targetRef.current;
+    if (!target || list.length === 0) return;
+    let previous = body;
+    try {
+      previous = (await api.get(target.vaultId, target.id)).body;
+      const next = list.reduce((b, entry) => setNotepadEntryPinned(b, entry, pinned) ?? b, previous);
+      if (next === previous) {
+        showToast("Those memos changed elsewhere");
+        return;
+      }
+      setBody(next);
+      await api.update(target.vaultId, target.id, { title: NOTEPAD_TITLE, body: next });
+      void refreshNoteBody(target.id);
+    } catch (e) {
+      setBody(previous);
+      showToast(errorText(e, pinned ? "Couldn't pin" : "Couldn't unpin"));
     }
   };
 
@@ -548,6 +629,19 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
               >
                 <MessageSquarePlus size={18} />
               </HeaderButton>
+              {selected.length > 0 && selected.every((e) => e.pinned) ? (
+                <HeaderButton label="Unpin" onClick={onSelection((list) => void pinMemos(list, false))}>
+                  <PinOff size={18} />
+                </HeaderButton>
+              ) : (
+                <HeaderButton
+                  label="Pin"
+                  disabled={selected.length === 0}
+                  onClick={onSelection((list) => void pinMemos(list, true))}
+                >
+                  <Pin size={18} />
+                </HeaderButton>
+              )}
               <HeaderButton
                 label="Delete"
                 danger
@@ -584,6 +678,7 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
             </>
           )}
         </div>
+        <PinnedBar items={pinnedItems} />
         {tagFilter && (
           <div
             className="flex shrink-0 items-center gap-2 px-3 py-2"
@@ -605,93 +700,121 @@ export default function QuickCapturePane({ focused, onBack }: { focused: boolean
           </div>
         )}
 
-        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3" style={{ touchAction: "pan-y" }}>
-          {stream.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-              <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
-                Jot it down
-              </p>
-              <p className="text-xs" style={{ color: "var(--mob-muted)" }}>
-                Type below and press Enter — each memo is added to &quot;{NOTEPAD_TITLE}&quot; with the time. Type @ to
-                link a note; add photos with the image button. Swipe a memo left to start a thread.
-              </p>
-            </div>
-          ) : visible.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-              <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
-                No quick notes with #{tagFilter}
-              </p>
-              <button
-                type="button"
-                onClick={() => setTagFilter(null)}
-                className="text-xs font-medium"
-                style={{ color: "var(--mob-accent)" }}
-              >
-                Show all
-              </button>
-            </div>
-          ) : (
-            <ol className="flex flex-col gap-1.5">
-              {visible.map((item, i) => {
-                const day = dayOf(item);
-                const prev = visible[i - 1];
-                return (
-                  <li
-                    key={item.kind === "memo" ? `m-${item.entry.day}-${item.entry.start}` : `t-${item.thread.vaultId}-${item.thread.id}`}
-                    className="flex flex-col"
-                  >
-                    {(!prev || day !== dayOf(prev)) && (
-                      <span
-                        className="my-2 self-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                        style={{ background: "var(--mob-surface)", color: "var(--mob-muted)" }}
-                      >
-                        {dayLabel(day)}
-                      </span>
-                    )}
-                    {item.kind === "memo" ? (
-                      <div className="flex items-center gap-2">
-                        {selectMode && (
-                          <SelectCircle
-                            selected={selectedKeys.has(memoKey(item.entry))}
-                            onToggle={() => toggleSelected(item.entry)}
-                          />
-                        )}
-                        <div className="flex min-w-0 flex-1 flex-col items-end">
-                          <MemoBubble
-                            text={item.entry.text}
-                            editing={editing?.start === item.entry.start && editing.day === item.entry.day}
-                            selected={selectedKeys.has(memoKey(item.entry))}
-                            selecting={selectMode}
-                            resolve={resolve}
-                            onOpenNote={openNote}
-                            onOpenImage={setViewer}
+        {/* The list plus the jump button floating over its bottom edge,
+            just above the composer. */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3" style={{ touchAction: "pan-y" }}>
+            {stream.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+                <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
+                  Jot it down
+                </p>
+                <p className="text-xs" style={{ color: "var(--mob-muted)" }}>
+                  Type below and press Enter — each memo is added to &quot;{NOTEPAD_TITLE}&quot; with the time. Type @ to
+                  link a note; add photos with the image button. Swipe a memo left to start a thread.
+                </p>
+              </div>
+            ) : visible.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+                <p className="text-sm font-medium" style={{ color: "var(--mob-text)" }}>
+                  No quick notes with #{tagFilter}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTagFilter(null)}
+                  className="text-xs font-medium"
+                  style={{ color: "var(--mob-accent)" }}
+                >
+                  Show all
+                </button>
+              </div>
+            ) : (
+              <ol className="flex flex-col gap-1.5">
+                {visible.map((item, i) => {
+                  const day = dayOf(item);
+                  const prev = visible[i - 1];
+                  return (
+                    <li
+                      key={item.kind === "memo" ? `m-${item.entry.day}-${item.entry.start}` : `t-${item.thread.vaultId}-${item.thread.id}`}
+                      className="flex flex-col"
+                    >
+                      {(!prev || day !== dayOf(prev)) && (
+                        <span
+                          className="my-2 self-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                          style={{ background: "var(--mob-surface)", color: "var(--mob-muted)" }}
+                        >
+                          {dayLabel(day)}
+                        </span>
+                      )}
+                      {item.kind === "memo" ? (
+                        <div
+                          data-memo={memoKey(item.entry)}
+                          className="-mx-1.5 flex items-center gap-2 rounded-xl px-1.5 transition-colors duration-500"
+                          style={{
+                            background:
+                              flash?.key === memoKey(item.entry)
+                                ? "color-mix(in srgb, var(--mob-accent) 18%, transparent)"
+                                : "transparent",
+                          }}
+                        >
+                          {selectMode && (
+                            <SelectCircle
+                              selected={selectedKeys.has(memoKey(item.entry))}
+                              onToggle={() => toggleSelected(item.entry)}
+                            />
+                          )}
+                          <div className="flex min-w-0 flex-1 flex-col items-end">
+                            <MemoBubble
+                              text={item.entry.text}
+                              markdown
+                              editing={editing?.start === item.entry.start && editing.day === item.entry.day}
+                              selected={selectedKeys.has(memoKey(item.entry))}
+                              selecting={selectMode}
+                              resolve={resolve}
+                              onOpenNote={openNote}
+                              onOpenImage={setViewer}
+                              onOpenTag={filterByTag}
+                              onToggleSelect={() => toggleSelected(item.entry)}
+                              onSwipeLeft={threading ? undefined : () => void startThread(item.entry)}
+                            />
+                            <span
+                              className="mr-1 mt-0.5 flex items-center gap-1 text-[10px] tabular-nums"
+                              style={{ color: "var(--mob-muted)" }}
+                            >
+                              {item.entry.pinned && (
+                                <Pin size={11} style={{ color: "var(--mob-accent)" }} aria-label="Pinned" />
+                              )}
+                              {item.entry.time}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex min-w-0 flex-col items-end">
+                          <ThreadCard
+                            thread={item.thread}
+                            dimmed={selectMode}
+                            onOpen={() => openThread(item.thread)}
                             onOpenTag={filterByTag}
-                            onToggleSelect={() => toggleSelected(item.entry)}
-                            onSwipeLeft={threading ? undefined : () => void startThread(item.entry)}
+                            onError={(message) => showToast(message)}
                           />
                           <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
-                            {item.entry.time}
+                            {item.key.slice(11)}
                           </span>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex min-w-0 flex-col items-end">
-                        <ThreadCard
-                          thread={item.thread}
-                          dimmed={selectMode}
-                          onOpen={() => openThread(item.thread)}
-                          onOpenTag={filterByTag}
-                        />
-                        <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
-                          {item.key.slice(11)}
-                        </span>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          )}
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+          <JumpButton
+            show={awayFromLatest}
+            direction="down"
+            label="Jump to the latest"
+            onClick={jumpToLatest}
+            className="absolute bottom-3 right-3 z-10"
+          />
         </div>
 
         <MemoToast toast={toast} onDismiss={dismissToast} />

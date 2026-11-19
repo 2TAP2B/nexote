@@ -372,6 +372,39 @@ func TestCreateIndexesInlineTags(t *testing.T) {
 	}
 }
 
+// Thread marks: set by a marks-only update, kept by a normal save that
+// doesn't mention them, cleared with 0 / "" (priority clamped to 1–5).
+func TestUpdateMarks(t *testing.T) {
+	s := newTestStore(t)
+	doc, err := s.Create(CreateInput{Title: "Issue", Body: "## Issue\n\nText\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinned, prio, status := true, 9, "done"
+	if _, err := s.Update(doc.Meta.ID, UpdateInput{Pinned: &pinned, Priority: &prio, Status: &status}); err != nil {
+		t.Fatalf("marks update: %v", err)
+	}
+	got, _ := s.Get(doc.Meta.ID)
+	if !got.Meta.Pinned || got.Meta.Priority != 5 || got.Meta.Status != "done" || got.Body != "## Issue\n\nText\n" || got.Meta.Title != "Issue" {
+		t.Fatalf("after marks: %+v body %q", got.Meta, got.Body)
+	}
+	if _, err := s.Update(doc.Meta.ID, UpdateInput{Title: "Issue", Body: "## Issue\n\nMore\n"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Get(doc.Meta.ID)
+	if !got.Meta.Pinned || got.Meta.Priority != 5 || got.Meta.Status != "done" {
+		t.Fatalf("marks lost on save: %+v", got.Meta)
+	}
+	off, zero, empty := false, 0, ""
+	if _, err := s.Update(doc.Meta.ID, UpdateInput{Pinned: &off, Priority: &zero, Status: &empty}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Get(doc.Meta.ID)
+	if got.Meta.Pinned || got.Meta.Priority != 0 || got.Meta.Status != "" {
+		t.Fatalf("marks not cleared: %+v", got.Meta)
+	}
+}
+
 // Quick-notes threads are found by their type: it must survive a reread and
 // later saves that don't mention it.
 func TestCreateWithType(t *testing.T) {

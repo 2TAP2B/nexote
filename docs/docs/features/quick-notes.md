@@ -49,6 +49,13 @@ Tap **Select memos** in the header, or long-press a memo, to enter selection mod
 | Make note | Turn the selected memos into one new note. |
 | Delete | Remove the memos. A toast offers Undo for five seconds, as long as the Notepad has not changed since. |
 | Add to thread | Add the selected memos to an existing [thread](#threads) as replies. They keep their original times and leave the Notepad. |
+| Pin / Unpin | Pin the memos to the bar at the top. In the Notepad a pinned memo is `- 09:14 📌 text`. |
+
+Memos show their Markdown formatted. When you have scrolled up, a small arrow at the bottom right jumps back to the latest memo.
+
+### Pinned
+
+A bar under the header shows the first pinned item and how many there are: pinned threads, then pinned memos. Tap it to see them all; picking a memo scrolls to it, picking a thread opens it.
 
 ### Make note
 
@@ -78,13 +85,32 @@ Posts are Markdown: **bold**, *italics*, ~~strikethrough~~, lists and task lists
 
 **Swipe a reply to the left** to start a new thread from it. The reply is replaced by a link to the new thread, so the two stay connected. On desktop, the same is a button next to each reply.
 
+### Pin, priority and solved
+
+Threads and their posts can carry marks for following up on work: **pinned**, a **priority** from P1 to P5, and **solved** (done).
+
+| Priority | Color | Icon |
+| --- | --- | --- |
+| P1 Critical | red | flame |
+| P2 High | orange | double chevron up |
+| P3 Medium | yellow | equals |
+| P4 Low | blue | chevron down |
+| P5 Someday | gray | moon |
+
+- **A thread:** long-press its card in the quick notes or its row in the Threads view (right-click on desktop), or use **More** inside the thread. A thread's card and row take the priority's color on the left; a solved thread is struck through and moves to the end of the Threads view.
+- **A post:** long-press it, then **Marks** in the header. The post's dot on the timeline takes the priority color, and a done post is struck through. Pinned posts appear in a bar at the top of the thread; tapping it jumps to them.
+
+A thread's marks are properties in its frontmatter (`pinned: true`, `priority: 2`, `status: done`); a post's marks follow its time in the heading, so they read in any Markdown tool: `### 2026-11-19 09:14 📌 P2 ✅`.
+
+In a thread, the arrow at the bottom right jumps to the latest post.
+
 ### Tags
 
 Write `#tags` in memos and replies. A thread's tags are the tags of all its posts. Tapping a tag in the quick notes filters the stream to memos and threads with that tag. Notes and threads share their tags: the sidebar's **Tags** view counts both, and a tag lists its notes and then its threads (a thread opens in the thread view). Tapping a tag inside a thread opens the Tags view on that tag.
 
 ### Threads view
 
-The sidebar's **Threads** view (ribbon icon on desktop, sidebar strip on phones) lists all threads, most recent activity first, with a search field and the tags of all threads to filter by. It shows every thread you have, wherever it was written: in your personal store and in any vault, so threads started on your phone show on the desktop too, even if each device keeps its Notepad somewhere else. Clicking a thread opens it: on desktop in a panel beside the note, on phones full screen. Threads also show up in the quick notes stream and the command palette's search, but not in **Recent** or the dashboard's recently edited notes. **Settings › Features › Sidebar › Threads** hides the view.
+The sidebar's **Threads** view (ribbon icon on desktop, sidebar strip on phones) lists all threads: pinned ones first, then open threads by most recent activity, solved ones last. A search field, the tags of all threads, the priorities in use and a **Solved** chip (turn it off to hide solved threads) filter the list. It shows every thread you have, wherever it was written: in your personal store and in any vault, so threads started on your phone show on the desktop too, even if each device keeps its Notepad somewhere else. Clicking a thread opens it: on desktop in a panel beside the note, on phones full screen. Threads also show up in the quick notes stream and the command palette's search, but not in **Recent** or the dashboard's recently edited notes. **Settings › Features › Sidebar › Threads** hides the view.
 
 ### Storage
 

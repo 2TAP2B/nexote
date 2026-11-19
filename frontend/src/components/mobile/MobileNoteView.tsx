@@ -17,6 +17,7 @@ import MobileDashboard from "./MobileDashboard";
 import MobileEditorToolbar from "./MobileEditorToolbar";
 import { useScrollHideChrome } from "./useScrollHideChrome";
 import { useVirtualKeyboardInset, useVisualViewport } from "./useVirtualKeyboardInset";
+import { JumpButton, useScrolledAway } from "../threads/JumpButton";
 
 const MilkdownEditorWrapper = dynamic<
   React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
@@ -88,6 +89,8 @@ export default function MobileNoteView({
   const loadedKeyRef = useRef<string | null>(null);
   const skipNextChange = useRef(false);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
+  const scrolledDown = useScrolledAway(editorScrollRef, "top", 600);
   // Guards against the autosave response clobbering in-flight typing — same
   // pattern as the desktop EditorPane. When our own save completes and
   // activeNote changes, we DON'T remount the editor or overwrite local body
@@ -334,6 +337,7 @@ export default function MobileNoteView({
        * touch keyboard is open the scrollport shrinks so the caret stays
        * visible above it. */}
       <div
+        ref={editorScrollRef}
         className={
           "mob-editor-scroll h-full overflow-y-auto" +
           (activeNote?.type === "collection-item" ? " has-collection-header" : "")
@@ -409,6 +413,21 @@ export default function MobileNoteView({
           {rawMode ? <BookOpen size={20} /> : <Braces size={20} />}
         </CircleButton>
       </div>
+
+      {/* Back to the top of a long note: small, off while typing, above the
+          raw toggle — or where the pill was while the chrome is hidden. */}
+      <JumpButton
+        show={scrolledDown && !vv.isKeyboardOpen}
+        direction="up"
+        label="Back to top"
+        onClick={() => editorScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+        className="absolute z-40"
+        style={{
+          right: 24,
+          top: `calc(${vv.bottom}px - env(safe-area-inset-bottom, 0px) - ${chromeVisible ? 176 : 64}px)`,
+          transition: "top 0.25s ease, opacity 0.2s ease, transform 0.2s ease",
+        }}
+      />
 
       {aiPanelOpen && !readOnly && (
         <AICommandPanel

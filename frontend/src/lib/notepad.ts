@@ -30,7 +30,10 @@ export async function findNotepad(loc: NotepadLocation): Promise<string | null> 
 export type NotepadEntry = {
   day: string;
   time: string;
+  /** The memo's text, without the pin mark. */
   text: string;
+  /** "- 09:14 📌 text": pinned to the top of the quick notes. */
+  pinned: boolean;
   /** Line range of the entry in the body: [start, end). */
   start: number;
   end: number;
@@ -43,10 +46,12 @@ const IMAGE_LINE = /^!\[[^\]]*\]\((<[^>]+>|[^)\s]+)\)$/;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+const PIN_MARK = "📌";
+
 /** The list item for one entry; blank lines inside the text stay blank. */
-export function formatNotepadItem(time: string, text: string): string {
+export function formatNotepadItem(time: string, text: string, pinned = false): string {
   const [first, ...rest] = text.split("\n");
-  return [`- ${time} ${first}`, ...rest.map((l) => (l.trim() ? `  ${l}` : ""))].join("\n");
+  return [`- ${time} ${pinned ? `${PIN_MARK} ` : ""}${first}`, ...rest.map((l) => (l.trim() ? `  ${l}` : ""))].join("\n");
 }
 
 // Appends text under today's heading, starting that heading when the last one
@@ -70,7 +75,20 @@ export function replaceNotepadEntry(
   const entry = findNotepadEntry(parseNotepad(body), target);
   if (!entry) return null;
   const lines = body.split("\n");
-  lines.splice(entry.start, entry.end - entry.start, ...formatNotepadItem(entry.time, text).split("\n"));
+  lines.splice(entry.start, entry.end - entry.start, ...formatNotepadItem(entry.time, text, entry.pinned).split("\n"));
+  return lines.join("\n");
+}
+
+/** Pins or unpins one entry (looked up like replaceNotepadEntry). */
+export function setNotepadEntryPinned(
+  body: string,
+  target: Pick<NotepadEntry, "day" | "time" | "text">,
+  pinned: boolean,
+): string | null {
+  const entry = findNotepadEntry(parseNotepad(body), target);
+  if (!entry) return null;
+  const lines = body.split("\n");
+  lines.splice(entry.start, entry.end - entry.start, ...formatNotepadItem(entry.time, entry.text, pinned).split("\n"));
   return lines.join("\n");
 }
 
@@ -157,7 +175,10 @@ export function parseNotepad(body: string): NotepadEntry[] {
     }
     const item = line.match(/^[-*]\s+(\d{1,2}:\d{2})(?:\s+(.*))?$/);
     if (item) {
-      open = { day, time: item[1], text: item[2] ?? "", start: i, end: i + 1 };
+      const raw = item[2] ?? "";
+      const pinned = raw.startsWith(PIN_MARK);
+      const text = pinned ? raw.slice(PIN_MARK.length).trimStart() : raw;
+      open = { day, time: item[1], text, pinned, start: i, end: i + 1 };
       entries.push(open);
       blanks = 0;
       return;

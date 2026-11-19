@@ -21,6 +21,10 @@ export type NoteMeta = {
   icon?: string;
   collection?: string;
   fields?: Record<string, string>;
+  /** Threads: pinned to the top, priority 1 (highest) … 5, status "done" = solved. */
+  pinned?: boolean;
+  priority?: number;
+  status?: string;
 };
 
 export type Note = NoteMeta & {
@@ -40,6 +44,11 @@ export type NoteInput = {
   icon?: string | null;
   collection?: string | null;
   fields?: Record<string, string> | null;
+  pinned?: boolean;
+  /** 0 clears it. */
+  priority?: number;
+  /** "" clears it. */
+  status?: string;
 };
 
 export type CollectionFieldType = "text" | "number" | "boolean" | "date";

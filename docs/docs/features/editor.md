@@ -13,6 +13,8 @@ Each note can be edited in two views:
 
 The toggle button in the note header (on mobile, the round floating button at the bottom right) switches the current note. Both views save the same way.
 
+In a long note, a small arrow at the bottom right appears once you have scrolled down a good way; it scrolls back to the top. On phones it hides while the keyboard is open.
+
 The view a note opens in is set in **Settings › Editor › Editing › Default view** ("Rendered view" or "Raw markdown"). Changing it also switches the note that is open.
 
 Markdown pasted into the rendered view is formatted, whether it comes from a plain text editor, a code editor (VS Code, a web editor), a phone or Markdown source shown on a web page. This includes text a phone keyboard inserts from its clipboard history (such as Gboard's clipboard), which types the text in instead of pasting it. Formatted content (copied from a web page or a document) keeps its formatting. Code copied from VS Code in another language becomes a code block in that language.

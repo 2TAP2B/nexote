@@ -1148,6 +1148,10 @@ html:has(.mob-shell-root) body {
 body:has([role="toolbar"][aria-label="Formatting"]) .nexote-fab {
   bottom: 64px;
 }
+/* The note's back-to-top button (EditorPane) stays above the lifted FAB. */
+body:has([role="toolbar"][aria-label="Formatting"]) .nexote-jump-top {
+  bottom: 128px;
+}
 /* Markdown in thread posts (threads/PostMarkdown.tsx). "bubble" = white text
  * on the accent bubble (desktop panel), "plain" = text on the page (phone
  * timeline). Compact: posts are short. */

@@ -1,11 +1,11 @@
 "use client";
 
-import { ChevronLeft, CircleCheck, Copy, MessagesSquare, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, CircleCheck, Copy, MessagesSquare, MoreHorizontal, Pencil, Pin, Tags, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { copyText } from "@/lib/clipboard";
-import { localDateKey } from "@/lib/note-utils";
-import { notepadLocation } from "@/lib/notepad";
+import { localDateKey, makeSnippet } from "@/lib/note-utils";
+import { notepadLocation, splitMemo } from "@/lib/notepad";
 import { useNotes } from "@/lib/notes-context";
 import {
   appendThreadPost,
@@ -17,7 +17,9 @@ import {
   removeThreadPost,
   renameThread,
   replaceThreadPost,
+  setPostFlags,
   useThreads,
+  type PostFlags,
   type PostRef,
   type Thread,
   type ThreadPost,
@@ -26,7 +28,11 @@ import { MemoBubble, type NoteRef } from "../mobile/MemoBubble";
 import { MemoComposer, type ComposerLabels } from "../mobile/MemoComposer";
 import { MobileActionSheet } from "../mobile/MobileActionSheet";
 import { useVisualViewport } from "../mobile/useVirtualKeyboardInset";
+import { JumpButton, useScrolledAway } from "./JumpButton";
 import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "./MemoChrome";
+import { PinnedBar, type PinnedItem } from "./PinnedBar";
+import { isPriorityLevel, PRIORITIES, PriorityBadge } from "./priority";
+import { markSections, threadMarkSections } from "./threadActions";
 import { errorText, useMemoDraft } from "./useMemoDraft";
 import { useNoteRefs } from "./useNoteRefs";
 
@@ -75,6 +81,32 @@ const dayLabel = (day: string) =>
       ? new Date(`${day}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
       : "Earlier";
 
+const DONE_GREEN = "#22c55e";
+const FLASH = "color-mix(in srgb, var(--mob-accent) 18%, transparent)";
+
+// A post's first line for menus and the pinned bar (images shown as "Photo").
+const postSnippet = (text: string) => makeSnippet(text, 80) || (splitMemo(text).images.length > 0 ? "Photo" : "Post");
+
+// "Mon, Nov 17 · 09:14"
+const postWhen = (p: ThreadPost) =>
+  [
+    p.day ? new Date(`${p.day}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "",
+    p.time,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+/** Pin / priority / done marks of a post, for its time line. */
+function PostMarkIcons({ flags }: { flags: PostFlags }) {
+  return (
+    <>
+      {flags.pinned && <Pin size={12} aria-label="Pinned" className="shrink-0" style={{ color: "var(--mob-accent)" }} />}
+      <PriorityBadge priority={flags.priority} size={10} />
+      {flags.done && <CircleCheck size={12} aria-label="Done" className="shrink-0" style={{ color: DONE_GREEN }} />}
+    </>
+  );
+}
+
 export default function ThreadView(props: Props) {
   // Another thread opened in place starts fresh: no draft, selection or
   // pending rename carries over.
@@ -116,6 +148,12 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   const renameCancelled = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const awayFromLatest = useScrolledAway(listRef, "bottom");
+  // The post whose marks sheet is open (by key: it survives the save).
+  const [marksKey, setMarksKey] = useState<string | null>(null);
+  // The post briefly tinted after jumping to it from the pinned bar.
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
 
   const selected = posts.filter((p) => selectedKeys.has(postKey(p)));
   const editingKey = draft.editing ? postKey(draft.editing) : null;
@@ -313,6 +351,42 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   const single = selected.length === 1 ? selected[0] : null;
   // The first post is the thread itself: starting a thread from it is moot.
   const canSpinOff = single !== null && posts.indexOf(single) > 0;
+  // Marks live in a post's heading; text before the first heading has none.
+  const marksable = single !== null && single.day !== "";
+  const marksPost = marksKey === null ? null : (posts.find((p) => postKey(p) === marksKey) ?? null);
+  const threadMarks = thread ? threadMarkSections(thread, draft.setError) : [];
+
+  const jumpToLatest = () => {
+    const list = listRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  };
+
+  // Scrolls a pinned post into view and tints it briefly so the eye finds it.
+  const revealPost = (key: string) => {
+    const el = Array.from(listRef.current?.querySelectorAll<HTMLElement>("[data-post-key]") ?? []).find(
+      (node) => node.dataset.postKey === key,
+    );
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.clearTimeout(flashTimer.current);
+    setFlashKey(key);
+    flashTimer.current = window.setTimeout(() => setFlashKey(null), 1200);
+  };
+  useEffect(() => () => window.clearTimeout(flashTimer.current), []);
+
+  const pinnedItems: PinnedItem[] = posts
+    .filter((p) => p.flags.pinned)
+    .map((p) => {
+      const key = postKey(p);
+      return {
+        key,
+        text: postSnippet(p.text),
+        sub: postWhen(p),
+        icon: <PriorityBadge priority={p.flags.priority} />,
+        done: p.flags.done,
+        onSelect: () => revealPost(key),
+      };
+    });
 
   const header = selectMode ? (
     <>
@@ -322,6 +396,11 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
       <span className="min-w-0 flex-1 truncate text-lg font-semibold" style={{ color: "var(--mob-text)" }}>
         {selected.length ? `${selected.length} selected` : "Select posts"}
       </span>
+      {marksable && (
+        <HeaderButton label="Marks" onClick={onSelection((list) => setMarksKey(postKey(list[0])))}>
+          <Tags size={18} />
+        </HeaderButton>
+      )}
       {single && (
         <HeaderButton label="Edit" onClick={onSelection((list) => draft.startEdit(list[0]))}>
           <Pencil size={18} />
@@ -373,19 +452,26 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
             style={{ color: "var(--mob-text)" }}
           />
         ) : (
-          <button
-            type="button"
-            onClick={startRename}
-            disabled={!thread}
-            title={thread ? "Rename thread" : undefined}
-            className="truncate text-left text-lg font-semibold leading-tight"
-            style={{ color: "var(--mob-text)" }}
-          >
-            {thread?.title || "Thread"}
-          </button>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={startRename}
+              disabled={!thread}
+              title={thread ? "Rename thread" : undefined}
+              className={"truncate text-left text-lg font-semibold leading-tight" + (thread?.done ? " line-through opacity-60" : "")}
+              style={{ color: "var(--mob-text)" }}
+            >
+              {thread?.title || "Thread"}
+            </button>
+            {thread?.done && <CircleCheck size={16} aria-label="Solved" className="shrink-0" style={{ color: DONE_GREEN }} />}
+          </div>
         )}
         {thread && (
           <div className="flex min-w-0 items-center gap-1 overflow-x-auto pt-0.5 text-xs" style={{ scrollbarWidth: "none" }}>
+            {thread.pinned && (
+              <Pin size={12} aria-label="Pinned" className="shrink-0" style={{ color: "var(--mob-accent)" }} />
+            )}
+            <PriorityBadge priority={thread.priority} />
             {thread.tags.length > 0 ? (
               thread.tags.map((tag) => (
                 <button
@@ -423,7 +509,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
           {menuOpen && !mobile && (
             <div
               role="menu"
-              className="absolute right-0 top-12 z-40 w-48 overflow-hidden rounded-lg border border-border bg-popover py-1 text-sm text-popover-foreground shadow-lg"
+              className="absolute right-0 top-12 z-40 w-56 overflow-hidden rounded-lg border border-border bg-popover py-1 text-sm text-popover-foreground shadow-lg"
             >
               <button
                 type="button"
@@ -434,6 +520,29 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                 <Pencil size={15} className="text-muted-foreground" />
                 Rename
               </button>
+              {threadMarks.map((group, g) => (
+                <div key={g} role="group">
+                  <div aria-hidden className="my-1 border-t border-border" />
+                  {group.map((action) => (
+                    <button
+                      key={action.label}
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={action.checked ?? false}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        action.onClick();
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left hover:bg-muted [&_svg]:h-[15px] [&_svg]:w-[15px]"
+                    >
+                      <span className="flex shrink-0 text-muted-foreground">{action.icon}</span>
+                      <span className="min-w-0 flex-1 truncate">{action.label}</span>
+                      {action.checked && <Check size={15} className="shrink-0 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+              ))}
+              <div aria-hidden className="my-1 border-t border-border" />
               <button
                 type="button"
                 role="menuitem"
@@ -476,7 +585,12 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
           const newDay = first || post.day !== posts[i - 1].day;
           const stamp = post.time ? (newDay ? `${dayLabel(post.day)} · ${post.time}` : post.time) : newDay ? dayLabel(post.day) : "";
           return (
-            <li key={`${post.day}-${post.start}`} className="flex gap-1">
+            <li
+              key={`${post.day}-${post.start}`}
+              data-post-key={key}
+              className="-mx-1 flex gap-1 rounded-xl px-1 transition-colors duration-500"
+              style={flashKey === key ? { background: FLASH } : undefined}
+            >
               {selectMode && (
                 <SelectCircle label="Select post" selected={selectedKeys.has(key)} onToggle={() => toggleSelected(post)} />
               )}
@@ -484,9 +598,11 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                 <span
                   className="relative z-[1] mt-[5px] h-2.5 w-2.5 rounded-full"
                   style={
-                    first
-                      ? { background: "var(--mob-accent)" }
-                      : { background: "var(--mob-bg)", border: "2px solid var(--mob-accent)" }
+                    isPriorityLevel(post.flags.priority)
+                      ? { background: PRIORITIES[post.flags.priority].color }
+                      : first
+                        ? { background: "var(--mob-accent)" }
+                        : { background: "var(--mob-bg)", border: "2px solid var(--mob-accent)" }
                   }
                 />
                 {!last && (
@@ -497,29 +613,32 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                 )}
               </div>
               <div className="min-w-0 flex-1 pb-5">
-                <div className="flex items-baseline gap-1.5 px-2 text-[12px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                <div className="flex items-center gap-1.5 px-2 text-[12px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
                   {stamp && <span>{stamp}</span>}
                   {first && (
                     <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--mob-accent)" }}>
                       Started
                     </span>
                   )}
+                  <PostMarkIcons flags={post.flags} />
                 </div>
-                <MemoBubble
-                  text={post.text}
-                  variant="timeline"
-                  markdown
-                  editing={editingKey === key}
-                  selected={selectedKeys.has(key)}
-                  selecting={selectMode}
-                  resolve={resolve}
-                  onOpenNote={openNote}
-                  onOpenImage={setViewer}
-                  onOpenTag={openTag}
-                  onToggleSelect={() => toggleSelected(post)}
-                  onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
-                  swipeLabel="Start a thread from this"
-                />
+                <div className={post.flags.done ? "opacity-[0.55] [&_.nexote-post-md]:line-through" : undefined}>
+                  <MemoBubble
+                    text={post.text}
+                    variant="timeline"
+                    markdown
+                    editing={editingKey === key}
+                    selected={selectedKeys.has(key)}
+                    selecting={selectMode}
+                    resolve={resolve}
+                    onOpenNote={openNote}
+                    onOpenImage={setViewer}
+                    onOpenTag={openTag}
+                    onToggleSelect={() => toggleSelected(post)}
+                    onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
+                    swipeLabel="Start a thread from this"
+                  />
+                </div>
               </div>
             </li>
           );
@@ -532,8 +651,14 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
         {posts.map((post, i) => {
           const key = postKey(post);
           const first = i === 0;
+          const flags = post.flags;
           return (
-            <li key={`${post.day}-${post.start}`} className="flex flex-col">
+            <li
+              key={`${post.day}-${post.start}`}
+              data-post-key={key}
+              className="flex flex-col rounded-xl transition-colors duration-500"
+              style={flashKey === key ? { background: FLASH } : undefined}
+            >
               {(first || post.day !== posts[i - 1].day) && (
                 <span
                   className="my-2 self-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
@@ -569,23 +694,30 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
                         <MessagesSquare size={16} />
                       </button>
                     )}
-                    <MemoBubble
-                      text={post.text}
-                      markdown
-                      editing={editingKey === key}
-                      selected={selectedKeys.has(key)}
-                      selecting={selectMode}
-                      resolve={resolve}
-                      onOpenNote={openNote}
-                      onOpenImage={setViewer}
-                      onOpenTag={openTag}
-                      onToggleSelect={() => toggleSelected(post)}
-                      onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
-                      swipeLabel="Start a thread from this"
-                    />
+                    <div
+                      className={
+                        "flex min-w-0 flex-1 justify-end" + (flags.done ? " opacity-[0.55] [&_.nexote-post-md]:line-through" : "")
+                      }
+                    >
+                      <MemoBubble
+                        text={post.text}
+                        markdown
+                        editing={editingKey === key}
+                        selected={selectedKeys.has(key)}
+                        selecting={selectMode}
+                        resolve={resolve}
+                        onOpenNote={openNote}
+                        onOpenImage={setViewer}
+                        onOpenTag={openTag}
+                        onToggleSelect={() => toggleSelected(post)}
+                        onSwipeLeft={first ? undefined : () => void startThreadFrom(post)}
+                        swipeLabel="Start a thread from this"
+                      />
+                    </div>
                   </div>
-                  {post.time && (
-                    <span className="mr-1 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                  {(post.time || flags.pinned || flags.priority > 0 || flags.done) && (
+                    <span className="mr-1 mt-0.5 flex items-center gap-1 text-[10px] tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                      <PostMarkIcons flags={flags} />
                       {post.time}
                     </span>
                   )}
@@ -627,12 +759,23 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
           {header}
         </div>
 
-        <div
-          ref={listRef}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
-          style={{ touchAction: "pan-y" }}
-        >
-          {content}
+        <PinnedBar items={pinnedItems} title="Pinned posts" />
+
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div
+            ref={listRef}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
+            style={{ touchAction: "pan-y" }}
+          >
+            {content}
+          </div>
+          <JumpButton
+            show={awayFromLatest}
+            direction="down"
+            label="Jump to the latest post"
+            onClick={jumpToLatest}
+            className="absolute bottom-3 right-3 z-10"
+          />
         </div>
 
         <MemoToast toast={toast} onDismiss={dismissToast} />
@@ -675,8 +818,24 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
           onClose={() => setMenuOpen(false)}
           sections={[
             [{ label: "Rename", icon: <Pencil size={18} />, onClick: startRename }],
+            ...threadMarks,
             [{ label: "Delete thread", icon: <Trash2 size={18} />, danger: true, onClick: () => void removeThread() }],
           ]}
+        />
+      )}
+      {marksPost && (
+        <MobileActionSheet
+          title={postSnippet(marksPost.text)}
+          subtitle={postWhen(marksPost)}
+          onClose={() => setMarksKey(null)}
+          sections={markSections(
+            marksPost.flags,
+            (patch) =>
+              void mutateThread(ref, (b) => setPostFlags(b, marksPost, patch)).catch((e: unknown) =>
+                draft.setError(errorText(e, "Couldn't change the post")),
+              ),
+            "post",
+          )}
         />
       )}
     </section>

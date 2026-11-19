@@ -132,6 +132,9 @@ type Entry struct {
 	Icon        string            `json:"icon,omitempty"`
 	Collection  string            `json:"collection,omitempty"`
 	Fields     map[string]string `json:"fields,omitempty"`
+	Pinned     bool              `json:"pinned,omitempty"`
+	Priority   int               `json:"priority,omitempty"`
+	Status     string            `json:"status,omitempty"`
 }
 
 // FolderEntry represents an (possibly empty) folder in the tree.
@@ -218,6 +221,9 @@ func (s *Store) List() (ListResult, error) {
 			Icon:       doc.Meta.Icon,
 			Collection: doc.Meta.Collection,
 			Fields:     doc.Meta.Fields,
+			Pinned:     doc.Meta.Pinned,
+			Priority:   doc.Meta.Priority,
+			Status:     doc.Meta.Status,
 		}
 		if i, dup := pos[id]; dup {
 			prev := notes[i]
@@ -490,6 +496,9 @@ type UpdateInput struct {
 	Icon              *string           `json:"icon,omitempty"`
 	Collection        *string           `json:"collection,omitempty"`
 	Fields            map[string]string `json:"fields,omitempty"`
+	Pinned            *bool             `json:"pinned,omitempty"`
+	Priority          *int              `json:"priority,omitempty"`
+	Status            *string           `json:"status,omitempty"`
 	ExpectedUpdatedAt *string           `json:"expectedUpdatedAt,omitempty"`
 }
 
@@ -557,6 +566,16 @@ func (s *Store) Update(id string, in UpdateInput) (Document, error) {
 	}
 	if in.Fields != nil {
 		doc.Meta.Fields = in.Fields
+	}
+	if in.Pinned != nil {
+		doc.Meta.Pinned = *in.Pinned
+	}
+	if in.Priority != nil {
+		// 0 clears it; anything else is clamped to the 1–5 scale.
+		doc.Meta.Priority = min(max(*in.Priority, 0), 5)
+	}
+	if in.Status != nil {
+		doc.Meta.Status = strings.TrimSpace(*in.Status)
 	}
 
 	// When the note moves to a different folder, physically move any image

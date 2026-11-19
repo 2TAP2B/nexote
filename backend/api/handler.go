@@ -1244,6 +1244,9 @@ type Payload struct {
 	Icon        string            `json:"icon,omitempty"`
 	Collection  string            `json:"collection,omitempty"`
 	Fields     map[string]string `json:"fields,omitempty"`
+	Pinned     bool              `json:"pinned,omitempty"`
+	Priority   int               `json:"priority,omitempty"`
+	Status     string            `json:"status,omitempty"`
 }
 
 func toPayload(d notes.Document) Payload {
@@ -1264,6 +1267,9 @@ func toPayload(d notes.Document) Payload {
 		Icon:       d.Meta.Icon,
 		Collection: d.Meta.Collection,
 		Fields:     d.Meta.Fields,
+		Pinned:     d.Meta.Pinned,
+		Priority:   d.Meta.Priority,
+		Status:     d.Meta.Status,
 	}
 }
 

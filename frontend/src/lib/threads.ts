@@ -32,11 +32,22 @@ export const NOTE_CHANGE_EVENT = "nexote:note-change";
 /** Opens a thread in the thread view (detail: `{ vaultId, id }`). */
 export const OPEN_THREAD_EVENT = "nexote:open-thread";
 
+/** A post's marks, written after its time: "### 2026-11-19 09:14 📌 P2 ✅". */
+export type PostFlags = {
+  pinned: boolean;
+  /** 1 (highest) … 5; 0 = none. */
+  priority: number;
+  done: boolean;
+};
+
+export const NO_FLAGS: PostFlags = { pinned: false, priority: 0, done: false };
+
 export type ThreadPost = {
   /** "" for text before the first post heading. */
   day: string;
   time: string;
   text: string;
+  flags: PostFlags;
   /** Line range in the body: [start, end), heading included. */
   start: number;
   end: number;
@@ -54,9 +65,27 @@ export type Thread = {
   updatedAt: string;
   body: string;
   posts: ThreadPost[];
+  /** Frontmatter: pinned to the top, priority 1 … 5 (0 none), solved. */
+  pinned: boolean;
+  priority: number;
+  done: boolean;
 };
 
-const POST_HEADING = /^###\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})\s*$/;
+// The marks after the time are free-standing tokens, readable in any
+// markdown tool: 📌 pinned, P1–P5 priority, ✅ (or ✓) done.
+const POST_HEADING = /^###\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})((?:\s+(?:📌|P[1-5]|✅|✓))*)\s*$/u;
+
+function parseFlags(marks: string): PostFlags {
+  const priority = marks.match(/P([1-5])/);
+  return { pinned: marks.includes("📌"), priority: priority ? Number(priority[1]) : 0, done: /✅|✓/u.test(marks) };
+}
+
+function formatFlags(flags: PostFlags): string {
+  return [flags.pinned ? "📌" : "", flags.priority ? `P${flags.priority}` : "", flags.done ? "✅" : ""]
+    .filter(Boolean)
+    .map((m) => ` ${m}`)
+    .join("");
+}
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** "YYYY-MM-DD" and "HH:MM" of a moment, local time. */
@@ -81,7 +110,7 @@ export function parseThread(body: string): ThreadPost[] {
   const preStart = titleLine >= 0 && /^##\s/.test(lines[titleLine]) ? titleLine + 1 : 0;
   const preEnd = headings[0] ?? lines.length;
   const pre = lines.slice(preStart, preEnd).join("\n").trim();
-  if (pre) posts.push({ day: "", time: "", text: pre, start: preStart, end: preEnd });
+  if (pre) posts.push({ day: "", time: "", text: pre, flags: NO_FLAGS, start: preStart, end: preEnd });
   headings.forEach((start, k) => {
     const end = headings[k + 1] ?? lines.length;
     const m = lines[start].match(POST_HEADING);
@@ -89,6 +118,7 @@ export function parseThread(body: string): ThreadPost[] {
       day: m?.[1] ?? "",
       time: m?.[2] ?? "",
       text: lines.slice(start + 1, end).join("\n").trim(),
+      flags: parseFlags(m?.[3] ?? ""),
       start,
       end,
     });
@@ -96,8 +126,8 @@ export function parseThread(body: string): ThreadPost[] {
   return posts;
 }
 
-function postLines(post: PostRef): string[] {
-  const head = post.day ? [`### ${post.day} ${post.time}`] : [];
+function postLines(post: PostRef & { flags?: PostFlags }): string[] {
+  const head = post.day ? [`### ${post.day} ${post.time}${formatFlags(post.flags ?? NO_FLAGS)}`] : [];
   return [...head, ...post.text.split("\n"), ""];
 }
 
@@ -126,6 +156,15 @@ export function replaceThreadPost(body: string, target: PostRef, text: string): 
   if (!post) return null;
   const lines = body.split("\n");
   lines.splice(post.start, post.end - post.start, ...postLines({ ...post, text }));
+  return lines.join("\n");
+}
+
+/** Changes a post's marks (pin, priority, done); null when the post is gone. */
+export function setPostFlags(body: string, target: PostRef, patch: Partial<PostFlags>): string | null {
+  const post = findPost(parseThread(body), target);
+  if (!post || !post.day) return null;
+  const lines = body.split("\n");
+  lines.splice(post.start, post.end - post.start, ...postLines({ ...post, flags: { ...post.flags, ...patch } }));
   return lines.join("\n");
 }
 
@@ -212,6 +251,9 @@ function toThread(vaultId: string, note: Note): Thread {
     updatedAt: note.updatedAt,
     body: note.body,
     posts: parseThread(note.body),
+    pinned: note.pinned === true,
+    priority: note.priority ?? 0,
+    done: note.status === "done",
   };
 }
 
@@ -427,6 +469,24 @@ export async function mutateThread(
 
 export async function renameThread(ref: Pick<Thread, "vaultId" | "id">, title: string): Promise<Thread> {
   return mutateThread(ref, (body) => retitleThread(body, title), title);
+}
+
+/**
+ * Pins, prioritises or solves a thread (frontmatter only: an update without
+ * title and body keeps both on the server).
+ */
+export async function setThreadMeta(
+  ref: Pick<Thread, "vaultId" | "id">,
+  patch: { pinned?: boolean; priority?: number; done?: boolean },
+): Promise<Thread> {
+  const saved = await api.update(ref.vaultId, ref.id, {
+    ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
+    ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+    ...(patch.done !== undefined ? { status: patch.done ? "done" : "" } : {}),
+  });
+  applyThreadNote(ref.vaultId, saved);
+  notifyChanged(ref.vaultId);
+  return toThread(ref.vaultId, saved);
 }
 
 export async function deleteThread(ref: Pick<Thread, "vaultId" | "id">): Promise<void> {

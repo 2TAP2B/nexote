@@ -3,7 +3,6 @@
 import { ArrowUp, Check, FileText, ImagePlus, Loader2, Maximize2, Mic, Minimize2, Pencil, Trash2, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
-import type { NotepadEntry } from "@/lib/notepad";
 import type { NoteRef } from "./MemoBubble";
 
 export type Attachment = {
@@ -88,7 +87,8 @@ export function MemoComposer({
   onRemoveAttachment: (key: number) => void;
   fullscreen: boolean;
   onFullscreenChange: (fullscreen: boolean) => void;
-  editing: NotepadEntry | null;
+  /** The memo or post being edited (only its time is shown). */
+  editing: { time: string } | null;
   onCancelEdit: () => void;
   canSend: boolean;
   posting: boolean;

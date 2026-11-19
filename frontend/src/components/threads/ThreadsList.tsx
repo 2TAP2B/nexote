@@ -1,10 +1,15 @@
 "use client";
 
-import { MessagesSquare, Search, X } from "lucide-react";
+import { Check, CircleCheck, MessagesSquare, Pin, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { lastActivity, openThread, replyLabel, threadPreview, threadTags } from "@/lib/threads";
+import { lastActivity, openThread, replyLabel, threadPreview, threadTags, type Thread } from "@/lib/threads";
+import ContextMenu, { type MenuItem } from "../ContextMenu";
+import { MobileActionSheet, type SheetAction } from "../mobile/MobileActionSheet";
+import { isPriorityLevel, PRIORITIES, PRIORITY_LEVELS, PriorityBadge, type PriorityLevel } from "./priority";
+import { threadMarkSections } from "./threadActions";
 import { useAllThreads } from "./useAllThreads";
+import { useLongPress, type MenuOpener } from "./useLongPress";
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
@@ -20,9 +25,34 @@ function activityLabel(stamp: string): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// Pinned threads on top, then open ones, solved ones last; each group by
+// newest activity.
+const rank = (t: Thread) => (t.pinned ? 0 : t.done ? 2 : 1);
+
+type Menu = { thread: Thread; x: number; y: number; via: MenuOpener };
+
+/** Sheet groups → one desktop menu: separators between groups, a check on the current choice. */
+function flattenSections(sections: SheetAction[][]): MenuItem[] {
+  return sections
+    .filter((s) => s.length > 0)
+    .flatMap((group, i) => [
+      ...(i > 0 ? [{ label: "", onClick: () => {}, separator: true }] : []),
+      ...group.map(
+        (a): MenuItem => ({
+          label: a.label,
+          icon: a.checked ? <Check size={14} /> : a.icon,
+          onClick: a.onClick,
+          danger: a.danger,
+        }),
+      ),
+    ]);
+}
+
 /**
- * The Threads sidebar view: every thread (personal store and vaults), newest
- * activity first, with a search field and a tag filter.
+ * The Threads sidebar view: every thread (personal store and vaults) —
+ * pinned first, solved last, else newest activity first — with a search
+ * field, a tag / priority / solved filter, and a long-press (touch) or
+ * right-click (desktop) menu to pin, solve or prioritise a thread.
  */
 export default function ThreadsList({
   touch = false,
@@ -35,12 +65,16 @@ export default function ThreadsList({
   const { threads, loaded, error } = useAllThreads();
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState<string | null>(null);
+  const [priority, setPriority] = useState<PriorityLevel | null>(null);
+  const [showSolved, setShowSolved] = useState(true);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [menuError, setMenuError] = useState<string | null>(null);
 
   const rows = useMemo(
     () =>
       threads
         .map((t) => ({ thread: t, activity: lastActivity(t), tags: threadTags(t) }))
-        .sort((a, b) => b.activity.localeCompare(a.activity)),
+        .sort((a, b) => rank(a.thread) - rank(b.thread) || b.activity.localeCompare(a.activity)),
     [threads],
   );
 
@@ -50,16 +84,30 @@ export default function ThreadsList({
     return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [rows]);
 
+  // Only the priorities in use get a chip (plus an active one gone meanwhile).
+  const priorities = useMemo(
+    () => PRIORITY_LEVELS.filter((p) => p === priority || rows.some((r) => r.thread.priority === p)),
+    [rows, priority],
+  );
+  const anySolved = rows.some((r) => r.thread.done);
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter(
       (r) =>
         (!tag || r.tags.includes(tag)) &&
+        (priority === null || r.thread.priority === priority) &&
+        (showSolved || !r.thread.done) &&
         (!q ||
           r.thread.title.toLowerCase().includes(q) ||
           r.thread.posts.some((p) => p.text.toLowerCase().includes(q))),
     );
-  }, [rows, query, tag]);
+  }, [rows, query, tag, priority, showSolved]);
+
+  const menuSections = (thread: Thread): SheetAction[][] => [
+    [{ label: "Open", icon: <MessagesSquare size={touch ? 19 : 14} />, onClick: () => openThread(thread) }],
+    ...threadMarkSections(thread, setMenuError),
+  ];
 
   const fs = touch
     ? { title: 15, body: 13, meta: 12, input: 16 }
@@ -99,8 +147,9 @@ export default function ThreadsList({
         </div>
       </div>
 
-      {/* Tag filter: every tag across the threads; the active one clears on tap. */}
-      {tagCounts.length > 0 && (
+      {/* Filters: every tag across the threads (the active one clears on
+          tap), the priorities in use, and whether solved threads show. */}
+      {(tagCounts.length > 0 || priorities.length > 0 || anySolved) && (
         <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto px-2 pb-2">
           {tag && !tagCounts.some(([name]) => name === tag) && (
             <TagChip name={tag} count={0} active touch={touch} onClick={() => setTag(null)} />
@@ -115,7 +164,43 @@ export default function ThreadsList({
               onClick={() => setTag(tag === name ? null : name)}
             />
           ))}
+          {priorities.map((p) => {
+            const { Icon, color, label } = PRIORITIES[p];
+            const active = priority === p;
+            return (
+              <FilterChip
+                key={p}
+                active={active}
+                touch={touch}
+                title={active ? "Clear priority filter" : `Only P${p} · ${label}`}
+                onClick={() => setPriority(active ? null : p)}
+              >
+                <Icon size={touch ? 13 : 12} style={active ? undefined : { color }} />
+                <span>P{p}</span>
+              </FilterChip>
+            );
+          })}
+          {anySolved && (
+            <FilterChip
+              active={showSolved}
+              touch={touch}
+              title={showSolved ? "Hide solved threads" : "Show solved threads"}
+              onClick={() => setShowSolved(!showSolved)}
+            >
+              <CircleCheck size={touch ? 13 : 12} style={showSolved ? undefined : { color: "#22c55e" }} />
+              <span>Solved</span>
+            </FilterChip>
+          )}
         </div>
+      )}
+
+      {menuError && (
+        <p className="flex items-start gap-2 px-3 py-2" style={{ fontSize: fs.body, color: "var(--destructive, #ef4444)" }}>
+          <span className="min-w-0 flex-1">{menuError}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => setMenuError(null)} className="shrink-0">
+            <X size={touch ? 16 : 13} />
+          </button>
+        </p>
       )}
 
       {error && (
@@ -142,58 +227,144 @@ export default function ThreadsList({
       )}
 
       <ul>
-        {visible.map(({ thread: t, activity, tags }) => {
-          const active = t.id === openThreadId;
-          const snippet = threadPreview(t);
-          return (
-            <li key={`${t.vaultId}/${t.id}`}>
-              <button
-                type="button"
-                data-thread-id={t.id}
-                onClick={() => openThread(t)}
-                className={"tree-row flex w-full flex-col gap-0.5 text-left" + (active ? " tree-active" : "")}
-                style={{
-                  minHeight: touch ? 44 : 33,
-                  paddingLeft: touch ? 14 : 12,
-                  paddingRight: touch ? 12 : 10,
-                  paddingTop: 7,
-                  paddingBottom: 7,
-                  borderRadius: 5,
-                }}
-              >
-                <span className="flex w-full min-w-0 items-baseline gap-2">
-                  <span
-                    className="tree-row-title min-w-0 flex-1 truncate"
-                    style={{ fontSize: fs.title, fontWeight: 500, color: active ? undefined : "var(--foreground)" }}
-                  >
-                    {t.title || "Untitled thread"}
-                  </span>
-                  <span className="shrink-0 tabular-nums" style={{ fontSize: fs.meta, color: "var(--muted-foreground)" }}>
-                    {activityLabel(activity)}
-                  </span>
-                </span>
-                {snippet && (
-                  <span className="tree-card-snippet w-full" style={{ fontSize: fs.body, color: "var(--muted-foreground)" }}>
-                    {snippet}
-                  </span>
-                )}
-                <span
-                  className="flex w-full min-w-0 items-center gap-1.5 truncate"
-                  style={{ fontSize: fs.meta, color: "var(--muted-foreground)" }}
-                >
-                  <span className="shrink-0">{replyLabel(t)}</span>
-                  {tags.slice(0, 3).map((name) => (
-                    <span key={name} className="truncate" style={{ color: "var(--primary)", opacity: 0.85 }}>
-                      #{name}
-                    </span>
-                  ))}
-                </span>
-              </button>
-            </li>
-          );
-        })}
+        {visible.map(({ thread: t, activity, tags }) => (
+          <ThreadRow
+            key={`${t.vaultId}/${t.id}`}
+            thread={t}
+            activity={activity}
+            tags={tags}
+            active={t.id === openThreadId}
+            touch={touch}
+            fs={fs}
+            onMenu={(at, via) => setMenu({ thread: t, ...at, via })}
+          />
+        ))}
       </ul>
+
+      {/* Right-click with a mouse gets the desktop menu; a long press (or
+          Android's touch contextmenu) the sheet. */}
+      {menu && !touch && menu.via === "contextmenu" ? (
+        <ContextMenu x={menu.x} y={menu.y} items={flattenSections(menuSections(menu.thread))} onClose={() => setMenu(null)} />
+      ) : (
+        menu && (
+          <MobileActionSheet
+            title={menu.thread.title || "Untitled thread"}
+            sections={menuSections(menu.thread)}
+            onClose={() => setMenu(null)}
+          />
+        )
+      )}
     </div>
+  );
+}
+
+function ThreadRow({
+  thread: t,
+  activity,
+  tags,
+  active,
+  touch,
+  fs,
+  onMenu,
+}: {
+  thread: Thread;
+  activity: string;
+  tags: string[];
+  active: boolean;
+  touch: boolean;
+  fs: { title: number; body: number; meta: number };
+  onMenu: (at: { x: number; y: number }, via: MenuOpener) => void;
+}) {
+  const pressHandlers = useLongPress(onMenu);
+  const snippet = threadPreview(t);
+  return (
+    <li>
+      <button
+        type="button"
+        data-thread-id={t.id}
+        {...pressHandlers}
+        onClick={() => openThread(t)}
+        className={"tree-row flex w-full select-none flex-col gap-0.5 text-left" + (active ? " tree-active" : "")}
+        style={{
+          minHeight: touch ? 44 : 33,
+          paddingLeft: touch ? 11 : 9,
+          paddingRight: touch ? 12 : 10,
+          paddingTop: 7,
+          paddingBottom: 7,
+          borderRadius: 5,
+          borderLeft: `3px solid ${isPriorityLevel(t.priority) ? PRIORITIES[t.priority].color : "transparent"}`,
+          WebkitTouchCallout: "none",
+        }}
+      >
+        <span className="flex w-full min-w-0 items-center gap-1.5">
+          {t.pinned && <Pin size={touch ? 13 : 12} className="shrink-0" style={{ color: "var(--primary)" }} aria-label="Pinned" />}
+          <span
+            className={"tree-row-title min-w-0 flex-1 truncate" + (t.done ? " line-through" : "")}
+            style={{
+              fontSize: fs.title,
+              fontWeight: 500,
+              color: active ? undefined : "var(--foreground)",
+              opacity: t.done ? 0.6 : undefined,
+            }}
+          >
+            {t.title || "Untitled thread"}
+          </span>
+          {t.done && <CircleCheck size={touch ? 14 : 12} className="shrink-0" style={{ color: "#22c55e" }} aria-label="Solved" />}
+          <span className="shrink-0 tabular-nums" style={{ fontSize: fs.meta, color: "var(--muted-foreground)" }}>
+            {activityLabel(activity)}
+          </span>
+        </span>
+        {snippet && (
+          <span className="tree-card-snippet w-full" style={{ fontSize: fs.body, color: "var(--muted-foreground)" }}>
+            {snippet}
+          </span>
+        )}
+        <span
+          className="flex w-full min-w-0 items-center gap-1.5 truncate"
+          style={{ fontSize: fs.meta, color: "var(--muted-foreground)" }}
+        >
+          <PriorityBadge priority={t.priority} size={touch ? 12 : 11} />
+          <span className="shrink-0">{replyLabel(t)}</span>
+          {tags.slice(0, 3).map((name) => (
+            <span key={name} className="truncate" style={{ color: "var(--primary)", opacity: 0.85 }}>
+              #{name}
+            </span>
+          ))}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function FilterChip({
+  active,
+  touch,
+  title,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  touch: boolean;
+  title: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={title}
+      className="flex shrink-0 items-center gap-1 rounded-full px-2 transition-colors"
+      style={{
+        height: touch ? 32 : 24,
+        fontSize: touch ? 13 : 12,
+        color: active ? "var(--primary-foreground)" : "var(--foreground)",
+        background: active ? "var(--primary)" : "color-mix(in oklab, var(--foreground) 7%, transparent)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

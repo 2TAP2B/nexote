@@ -40,6 +40,7 @@ import EditorToolbar from "@/components/EditorToolbar";
 import { useTocHeadings } from "@/components/useTocHeadings";
 import { useTocScrollSpy } from "@/components/useTocScrollSpy";
 import { useCanEdit } from "@/components/useCanEdit";
+import { JumpButton, useScrolledAway } from "@/components/threads/JumpButton";
 
 const MilkdownEditorWrapper = dynamic<
   React.ComponentPropsWithoutRef<typeof import("@/components/MilkdownEditor").default> & {
@@ -78,6 +79,8 @@ export default function EditorPane({
   const prevBodyRef = useRef("");
   const ownSaveCountRef = useRef(0);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
+  const scrolledDown = useScrolledAway(editorScrollRef, "top", 600);
 
   // Stable identity for the editor's AI config so the Milkdown editor only
   // rebuilds when the AI settings actually change, not on every render.
@@ -585,7 +588,9 @@ export default function EditorPane({
       {/* Editor — the wrapper scrolls (native page-style scrollbar); the
           table-of-contents panel docks to its right when enabled. */}
       <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div
+          ref={editorScrollRef}
           className={
             "nexote-editor-scroll min-h-0 flex-1 overflow-y-auto" +
             (activeNote?.type === "collection-item" ? " has-collection-header" : "")
@@ -620,6 +625,16 @@ export default function EditorPane({
               readOnly={readOnly}
             />
           )}
+        </div>
+        {/* Back to the top of a long note: small and only after scrolling a
+            good way down, so it doesn't pull attention while writing. */}
+        <JumpButton
+          show={scrolledDown}
+          direction="up"
+          label="Back to top"
+          onClick={() => editorScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+          className="nexote-jump-top absolute bottom-[88px] right-7 z-20"
+        />
         </div>
 
         {tocOpen && !rawMode && activeNote && (
