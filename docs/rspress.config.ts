@@ -9,6 +9,7 @@ export default defineConfig({
   icon: '/logo.svg',
   logo: '/logo.svg',
   logoText: 'Nexote',
+  globalStyles: `${process.cwd()}/docs/docs/styles.css`,
   themeConfig: {
     socialLinks: [
       {

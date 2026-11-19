@@ -1,0 +1,36 @@
+/*
+ * Solid colors for the start page. The Rspress default paints the hero area
+ * with large radial gradients (light: blue-purple washes on white; dark:
+ * deep blue/purple glows on near black) and a gradient behind the title
+ * text. These variables replace all of them with flat surfaces that match
+ * the logo (#7c6ff0 on #1a1d29).
+ */
+
+:root,
+:where(html:not(.rp-dark)) {
+  /* Flat page: white, like the rest of the docs. */
+  --rp-home-background-bg: #ffffff;
+  /* Feature cards: a plain surface instead of a diagonal fade. */
+  --rp-home-feature-bg: #f9fafb;
+  /* Title in the brand purple, no gradient background. */
+  --rp-home-hero-title-color: #6d5ae0;
+  --rp-home-hero-title-bg: none;
+  --rp-home-hero-secondary-color: #6d5ae0;
+}
+
+html.rp-dark,
+:where(html.rp-dark) {
+  /* Flat page: the logo's dark navy, slightly above pure black so the
+   * sections still separate. */
+  --rp-home-background-bg: #1a1d29;
+  --rp-home-feature-bg: #232634;
+  --rp-home-hero-title-color: #9b8bf7;
+  --rp-home-hero-title-bg: none;
+  --rp-home-hero-secondary-color: #9b8bf7;
+}
+
+/* The hero area owns the flat color now: no leftover shading. */
+.rspress-home-hero,
+[class*="home-hero"] {
+  background-image: none;
+}
