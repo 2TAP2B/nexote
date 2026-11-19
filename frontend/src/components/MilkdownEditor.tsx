@@ -322,6 +322,12 @@ const plainTextWrapperTags = new Set(["html", "head", "body", "meta", "style", "
 const MARKDOWN_HINT =
   /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|```|~~~|\|.*\|)|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\n]+\)/;
 
+// Markdown in text a keyboard commits at once: the block markers above plus
+// inline marks (*em*, _em_, `code`, ~~strike~~, ==highlight==).
+const TYPED_MARKDOWN_HINT = new RegExp(
+  `${MARKDOWN_HINT.source}|\\*[^*\\s][^*\\n]*\\*|(^|\\s)_[^_\\s][^_\\n]*_|\`[^\`\\n]+\`|~~[^~\\n]+~~|==[^=\\n]+==`,
+);
+
 // True when the clipboard's HTML just wraps the same plain text without
 // formatting: then text/plain should win so the Markdown parser renders it
 // instead of pasting the source literally. Whitespace is ignored in the
@@ -1473,8 +1479,36 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       // the next block.
       crepe.editor.config((ctx) => {
         const opts = ctx.get("editorViewOptions" as never) as Record<string, unknown>;
+        // Inserts Markdown source as formatted content, over `range` or the
+        // selection. Shared by pastes and by text a keyboard commits at once
+        // (clipboard managers like Gboard's type the text instead of pasting).
+        const insertMarkdown = (view: EditorView, text: string, range?: { from: number; to: number }): boolean => {
+          if (view.state.selection.$from.node().type.spec.code) return false;
+          try {
+            const doc = ctx.get(parserCtx)(text);
+            if (!doc || typeof doc === "string") return false;
+            const domParser = DOMParser.fromSchema(ctx.get(schemaCtx));
+            const dom = DOMSerializer.fromSchema(ctx.get(schemaCtx)).serializeFragment(doc.content);
+            const slice = domParser.parseSlice(dom);
+            let tr = view.state.tr;
+            if (range) tr = tr.setSelection(TextSelection.create(tr.doc, range.from, range.to));
+            view.dispatch(tr.replaceSelection(slice).scrollIntoView().setMeta("paste", true).setMeta("uiEvent", "paste"));
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        // Typing arrives a character or a word at a time and never holds a
+        // whole "**…**"; a committed chunk that does is Markdown source.
+        const committedMarkdown = (text: string) => text.length > 2 && TYPED_MARKDOWN_HINT.test(text);
         ctx.set("editorViewOptions" as never, {
           ...opts,
+          // Text a keyboard commits in one go (its clipboard history, a text
+          // expander) fires no paste event. Cancelable input is replaced by
+          // the formatted Markdown; text the keyboard already wrote into the
+          // page (Android) is converted when ProseMirror reads it back.
+          handleTextInput: (view: EditorView, from: number, to: number, text: string) =>
+            committedMarkdown(text) ? insertMarkdown(view, text.replace(/\r\n?/g, "\n"), { from, to }) : false,
           // Copy: plain text without the editor's line-break markup (see
           // clipboardPlainText). A selection inside one paragraph copies as
           // its text, like milkdown's own serializer does.
@@ -1542,24 +1576,7 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
               }
             }
             if (text.trim() && html && (mode === "markdown" || isPlainTextWrapper(html, text))) {
-              try {
-                const doc = ctx.get(parserCtx)(text);
-                if (doc && typeof doc !== "string") {
-                  const domParser = DOMParser.fromSchema(ctx.get(schemaCtx));
-                  const dom = DOMSerializer.fromSchema(ctx.get(schemaCtx)).serializeFragment(doc.content);
-                  const slice = domParser.parseSlice(dom);
-                  view.dispatch(
-                    view.state.tr
-                      .replaceSelection(slice)
-                      .scrollIntoView()
-                      .setMeta("paste", true)
-                      .setMeta("uiEvent", "paste"),
-                  );
-                  return true;
-                }
-              } catch {
-                // Fall through to the default clipboard handling.
-              }
+              return insertMarkdown(view, text);
             }
             return false;
           },
@@ -1648,6 +1665,15 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
           // the editor so the bar knows whether to show. Return false so the
           // default focus/blur handling is untouched.
           handleDOMEvents: {
+            beforeinput: (view: EditorView, event: InputEvent) => {
+              if (!event.cancelable) return false;
+              if (event.inputType !== "insertText" && event.inputType !== "insertReplacementText") return false;
+              const text = (event.data ?? event.dataTransfer?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n");
+              if (!committedMarkdown(text)) return false;
+              if (!insertMarkdown(view, text)) return false;
+              event.preventDefault();
+              return true;
+            },
             focus: () => {
               if (mobile) window.dispatchEvent(new CustomEvent("nexote:editor-focus"));
               return false;

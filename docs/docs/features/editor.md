@@ -15,7 +15,7 @@ The toggle button in the note header (on mobile, the round floating button at th
 
 The view a note opens in is set in **Settings › Editor › Editing › Default view** ("Rendered view" or "Raw markdown"). Changing it also switches the note that is open.
 
-Markdown pasted into the rendered view is formatted, whether it comes from a plain text editor, a code editor (VS Code, a web editor), a phone or Markdown source shown on a web page. Formatted content (copied from a web page or a document) keeps its formatting. Code copied from VS Code in another language becomes a code block in that language.
+Markdown pasted into the rendered view is formatted, whether it comes from a plain text editor, a code editor (VS Code, a web editor), a phone or Markdown source shown on a web page. This includes text a phone keyboard inserts from its clipboard history (such as Gboard's clipboard), which types the text in instead of pasting it. Formatted content (copied from a web page or a document) keeps its formatting. Code copied from VS Code in another language becomes a code block in that language.
 
 Related display options in **Settings › Editor**:
 
