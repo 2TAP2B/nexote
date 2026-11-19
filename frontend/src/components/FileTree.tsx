@@ -50,6 +50,8 @@ import { haptic } from "@/lib/haptics";
 import { ConfirmSheet } from "./mobile/ConfirmSheet";
 import { InputSheet } from "./mobile/InputSheet";
 import { MobileActionSheet, type SheetAction } from "./mobile/MobileActionSheet";
+import { NotebookSheet } from "./mobile/NotebookPicker";
+import { notebookKey } from "@/lib/notebooks";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
 import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TaskItem, type VaultMeta } from "@/lib/api";
 import { makeSnippet } from "@/lib/note-utils";
@@ -500,6 +502,11 @@ export default function FileTree({
   const [navSection, setNavSection] = useState<string>("vault");
   const [treeSelectedNav, setTreeSelectedNav] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Touch: a folder delete waiting for its confirm sheet (it deletes every
+  // note inside, so it asks like a note delete does).
+  const [pendingFolderDelete, setPendingFolderDelete] = useState<{ path: string; notes: number; run: () => void } | null>(
+    null,
+  );
 
   // Keep the keyboard-nav section in sync with the active sidebar view.
   useEffect(() => {
@@ -878,6 +885,7 @@ export default function FileTree({
             },
           },
         ],
+        title: vaultName,
       });
     },
     [create, openFolderDialog, canEditVault],
@@ -1028,9 +1036,14 @@ export default function FileTree({
 
   // Phone: a long press on a note or folder row opens its action sheet (the
   // row's context menu). iOS fires no contextmenu event on long press, so it
-  // is synthesized; the click that ends the press is swallowed.
+  // is synthesized. The click that may end the press is swallowed wherever it
+  // lands: the sheet slides in under the finger, so lifting it would run the
+  // entry below (the sheet is portaled, but React bubbles its clicks through
+  // this tree). Only that click: the guard ends with the next touch, as every
+  // real tap starts with one, and phones often send no ending click at all
+  // (a guard left standing ate the first tap on the sheet: two taps needed).
   const longPress = useRef<{ timer: number; x: number; y: number } | null>(null);
-  const swallowClick = useRef(false);
+  const swallowClick = useRef<{ until: number } | null>(null);
   const cancelLongPress = () => {
     if (longPress.current) window.clearTimeout(longPress.current.timer);
     longPress.current = null;
@@ -1039,7 +1052,9 @@ export default function FileTree({
     ? {
         onPointerDown: (e: React.PointerEvent) => {
           if (e.pointerType === "mouse") return;
-          const row = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-note-id],[data-folder-path]") : null;
+          // A new touch starts a new gesture: nothing left to swallow.
+          swallowClick.current = null;
+          const row = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-note-id],[data-folder-path],[data-vault-header]") : null;
           if (!row) return;
           cancelLongPress();
           const { clientX: x, clientY: y } = e;
@@ -1048,7 +1063,7 @@ export default function FileTree({
             y,
             timer: window.setTimeout(() => {
               longPress.current = null;
-              swallowClick.current = true;
+              swallowClick.current = { until: Date.now() + 800 };
               haptic();
               row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
             }, 450),
@@ -1061,8 +1076,10 @@ export default function FileTree({
         onPointerUp: cancelLongPress,
         onPointerCancel: cancelLongPress,
         onClickCapture: (e: React.MouseEvent) => {
-          if (!swallowClick.current) return;
-          swallowClick.current = false;
+          const s = swallowClick.current;
+          if (!s) return;
+          swallowClick.current = null;
+          if (Date.now() > s.until) return;
           e.preventDefault();
           e.stopPropagation();
         },
@@ -1116,19 +1133,31 @@ export default function FileTree({
   // moveNote (path change); moving to another vault (possibly in another
   // space) routes through moveNoteToVault, which resolves the note's real
   // source vault itself and lands it in the chosen folder.
+  // The vault the note being moved lives in (the tree shows several).
+  const moveSourceVault = moveTo
+    ? Object.keys(allVaultData).find((v) => allVaultData[v]?.notes.some((n) => n.id === moveTo.noteId))
+    : undefined;
   const performMoveTo = useCallback(
     async (dstVaultId: string, dstPath: string) => {
       const id = moveTo?.noteId;
       if (!id) return;
       setMoveTo(null);
-      if (dstVaultId === (activeVault?.id ?? "")) {
+      if (dstVaultId === (moveSourceVault ?? activeVault?.id ?? "")) {
         await moveNote(id, dstPath);
       } else {
         await moveNoteToVault(id, dstVaultId, dstPath);
       }
     },
-    [moveTo, activeVault, moveNote, moveNoteToVault],
+    [moveTo, moveSourceVault, activeVault, moveNote, moveNoteToVault],
   );
+  // The note's current notebook, marked in the touch "Move to…" sheet.
+  const moveSelected =
+    moveTo && moveSourceVault
+      ? notebookKey({
+          vaultId: moveSourceVault,
+          folder: allVaultData[moveSourceVault]?.notes.find((n) => n.id === moveTo.noteId)?.path ?? "",
+        })
+      : undefined;
 
   // Delete a folder via context, then refresh.
   const handleDeleteFolder = useCallback(
@@ -1136,6 +1165,14 @@ export default function FileTree({
       void removeFolder(path);
     },
     [removeFolder],
+  );
+  const requestFolderDelete = useCallback(
+    (vaultId: string, path: string, run: () => void) => {
+      if (!touch) return run();
+      const notes = (allVaultData[vaultId]?.notes ?? []).filter((n) => n.path === path || n.path?.startsWith(`${path}/`)).length;
+      setPendingFolderDelete({ path, notes, run });
+    },
+    [touch, allVaultData],
   );
 
   // Drag and drop handlers.
@@ -1385,7 +1422,7 @@ export default function FileTree({
                         onRename={handleRename}
                         onMoveNote={handleMoveNote}
                         onMoveTo={handleMoveTo}
-                        onDeleteFolder={handleDeleteFolder}
+                        onDeleteFolder={(path) => requestFolderDelete(vault.id, path, () => handleDeleteFolder(path))}
                         setFolderLabel={(path, color) =>
                           setFolderLabel(vault.id, path, color)
                         }
@@ -1445,10 +1482,12 @@ export default function FileTree({
                           void moveNote(id, path);
                         }}
                         onMoveTo={handleMoveTo}
-                        onDeleteFolder={(path) => {
-                          switchVault(vault.id);
-                          void removeFolder(path);
-                        }}
+                        onDeleteFolder={(path) =>
+                          requestFolderDelete(vault.id, path, () => {
+                            switchVault(vault.id);
+                            void removeFolder(path);
+                          })
+                        }
                         onNewNoteInFolder={(path) => {
                           switchVault(vault.id);
                           void create({ path });
@@ -1505,6 +1544,19 @@ export default function FileTree({
         />
       )}
 
+      {pendingFolderDelete && (
+        <ConfirmSheet
+          title={`Delete folder “${pendingFolderDelete.path.split("/").pop()}”?`}
+          message={
+            pendingFolderDelete.notes > 0
+              ? `${pendingFolderDelete.notes === 1 ? "The note in it is" : `All ${pendingFolderDelete.notes} notes in it, subfolders included, are`} deleted too. This cannot be undone.`
+              : "This cannot be undone."
+          }
+          onClose={() => setPendingFolderDelete(null)}
+          onConfirm={() => pendingFolderDelete.run()}
+        />
+      )}
+
       {renameSheet && (
         <InputSheet
           title={
@@ -1544,12 +1596,25 @@ export default function FileTree({
         />
       )}
 
-      <MoveToDialog
-        open={moveTo !== null}
-        activeVaultId={activeVault?.id ?? ""}
-        onClose={() => setMoveTo(null)}
-        onMove={performMoveTo}
-      />
+      {touch ? (
+        // The same sheet as the note menu's "Move to…" (MobileApp).
+        moveTo !== null && (
+          <NotebookSheet
+            title="Move to…"
+            description="Pick a vault or folder. Moving it into another space takes it out of this one."
+            selected={moveSelected}
+            onPick={(n) => void performMoveTo(n.vaultId, n.folder)}
+            onClose={() => setMoveTo(null)}
+          />
+        )
+      ) : (
+        <MoveToDialog
+          open={moveTo !== null}
+          activeVaultId={activeVault?.id ?? ""}
+          onClose={() => setMoveTo(null)}
+          onMove={performMoveTo}
+        />
+      )}
 
       {ctxMenu &&
         (touch ? (
@@ -2617,6 +2682,8 @@ function CollapsibleSection({
       style={dropActive ? { borderRadius: 5, background: "var(--primary)" } : undefined}
     >
       <div
+        // Touch: the tree's long press opens this header's menu too.
+        data-vault-header=""
         className="flex w-full items-center gap-2 transition-colors hover:bg-white/5"
         style={{
           height: 34,

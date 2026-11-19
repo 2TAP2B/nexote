@@ -276,14 +276,15 @@ export default function MobileApp() {
       const id = moveTo;
       if (!id) return;
       setMoveTo(null);
-      if (dstVaultId === (activeVault?.id ?? "")) {
+      // Compared with the note's own vault, not the active one.
+      if (dstVaultId === (noteVaultMap[id] ?? activeVault?.id ?? "")) {
         await moveNote(id, dstPath);
       } else {
         if (activeVault?.id) switchVault(activeVault.id);
         await moveNoteToVault(id, dstVaultId, dstPath);
       }
     },
-    [moveTo, activeVault, moveNote, moveNoteToVault, switchVault],
+    [moveTo, noteVaultMap, activeVault, moveNote, moveNoteToVault, switchVault],
   );
 
   // The note's current notebook, marked in the sheet.

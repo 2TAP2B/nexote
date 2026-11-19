@@ -1466,15 +1466,19 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   const moveNote = useCallback(
     async (id: string, path: string) => {
-      if (!activeVaultId) return;
+      // The note's own vault: the tree lists every vault of the space, and a
+      // note moved from another vault's section isn't in the active one.
+      const vaultId = noteVaultMapRef.current[id] ?? activeVaultId;
+      if (!vaultId) return;
       try {
         // Send ONLY the path. The backend persists title/body when the
         // request omits them, so a move that races the editor's debounced
         // save can neither overwrite a fresh draft with the cached body nor
         // revert the path (previously the stale cached body was sent
         // explicitly and could clobber recent edits).
-        await api.update(activeVaultId, id, { path });
-        await refresh();
+        await api.update(vaultId, id, { path });
+        if (vaultId === activeVaultId) await refresh();
+        else await refreshVaultTreeRef.current(vaultId);
         setNotesById((prev) => {
           const cached = prev[id];
           if (!cached) return prev;
