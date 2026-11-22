@@ -80,7 +80,7 @@ export default function EditorPane({
   const ownSaveCountRef = useRef(0);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
-  const scrolledDown = useScrolledAway(editorScrollRef, "top", 600);
+  const { away: scrolledDown } = useScrolledAway(editorScrollRef, "top", 600);
 
   // Stable identity for the editor's AI config so the Milkdown editor only
   // rebuilds when the AI settings actually change, not on every render.

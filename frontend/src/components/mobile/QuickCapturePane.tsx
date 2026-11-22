@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Pin, PinOff, Trash2, X } from "lucide-react";
+import { ArrowDown, CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Pin, PinOff, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, isCollectionsVault } from "@/lib/api";
@@ -33,7 +33,7 @@ import {
   replyLabel,
   type Thread,
 } from "@/lib/threads";
-import { JumpButton, useScrolledAway } from "../threads/JumpButton";
+import { useScrolledAway } from "../threads/JumpButton";
 import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "../threads/MemoChrome";
 import { PinnedBar, type PinnedItem } from "../threads/PinnedBar";
 import { ThreadCard } from "../threads/ThreadCard";
@@ -235,13 +235,21 @@ export default function QuickCapturePane({
   const filterByTag = (tag: string) => setTagFilter(tag.toLowerCase());
 
   // Newest item at the bottom, like a chat; also when threads load or move.
+  // Every time the pane comes on screen (a swipe into quick notes) it starts
+  // at the latest message — never at wherever the user scrolled to last time.
   const lastKey = visible[visible.length - 1]?.key ?? "";
+  const wasFocused = useRef(false);
   useEffect(() => {
     const list = listRef.current;
-    if (list) list.scrollTop = list.scrollHeight;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+    // The pane was swiped away and is back: it starts at the latest message,
+    // so the jump bar isn't needed yet.
+    if (focused && wasFocused.current) setAwayFromLatest(false);
+    wasFocused.current = focused;
   }, [visible.length, lastKey, focused, keyboardOpen]);
 
-  const awayFromLatest = useScrolledAway(listRef, "bottom");
+  const { away: awayFromLatest, setAway: setAwayFromLatest } = useScrolledAway(listRef, "bottom");
   const jumpToLatest = () => {
     const list = listRef.current;
     list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
@@ -879,13 +887,26 @@ export default function QuickCapturePane({
               </ol>
             )}
           </div>
-          <JumpButton
-            show={awayFromLatest}
-            direction="down"
-            label="Jump to the latest"
+          {/* A full-width bar instead of a small circle: one tap jumps back
+              to the newest memo, the wording says what it does. */}
+          <button
+            type="button"
+            aria-hidden={!awayFromLatest}
+            tabIndex={awayFromLatest ? 0 : -1}
             onClick={jumpToLatest}
-            className="absolute bottom-3 right-3 z-10"
-          />
+            className={
+              "absolute inset-x-3 bottom-2 z-10 flex h-11 items-center justify-center gap-2 rounded-full border text-[13px] font-medium shadow-lg backdrop-blur transition-all duration-200 active:scale-[0.98] " +
+              (awayFromLatest ? "pointer-events-auto opacity-100" : "pointer-events-none translate-y-3 opacity-0")
+            }
+            style={{
+              background: "color-mix(in srgb, var(--mob-accent) 92%, transparent)",
+              borderColor: "transparent",
+              color: "#fff",
+            }}
+          >
+            <ArrowDown size={16} />
+            Jump back to recent message
+          </button>
         </div>
 
         <MemoToast toast={toast} onDismiss={dismissToast} />

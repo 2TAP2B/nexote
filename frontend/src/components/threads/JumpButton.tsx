@@ -7,7 +7,11 @@ import { useEffect, useState, type RefObject } from "react";
  * Whether a scroller is away from an edge: "bottom" for chat-like lists
  * (newest at the bottom), "top" for notes. `threshold` is how far, in px.
  */
-export function useScrolledAway(ref: RefObject<HTMLElement | null>, edge: "top" | "bottom", threshold = 240): boolean {
+export function useScrolledAway(
+  ref: RefObject<HTMLElement | null>,
+  edge: "top" | "bottom",
+  threshold = 240,
+): { away: boolean; setAway: (v: boolean) => void } {
   const [away, setAway] = useState(false);
   // Re-attached after every render: the scroller may mount later (a note
   // opened after the dashboard), and content changes come with renders, so
@@ -23,7 +27,7 @@ export function useScrolledAway(ref: RefObject<HTMLElement | null>, edge: "top" 
     el.addEventListener("scroll", check, { passive: true });
     return () => el.removeEventListener("scroll", check);
   });
-  return away;
+  return { away, setAway };
 }
 
 /**

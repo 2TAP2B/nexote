@@ -194,7 +194,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   const renameCancelled = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const awayFromLatest = useScrolledAway(listRef, "bottom");
+  const { away: awayFromLatest, setAway: setAwayFromLatest } = useScrolledAway(listRef, "bottom");
   // The post a new comment goes under (null: the composer replies). Its
   // content as it was when picked: the save finds it in the latest body.
   const [commentOn, setCommentOn] = useState<ThreadPost | null>(null);
@@ -249,10 +249,13 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
   };
 
   // The latest post in view, like a chat: on open, on new posts and when the
-  // keyboard takes half the screen.
+  // keyboard takes half the screen. Every time the view comes on screen it
+  // starts at the latest post (a swipe into it, or reopening it).
+  const wasShown = useRef(false);
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
+    if (!mobile) wasShown.current = true;
   }, [posts.length, keyboardOpen]);
 
   // Escape leaves selection mode / the menu first. Capture phase and

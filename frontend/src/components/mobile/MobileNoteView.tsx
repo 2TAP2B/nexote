@@ -90,7 +90,7 @@ export default function MobileNoteView({
   const skipNextChange = useRef(false);
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
-  const scrolledDown = useScrolledAway(editorScrollRef, "top", 600);
+  const { away: scrolledDown } = useScrolledAway(editorScrollRef, "top", 600);
   // Guards against the autosave response clobbering in-flight typing — same
   // pattern as the desktop EditorPane. When our own save completes and
   // activeNote changes, we DON'T remount the editor or overwrite local body
