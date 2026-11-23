@@ -297,7 +297,7 @@ func migrateVinyls(registry *notes.VaultRegistry, cr *notes.CollectionRegistry, 
 			{Key: "artist", Label: "Artist", Type: notes.FieldText},
 			{Key: "year", Label: "Year", Type: notes.FieldNumber},
 			{Key: "genre", Label: "Genre", Type: notes.FieldText},
-			{Key: "wantlist", Label: "Wantlist", Type: notes.FieldBoolean},
+			{Key: "wantlist", Label: "On my wantlist", Type: notes.FieldBoolean},
 		}); err != nil {
 			return
 		}

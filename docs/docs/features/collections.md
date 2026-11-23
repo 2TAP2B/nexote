@@ -12,8 +12,10 @@ Two collections exist in every space:
 
 | Collection | Fields |
 | --- | --- |
-| Vinyls | Discogs ID, Artist, Year, Genre, Label, Cat # |
-| Books | ISBN, Author, Year, Publisher, Pages, Genre |
+| Vinyls | Discogs ID, Artist, Year, Genre, Label, Cat #, In my collection, On my wantlist |
+| Books | ISBN, Author, Year, Publisher, Pages, Genre, In my collection, On my wantlist |
+
+**In my collection** and **On my wantlist** are separate Yes/No switches, so an item can be in your collection, on your wantlist, or both. As soon as one item says Yes, the gallery offers the switch as a filter chip.
 
 Built-in collections cannot be deleted, but they can be hidden.
 
@@ -93,4 +95,6 @@ When you save an item with a cover found by a lookup, the server downloads the i
 
 ## Upgrading older data
 
-Early versions of Nexote had a hard-coded record feature with `type: vinyl` notes. On start-up these are converted into items of the Vinyls collection.
+Early versions of Nexote had a hard-coded record feature with `type: vinyl` notes. On start-up these are converted into items of the Vinyls collection; their wantlist flag is kept in the wantlist switch.
+
+On start-up, the built-in collections also get fields added in newer versions (**In my collection** and **On my wantlist**), and a Yes/No **Published** field is removed from the Vinyls collection. Values already saved in items stay in their files.

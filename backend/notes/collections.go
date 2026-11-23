@@ -255,40 +255,65 @@ func (r *CollectionRegistry) writeLocked(cols []CollectionMeta) error {
 	return os.WriteFile(r.registryPath(), data, 0o644)
 }
 
+// ownershipFields are the Yes/No switches of the built-in collections: a
+// record or book can be in your collection, on your wantlist, or both. The
+// "wantlist" key is the one the early record feature used, so its values
+// carry over.
+var ownershipFields = []CollectionField{
+	{Key: "owned", Label: "In my collection", Type: FieldBoolean},
+	{Key: "wantlist", Label: "On my wantlist", Type: FieldBoolean},
+}
+
 // Built-in collection definitions. Ensured on startup; the user can hide
-// them in the UI but their notes and definitions persist.
+// them in the UI but their notes and definitions persist. Retired fields are
+// removed from the collection on startup (matched by type, and by key or
+// label, case-insensitively — the key of a field added by hand is unknown);
+// the values stay in the item files.
 var builtInCollections = []struct {
-	ID    string
-	Name  string
-	Icon  string
-	Fields []CollectionField
+	ID      string
+	Name    string
+	Icon    string
+	Fields  []CollectionField
+	Retired []CollectionField
 }{
 	{
 		ID:   "vinyls",
 		Name: "Vinyls",
 		Icon: "Music",
-		Fields: []CollectionField{
+		Fields: append([]CollectionField{
 			{Key: "discogsId", Label: "Discogs ID", Type: FieldText},
 			{Key: "artist", Label: "Artist", Type: FieldText},
 			{Key: "year", Label: "Year", Type: FieldText},
 			{Key: "genre", Label: "Genre", Type: FieldText},
 			{Key: "label", Label: "Label", Type: FieldText},
 			{Key: "catno", Label: "Cat #", Type: FieldText},
-		},
+		}, ownershipFields...),
+		// A Yes/No "Published" field some Vinyls collections carry: the two
+		// ownership switches replace it.
+		Retired: []CollectionField{{Key: "published", Label: "Published", Type: FieldBoolean}},
 	},
 	{
 		ID:   "books",
 		Name: "Books",
 		Icon: "FileText",
-		Fields: []CollectionField{
+		Fields: append([]CollectionField{
 			{Key: "isbn", Label: "ISBN", Type: FieldText},
 			{Key: "author", Label: "Author", Type: FieldText},
 			{Key: "year", Label: "Year", Type: FieldText},
 			{Key: "publisher", Label: "Publisher", Type: FieldText},
 			{Key: "pages", Label: "Pages", Type: FieldText},
 			{Key: "genre", Label: "Genre", Type: FieldText},
-		},
+		}, ownershipFields...),
 	},
+}
+
+func isRetired(f CollectionField, retired []CollectionField) bool {
+	for _, r := range retired {
+		if f.Type == r.Type && (strings.EqualFold(f.Key, r.Key) || strings.EqualFold(strings.TrimSpace(f.Label), r.Label)) {
+			return true
+		}
+	}
+	return false
 }
 
 // EnsureBuiltIns makes sure the built-in collections exist (creating them if
@@ -323,12 +348,21 @@ func (r *CollectionRegistry) EnsureBuiltIns() error {
 			changed = true
 			continue
 		}
-		// Exists — mark built-in and backfill any new schema fields.
+		// Exists — mark built-in, drop retired fields, backfill new ones.
 		c := cols[found]
 		if !c.BuiltIn {
 			c.BuiltIn = true
 			changed = true
 		}
+		kept := make([]CollectionField, 0, len(c.Fields))
+		for _, f := range c.Fields {
+			if isRetired(f, def.Retired) {
+				changed = true
+				continue
+			}
+			kept = append(kept, f)
+		}
+		c.Fields = kept
 		have := map[string]bool{}
 		for _, f := range c.Fields {
 			have[f.Key] = true
