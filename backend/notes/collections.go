@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -124,7 +125,8 @@ func (r *CollectionRegistry) Create(name string, icon string, fields []Collectio
 	return col, nil
 }
 
-// Update renames a collection and updates its icon/fields.
+// Update renames a collection and updates its icon/fields. A name another
+// collection has is refused: the name is also the folder of its items.
 func (r *CollectionRegistry) Update(id string, name string, icon string, fields []CollectionField) (CollectionMeta, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -136,7 +138,13 @@ func (r *CollectionRegistry) Update(id string, name string, icon string, fields 
 	for i, c := range cols {
 		if c.ID == id {
 			if name != "" {
-				c.Name = sanitizePath(name)
+				name = sanitizePath(name)
+				for j, other := range cols {
+					if j != i && strings.EqualFold(other.Name, name) {
+						return CollectionMeta{}, errors.New("a collection with that name already exists")
+					}
+				}
+				c.Name = name
 			}
 			if icon != "" {
 				c.Icon = icon

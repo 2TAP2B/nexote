@@ -14,6 +14,7 @@ import {
   LocateFixed,
   Menu,
   PanelLeftClose,
+  Plus,
   Search,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -22,8 +23,9 @@ import { AuthGate } from "@/components/auth/AuthProvider";
 import { AuthSplash } from "@/components/auth/AuthScreens";
 import CommandPalette from "@/components/CommandPalette";
 import ContextMenu from "@/components/ContextMenu";
-import CollectionFormDialog from "@/components/CollectionFormDialog";
-import CollectionGallery from "@/components/CollectionGallery";
+import { collectionIdFrom, NEW_COLLECTION_EVENT, newCollection, OPEN_COLLECTION_EVENT, openCollection } from "@/components/collections/actions";
+import CollectionEditor from "@/components/collections/CollectionEditor";
+import CollectionView from "@/components/collections/CollectionView";
 import EditorPane from "@/components/EditorPane";
 import FileTree, { TREE_SORT_LABELS, type TreeControls } from "@/components/FileTree";
 import MobileBottomBar from "@/components/MobileBottomBar";
@@ -38,12 +40,14 @@ import QuickCapturePane from "@/components/mobile/QuickCapturePane";
 import ThreadView from "@/components/threads/ThreadView";
 import { OPEN_QUICK_NOTES_EVENT, threadRefFrom } from "@/components/threads/threadEvents";
 import { api } from "@/lib/api";
-import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, NotesProvider, useNotes, type TreeSort } from "@/lib/notes-context";
 import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
 import { OPEN_THREAD_EVENT } from "@/lib/threads";
 
-type MainView = { kind: "quick" } | { kind: "thread"; vaultId: string; id: string; fromQuick: boolean };
+type MainView =
+  | { kind: "quick" }
+  | { kind: "thread"; vaultId: string; id: string; fromQuick: boolean }
+  | { kind: "collection"; id: string };
 
 // One address for every device: the touch interface (phones, tablets, narrow
 // windows) or the desktop one, chosen once when the app starts (Settings ›
@@ -87,7 +91,7 @@ function ShellSwitch({ shell }: { shell: Shell }) {
 }
 
 function AppShell() {
-  const { openDaily, openTab, openNoteInVault, activeNote, activeId, create, listCollections } = useNotes();
+  const { openDaily, openTab, openNoteInVault, activeNote, activeId, create } = useNotes();
   const { canEditSpace } = useCanEdit();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -117,7 +121,6 @@ function AppShell() {
   const [mainView, setMainView] = useState<MainView | null>(null);
   const [colorScheme, setColorScheme] = useState<string>("default");
   const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [collectionFormOpen, setCollectionFormOpen] = useState(false);
   const [treeControls, setTreeControls] = useState<TreeControls>({
     allExpanded: true,
@@ -170,44 +173,43 @@ function AppShell() {
     };
     const onOpenQuickNotes = () => setMainView({ kind: "quick" });
     const onOpenCollection = (e: Event) => {
-      const folder = (e as CustomEvent).detail as string;
-      if (!folder) return;
-      void listCollections().then((cols) => {
-        const col = cols.find((c) => c.name === folder);
-        if (!col) return;
-        // The gallery shows in the main area too: it replaces quick notes / a thread.
-        setMainView(null);
-        setGalleryCollection(col);
-      });
+      const id = collectionIdFrom(e);
+      if (id) setMainView({ kind: "collection", id });
     };
     window.addEventListener("nexote:toggle-sidebar", onToggle);
     window.addEventListener("nexote:open-palette", onOpenPalette);
     window.addEventListener("nexote:open-settings", onOpenSettings);
     window.addEventListener("nexote:select-view", onSelectView as EventListener);
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
-    window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
+    window.addEventListener(OPEN_COLLECTION_EVENT, onOpenCollection);
     window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
     window.addEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
     const onNewCollection = () => setCollectionFormOpen(true);
-    window.addEventListener("nexote:new-collection", onNewCollection);
+    window.addEventListener(NEW_COLLECTION_EVENT, onNewCollection);
     return () => {
       window.removeEventListener("nexote:toggle-sidebar", onToggle);
       window.removeEventListener("nexote:open-palette", onOpenPalette);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
-      window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
+      window.removeEventListener(OPEN_COLLECTION_EVENT, onOpenCollection);
       window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
       window.removeEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
-      window.removeEventListener("nexote:new-collection", onNewCollection);
+      window.removeEventListener(NEW_COLLECTION_EVENT, onNewCollection);
     };
   }, []);
 
-  // Back from a thread: to quick notes if it was opened there, else the editor.
-  const leaveMainView = useCallback(
-    () => setMainView((prev) => (prev?.kind === "thread" && prev.fromQuick ? { kind: "quick" } : null)),
-    [],
-  );
+  // Back from a thread: to quick notes if it was opened there, else the
+  // editor. Back from a gallery whose item is the active note: the dashboard
+  // (the editor would show the item, whose ✕ reopens the gallery — a loop).
+  const leaveMainView = useCallback(() => {
+    if (mainView?.kind === "collection" && activeNote?.collection) {
+      setMainView(null);
+      void openTab(DASHBOARD_ID);
+      return;
+    }
+    setMainView((prev) => (prev?.kind === "thread" && prev.fromQuick ? { kind: "quick" } : null));
+  }, [mainView, activeNote?.collection, openTab]);
 
   // Opening a note (another active tab) shows the editor again. Not on the
   // first run: the tab restore at startup isn't the user opening a note.
@@ -410,6 +412,7 @@ function AppShell() {
                 selectedTag={tagSelection}
                 onSelectTagConsumed={() => setTagSelection(null)}
                 openThreadId={mainView?.kind === "thread" ? mainView.id : null}
+                openCollectionId={mainView?.kind === "collection" ? mainView.id : null}
                 onSelectView={setSidebarView}
                 onControlsReady={setTreeControls}
               />
@@ -446,6 +449,17 @@ function AppShell() {
               <div data-thread-panel className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
                 {mainView.kind === "quick" ? (
                   <QuickCapturePane variant="desktop" focused onBack={() => setMainView(null)} />
+                ) : mainView.kind === "collection" ? (
+                  <CollectionView
+                    key={mainView.id}
+                    collectionId={mainView.id}
+                    variant="desktop"
+                    onClose={leaveMainView}
+                    onOpenItem={(it) => {
+                      setMainView(null);
+                      void openNoteInVault(it.vaultId, it.id);
+                    }}
+                  />
                 ) : (
                   <ThreadView
                     key={`${mainView.vaultId}:${mainView.id}`}
@@ -456,40 +470,12 @@ function AppShell() {
                   />
                 )}
               </div>
-            ) : galleryCollection ? (
-              <CollectionGallery
-                embedded
-                open={Boolean(galleryCollection)}
-                collection={galleryCollection}
-                onClose={() => {
-                  setSidebarView("collections");
-                  setGalleryCollection(null);
-                }}
-                onExit={() => {
-                  // Leaving the gallery returns to the dashboard, not back to an
-                  // item still open as the active note (which would loop).
-                  setSidebarView("collections");
-                  setGalleryCollection(null);
-                  void openTab(DASHBOARD_ID);
-                }}
-                onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-                onCollectionChanged={setGalleryCollection}
-              />
             ) : (
               <EditorPane
                 tocOpen={tocOpen}
                 onToggleToc={() => setTocOpen((v) => !v)}
                 onCloseCollectionItem={() => {
-                  // Returning to the gallery also brings the sidebar back to
-                  // the Collections section, so the user keeps browsing there.
-                  setSidebarView("collections");
-                  const col = activeNote?.collection;
-                  if (col) {
-                    void listCollections().then((cols) => {
-                      const found = cols.find((c) => c.id === col);
-                      if (found) setGalleryCollection(found);
-                    });
-                  }
+                  if (activeNote?.collection) setMainView({ kind: "collection", id: activeNote.collection });
                 }}
               />
             )}
@@ -525,14 +511,16 @@ function AppShell() {
           onColorSchemeChange={setColorScheme}
         />
 
-<CollectionFormDialog
-          open={collectionFormOpen}
-          onClose={() => setCollectionFormOpen(false)}
-          onSaved={() => {
-            setCollectionFormOpen(false);
-            window.dispatchEvent(new CustomEvent("nexote:refresh-data"));
-          }}
-        />
+        {collectionFormOpen && (
+          <CollectionEditor
+            touch={false}
+            onClose={() => setCollectionFormOpen(false)}
+            onSaved={(c) => {
+              setCollectionFormOpen(false);
+              openCollection(c.id);
+            }}
+          />
+        )}
       </div>
     </>
   );
@@ -591,13 +579,20 @@ function SidebarHeader({
             onClick={onOpenDaily}
           />
         )}
-        {canEditSpace && (
-          <ActionButton
-            label="New note"
-            icon={<FilePlus className="h-3.5 w-3.5" />}
-            onClick={onNewNote}
-          />
-        )}
+        {canEditSpace &&
+          (view === "collections" ? (
+            <ActionButton
+              label="New collection"
+              icon={<Plus className="h-3.5 w-3.5" />}
+              onClick={newCollection}
+            />
+          ) : (
+            <ActionButton
+              label="New note"
+              icon={<FilePlus className="h-3.5 w-3.5" />}
+              onClick={onNewNote}
+            />
+          ))}
         <ActionButton
           label="Collapse sidebar"
           icon={<PanelLeftClose className="h-3.5 w-3.5" />}

@@ -15,6 +15,7 @@ import {
   History,
   ListTree,
   Loader2,
+  MoreHorizontal,
   Sparkles,
   SquareArrowOutUpRight,
   TextCursor,
@@ -29,8 +30,11 @@ import { generateNoteTitle } from "@/lib/ai";
 import { extractTitleHeading, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { editorFontStack } from "@/lib/editor-fonts";
 import ContextMenu from "@/components/ContextMenu";
+import { ActionMenu, anchorBelow, type MenuAnchor } from "@/components/ActionMenu";
 import AICommandPanel from "@/components/AICommandPanel";
-import CollectionItemHeader from "@/components/CollectionItemHeader";
+import { CollectionBadge } from "@/components/collections/CollectionArt";
+import ItemHero from "@/components/collections/ItemHero";
+import { useItemActions } from "@/components/collections/useItemActions";
 import NoteHistoryPanel from "@/components/NoteHistoryPanel";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import TocList, { TOC_HEADING_SELECTOR } from "@/components/TocList";
@@ -81,6 +85,9 @@ export default function EditorPane({
   const rawTextareaRef = useRef<HTMLTextAreaElement>(null);
   const editorScrollRef = useRef<HTMLDivElement>(null);
   const { away: scrolledDown } = useScrolledAway(editorScrollRef, "top", 600);
+  // Collection items: the bar's More menu (edit details, pin, history, delete).
+  const itemActions = useItemActions(activeNote, { touch: false, onOpenHistory: () => setHistoryOpen(true) });
+  const [itemMenu, setItemMenu] = useState<MenuAnchor | null>(null);
 
   // Stable identity for the editor's AI config so the Milkdown editor only
   // rebuilds when the AI settings actually change, not on every render.
@@ -359,23 +366,27 @@ export default function EditorPane({
         className="flex shrink-0 items-center px-4"
         style={{ height: 36, borderBottom: "1px solid var(--border)" }}
       >
-        {/* Collection items: minimal bar with a close X to return to gallery */}
+        {/* Collection items: back to the gallery, where the item lives, its menu */}
         {isCollectionItem ? (
           <>
             <button
               type="button"
-              aria-label="Close collection item"
+              aria-label="Back to collection"
               title="Back to collection"
               onClick={onCloseCollectionItem}
               className="flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
             >
               <X size={15} />
             </button>
-            <span
-              className="ml-2 truncate text-xs text-muted-foreground/60"
-              style={{ maxWidth: 400 }}
-            >
-              {activeNote.path ? `${activeNote.path} / ` : ""}{title}
+            <span className="ml-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground/60" style={{ maxWidth: 520 }}>
+              {itemActions.collection && (
+                <>
+                  <CollectionBadge collection={itemActions.collection} size={18} />
+                  <span className="max-w-[200px] shrink-0 truncate">{itemActions.collection.name}</span>
+                  <span className="shrink-0 text-muted-foreground/40">/</span>
+                </>
+              )}
+              <span className="truncate">{title}</span>
             </span>
             <div className="flex-1" />
             <span className="text-xs text-muted-foreground/40">
@@ -387,6 +398,15 @@ export default function EditorPane({
                 "Saved"
               )}
             </span>
+            <button
+              type="button"
+              aria-label="Item actions"
+              title="More"
+              onClick={(e) => setItemMenu(anchorBelow(e.currentTarget))}
+              className="ml-1 flex h-7 w-7 items-center justify-center text-muted-foreground/50 transition-colors hover:text-foreground rounded hover:bg-white/5"
+            >
+              <MoreHorizontal size={15} />
+            </button>
           </>
         ) : (
         <>
@@ -525,6 +545,18 @@ export default function EditorPane({
         )}
       </div>
 
+      {itemMenu && isCollectionItem && (
+        <ActionMenu
+          at={itemMenu}
+          touch={false}
+          title={title}
+          subtitle={itemActions.collection?.name}
+          sections={itemActions.sections}
+          onClose={() => setItemMenu(null)}
+        />
+      )}
+      {isCollectionItem && itemActions.element}
+
       {overflowMenu && activeNote && (
         <ContextMenu
           x={overflowMenu.x}
@@ -603,7 +635,7 @@ export default function EditorPane({
             } as React.CSSProperties
           }
         >
-          {!rawMode && <CollectionItemHeader note={activeNote} />}
+          {!rawMode && <ItemHero note={activeNote} variant="desktop" />}
           {rawMode ? (
             <RawMarkdownTextarea
               ref={rawTextareaRef}

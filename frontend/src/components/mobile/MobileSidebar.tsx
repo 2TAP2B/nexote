@@ -37,6 +37,7 @@ type Props = {
   onSelectView: (view: SidebarView) => void;
   onSelectTagConsumed: () => void;
   openThreadId: string | null;
+  openCollectionId: string | null;
 };
 
 const RIBBON_ITEMS: { icon: typeof FileStack; label: string; view: SidebarView }[] = [
@@ -60,6 +61,7 @@ export default function MobileSidebar({
   onSelectView,
   onSelectTagConsumed,
   openThreadId,
+  openCollectionId,
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
@@ -192,6 +194,7 @@ export default function MobileSidebar({
             selectedTag={selectedTag}
             onSelectTagConsumed={onSelectTagConsumed}
             openThreadId={openThreadId}
+            openCollectionId={openCollectionId}
             onControlsReady={onControlsReady}
             onSelectView={onSelectView}
             touch

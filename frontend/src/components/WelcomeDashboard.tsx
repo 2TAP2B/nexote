@@ -19,14 +19,14 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
-import type { CollectionMeta } from "@/lib/api";
-import { getIcon } from "@/lib/icons";
 import { useNotes } from "@/lib/notes-context";
 import { isThreadMeta } from "@/lib/threads";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSharedTags } from "@/components/threads/useAllThreads";
-import CollectionFormDialog from "./CollectionFormDialog";
-import CollectionGallery from "./CollectionGallery";
+import { newCollection, openCollection } from "./collections/actions";
+import { CollectionBadge, ItemCover } from "./collections/CollectionArt";
+import { useCollectionItems } from "./collections/items";
+import { useCollections } from "./collections/useCollections";
 import JournalCalendar from "./JournalCalendar";
 import type { SidebarView } from "./Ribbon";
 
@@ -97,24 +97,17 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
     refreshTags,
     toggleTaskItem,
     settings,
-    listCollections,
-    activeSpaceId,
   } = useNotes();
   // Viewers of a shared space can't add notes or collections.
   const { canEditSpace } = useCanEdit();
-  const [collections, setCollections] = useState<CollectionMeta[]>([]);
-  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  const { collections } = useCollections();
+  const collectionItems = useCollectionItems();
   // Rendered client-side only so greeting/date never mismatch SSR output.
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
     setNow(new Date());
   }, []);
-
-  useEffect(() => {
-    void listCollections().then(setCollections);
-  }, [listCollections, activeSpaceId]);
 
   useEffect(() => {
     if (vaults.length === 0) return;
@@ -173,8 +166,9 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
   const sharedTags = useSharedTags(vaults);
   const allTags = useMemo(() => [...sharedTags].sort((a, b) => b.count - a.count), [sharedTags]);
 
-  const pinned = collections.filter((c) => c.pinned && !c.hidden);
-  const reloadCollections = () => void listCollections().then(setCollections);
+  const pinned = collections
+    .filter((c) => c.pinned && !c.hidden)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const [recentsExpanded, toggleRecentsExpanded] = useSectionState("recents-expanded", false);
   const [shortcutsOpen, toggleShortcuts] = useSectionState("shortcuts", true);
@@ -222,7 +216,7 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
             )}
             <QuickAction icon={<CalendarDays className="h-4 w-4" />} label="Today's journal" hint="Ctrl D" onClick={() => void openDaily()} />
             {canEditSpace && (
-              <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={() => setFormOpen(true)} />
+              <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={newCollection} />
             )}
           </div>
           )}
@@ -271,18 +265,42 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
               <SectionHeader icon={<Database className="h-4 w-4" />} title="Collections" />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {pinned.map((c) => {
-                  const Icon = getIcon(c.icon, Database);
+                  const items = collectionItems.get(c.id) ?? [];
+                  const covers = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3);
                   return (
+                    // Icon and covers on top, the name below with the full width
+                    // (beside the covers it got cut off), like the phone's tiles.
                     <button
                       key={c.id}
                       type="button"
-                      onClick={() => setGalleryCollection(c)}
-                      className="group flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted hover:shadow-md"
+                      onClick={() => openCollection(c.id)}
+                      className="group flex flex-col gap-2.5 rounded-xl border border-border bg-muted/40 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted hover:shadow-md"
                     >
-                      <IconBadge><Icon className="h-4 w-4" /></IconBadge>
+                      <span className="flex w-full items-center justify-between gap-2">
+                        <CollectionBadge collection={c} size={34} />
+                        {covers.length > 0 && (
+                          <span className="flex shrink-0 flex-row-reverse items-center">
+                            {covers.map((it, i) => (
+                              <span
+                                key={it.id}
+                                className="block rounded-md"
+                                style={{
+                                  marginLeft: i === covers.length - 1 ? 0 : -10,
+                                  boxShadow: "0 0 0 2px var(--background)",
+                                  zIndex: covers.length - i,
+                                }}
+                              >
+                                <ItemCover cover={it.cover} collection={c} radius={6} iconSize={12} className="h-7 w-7" />
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </span>
                       <span className="flex min-w-0 flex-col">
                         <span className="truncate text-sm font-medium text-foreground">{c.name}</span>
-                        <span className="text-xs text-muted-foreground">{c.fields.length} fields</span>
+                        <span className="text-xs text-muted-foreground">
+                          {items.length === 1 ? "1 item" : `${items.length} items`}
+                        </span>
                       </span>
                     </button>
                   );
@@ -290,10 +308,10 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                 {canEditSpace && (
                   <button
                     type="button"
-                    onClick={() => setFormOpen(true)}
-                    className="flex items-center gap-3 rounded-xl border border-dashed border-border p-3 text-left text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                    onClick={newCollection}
+                    className="flex flex-col gap-2.5 rounded-xl border border-dashed border-border p-3 text-left text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-border">
+                    <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-dashed border-border">
                       <FolderPlus className="h-4 w-4" />
                     </span>
                     <span className="text-sm font-medium">New collection</span>
@@ -414,20 +432,6 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
           </aside>
         </div>
       </div>
-
-      {galleryCollection && (
-        <CollectionGallery
-          open={Boolean(galleryCollection)}
-          collection={galleryCollection}
-          onClose={() => setGalleryCollection(null)}
-          onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-          onCollectionChanged={(c) => {
-            setGalleryCollection(c);
-            reloadCollections();
-          }}
-        />
-      )}
-      <CollectionFormDialog open={formOpen} onClose={() => setFormOpen(false)} onSaved={reloadCollections} />
     </main>
   );
 }
@@ -437,14 +441,6 @@ function Kbd({ children }: { children: React.ReactNode }) {
     <kbd className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
       {children}
     </kbd>
-  );
-}
-
-function IconBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-      {children}
-    </span>
   );
 }
 

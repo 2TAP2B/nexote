@@ -461,7 +461,7 @@ func (h *Handler) createCollection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateCollection(w http.ResponseWriter, r *http.Request) {
-	cr, _, err := h.spaceCollections(r)
+	cr, store, err := h.spaceCollections(r)
 	if err != nil {
 		h.writeRegistryError(w, err)
 		return
@@ -476,12 +476,29 @@ func (h *Handler) updateCollection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	old, err := cr.Get(id)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
 	col, err := cr.Update(id, in.Name, in.Icon, in.Fields)
 	if err != nil {
 		h.writeRegistryError(w, err)
 		return
 	}
-	h.publishVaults(r.URL.Query().Get("space"))
+	spaceID := r.URL.Query().Get("space")
+	// The items live in a folder named like the collection: a rename moves
+	// it, so old and new items stay together (and a delete finds them all).
+	if old.Name != "" && col.Name != old.Name {
+		if ferr := store.RenameFolder(old.Name, col.Name); ferr != nil {
+			log.Printf("rename collection folder %q: %v", old.Name, ferr)
+			_ = store.CreateFolder(col.Name)
+		}
+		if vaultID := h.collectionsVaultID(spaceID); vaultID != "" {
+			h.publishTree(r, vaultID)
+		}
+	}
+	h.publishVaults(spaceID)
 	writeJSON(w, http.StatusOK, col)
 }
 
@@ -531,18 +548,47 @@ func (h *Handler) setCollectionHidden(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, col)
 }
 
+// deleteCollection removes a collection with its items (the notes in its
+// folder of the Collections vault). Built-ins are refused: they would come
+// back, empty, on the next start — they can be hidden instead.
 func (h *Handler) deleteCollection(w http.ResponseWriter, r *http.Request) {
-	cr, _, err := h.spaceCollections(r)
+	cr, store, err := h.spaceCollections(r)
 	if err != nil {
 		h.writeRegistryError(w, err)
 		return
 	}
 	id := r.PathValue("id")
+	col, err := cr.Get(id)
+	if err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	if col.BuiltIn {
+		writeError(w, http.StatusBadRequest, errors.New("built-in collections can be hidden, not deleted"))
+		return
+	}
 	if err := cr.Delete(id); err != nil {
 		h.writeRegistryError(w, err)
 		return
 	}
-	h.publishVaults(r.URL.Query().Get("space"))
+	spaceID := r.URL.Query().Get("space")
+	// Older data may have two collections sharing a name (renames weren't
+	// checked): their folder stays while another collection still uses it.
+	shared := false
+	if rest, err := cr.List(); err == nil {
+		for _, c := range rest {
+			shared = shared || strings.EqualFold(c.Name, col.Name)
+		}
+	}
+	if col.Name != "" && !shared {
+		if ferr := store.DeleteFolder(col.Name); ferr != nil {
+			log.Printf("delete collection folder %q: %v", col.Name, ferr)
+		}
+		if vaultID := h.collectionsVaultID(spaceID); vaultID != "" {
+			h.publishTree(r, vaultID)
+		}
+	}
+	h.publishVaults(spaceID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

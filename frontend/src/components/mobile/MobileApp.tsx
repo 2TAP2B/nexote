@@ -5,8 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import CommandPalette from "@/components/CommandPalette";
-import CollectionFormDialog from "@/components/CollectionFormDialog";
-import CollectionGallery from "@/components/CollectionGallery";
+import { collectionIdFrom, NEW_COLLECTION_EVENT, OPEN_COLLECTION_EVENT, openCollection } from "@/components/collections/actions";
+import CollectionEditor from "@/components/collections/CollectionEditor";
+import CollectionView from "@/components/collections/CollectionView";
 import { ConfirmSheet } from "@/components/mobile/ConfirmSheet";
 import { InputSheet } from "@/components/mobile/InputSheet";
 import FileTree, { type TreeControls } from "@/components/FileTree";
@@ -22,7 +23,6 @@ import ThreadView from "@/components/threads/ThreadView";
 import { OPEN_QUICK_NOTES_EVENT, threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
 import { useSwipeToClose } from "@/components/threads/useSwipeToClose";
 import { api } from "@/lib/api";
-import type { CollectionMeta } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { OPEN_THREAD_EVENT } from "@/lib/threads";
 
@@ -54,7 +54,6 @@ export default function MobileApp() {
     refreshNoteBody,
     renameNote,
     notesById,
-    listCollections,
     activeSpaceId,
     noteVaultMap,
     allVaultData,
@@ -79,7 +78,6 @@ export default function MobileApp() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
   const [collectionFormOpen, setCollectionFormOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [renameNoteId, setRenameNoteId] = useState<string | null>(null);
@@ -96,6 +94,17 @@ export default function MobileApp() {
   const threadOverlayRef = useRef<HTMLDivElement>(null);
   const closeThread = useCallback(() => setOpenThreadRef(null), []);
   useSwipeToClose(threadOverlayRef, closeThread, openThreadRef !== null);
+  // Collections: the gallery in its own full-screen overlay, closed the same way.
+  const [openCollectionId, setOpenCollectionId] = useState<string | null>(null);
+  const collectionOverlayRef = useRef<HTMLDivElement>(null);
+  // Closing the gallery while one of its items is the active note goes to the
+  // dashboard: the note view would show the item, whose ✕ reopens the gallery.
+  const activeIsItem = Boolean(activeNote?.collection);
+  const closeCollection = useCallback(() => {
+    setOpenCollectionId(null);
+    if (activeIsItem) void openTab(DASHBOARD_ID);
+  }, [activeIsItem, openTab]);
+  useSwipeToClose(collectionOverlayRef, closeCollection, openCollectionId !== null);
 
   // Persist the sidebar section (tree/recent/shortcuts/bookmarks/tags/tasks/
   // collections/journal) + selected tag across reloads, so the app reopens where
@@ -243,16 +252,12 @@ export default function MobileApp() {
     const onToggleSidebar = () =>
       setPagerFocus((v) => (v === "editor" ? "sidebar" : "editor"));
     const onOpenSettings = () => setSettingsOpen(true);
+    // The gallery opens over whatever pane is showing; closing it returns there.
     const onOpenCollection = (e: Event) => {
-      const folder = (e as CustomEvent).detail as string;
-      if (!folder) return;
-      void listCollections().then((cols) => {
-        const col = cols.find((c) => c.name === folder);
-        if (col) {
-          setGalleryCollection(col);
-          setPagerFocus("editor");
-        }
-      });
+      const id = collectionIdFrom(e);
+      if (!id) return;
+      blurPagerField();
+      setOpenCollectionId(id);
     };
     const onOpenThread = (e: Event) => {
       const ref = threadRefFrom(e);
@@ -264,7 +269,7 @@ export default function MobileApp() {
     const onOpenQuickNotes = () => {
       blurPagerField();
       setOpenThreadRef(null);
-      setGalleryCollection(null);
+      setOpenCollectionId(null);
       // prevActiveIdRef follows the active tab (see the effect above).
       if (prevActiveIdRef.current === DASHBOARD_ID) {
         setPagerFocus("toc");
@@ -277,20 +282,20 @@ export default function MobileApp() {
     window.addEventListener("nexote:select-tag", onSelectTag as EventListener);
     window.addEventListener("nexote:toggle-sidebar", onToggleSidebar);
     window.addEventListener("nexote:open-settings", onOpenSettings);
-    window.addEventListener("nexote:open-collection", onOpenCollection as EventListener);
+    window.addEventListener(OPEN_COLLECTION_EVENT, onOpenCollection);
     window.addEventListener(OPEN_THREAD_EVENT, onOpenThread);
     window.addEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
     const onNewCollection = () => setCollectionFormOpen(true);
-    window.addEventListener("nexote:new-collection", onNewCollection);
+    window.addEventListener(NEW_COLLECTION_EVENT, onNewCollection);
     return () => {
       window.removeEventListener("nexote:select-view", onSelectView as EventListener);
       window.removeEventListener("nexote:select-tag", onSelectTag as EventListener);
       window.removeEventListener("nexote:toggle-sidebar", onToggleSidebar);
       window.removeEventListener("nexote:open-settings", onOpenSettings);
-      window.removeEventListener("nexote:open-collection", onOpenCollection as EventListener);
+      window.removeEventListener(OPEN_COLLECTION_EVENT, onOpenCollection);
       window.removeEventListener(OPEN_THREAD_EVENT, onOpenThread);
       window.removeEventListener(OPEN_QUICK_NOTES_EVENT, onOpenQuickNotes);
-      window.removeEventListener("nexote:new-collection", onNewCollection);
+      window.removeEventListener(NEW_COLLECTION_EVENT, onNewCollection);
     };
   }, []);
 
@@ -386,6 +391,7 @@ export default function MobileApp() {
             onSelectView={setSidebarView}
             onSelectTagConsumed={() => setSelectedTag(null)}
             openThreadId={openThreadRef?.id ?? null}
+            openCollectionId={openCollectionId}
           />
 
           <main className="relative flex h-full w-1/4 shrink-0 flex-col overflow-hidden">
@@ -399,16 +405,9 @@ export default function MobileApp() {
             onOpenSettings={() => setSettingsOpen(true)}
             openDaily={openDaily}
             onCloseCollectionItem={() => {
-              // Return to the gallery of the collection that owns this item,
-              // keeping the sidebar on its Collections section.
-              setSidebarView("collections");
-              const col = activeNote?.collection;
-              if (!col) return;
-              void listCollections().then((cols) => {
-                const found = cols.find((c) => c.id === col);
-                if (found) setGalleryCollection(found);
-              });
+              if (activeNote?.collection) setOpenCollectionId(activeNote.collection);
             }}
+            onOpenHistory={() => setHistoryOpen(true)}
           />
 
           <MobileBottomPill
@@ -557,36 +556,42 @@ export default function MobileApp() {
         onColorSchemeChange={setColorScheme}
       />
 
-      {galleryCollection && (
-        <CollectionGallery
-          open={Boolean(galleryCollection)}
-          collection={galleryCollection}
-          onClose={() => {
-            setSidebarView("collections");
-            setGalleryCollection(null);
+      {/* The open collection's gallery, full screen like a thread. */}
+      {openCollectionId &&
+        createPortal(
+          <div
+            ref={collectionOverlayRef}
+            role="dialog"
+            aria-label="Collection"
+            data-no-swipe=""
+            className="mob-shell-root fixed inset-0 z-[55] flex flex-col overflow-hidden"
+            style={{ background: "var(--mob-bg)" }}
+          >
+            <CollectionView
+              key={openCollectionId}
+              collectionId={openCollectionId}
+              variant="mobile"
+              onClose={closeCollection}
+              onOpenItem={(it) => {
+                setOpenCollectionId(null);
+                void openNoteInVault(it.vaultId, it.id);
+                setPagerFocus("editor");
+              }}
+            />
+          </div>,
+          document.body,
+        )}
+
+      {collectionFormOpen && (
+        <CollectionEditor
+          touch
+          onClose={() => setCollectionFormOpen(false)}
+          onSaved={(c) => {
+            setCollectionFormOpen(false);
+            openCollection(c.id);
           }}
-          onExit={() => {
-            // Leaving the gallery lands on the sidebar's Collections list; the
-            // note pane behind it shows the dashboard, not an item still open
-            // as the active note (which would loop).
-            setSidebarView("collections");
-            setGalleryCollection(null);
-            setPagerFocus("sidebar");
-            void openTab(DASHBOARD_ID);
-          }}
-          onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-          onCollectionChanged={setGalleryCollection}
         />
       )}
-
-      <CollectionFormDialog
-        open={collectionFormOpen}
-        onClose={() => setCollectionFormOpen(false)}
-        onSaved={() => {
-          setCollectionFormOpen(false);
-          window.dispatchEvent(new CustomEvent("nexote:refresh-data"));
-        }}
-      />
     </div>
   );
 }

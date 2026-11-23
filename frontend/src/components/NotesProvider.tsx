@@ -192,6 +192,8 @@ type NotesContextValue = {
   forceSave: () => Promise<void>;
   setDraft: (draft: Draft) => void;
   refresh: () => Promise<void>;
+  /** Refetch one vault's tree now (any vault of any space), not after the SSE echo. */
+  refreshVaultTree: (vaultId: string) => Promise<void>;
   refreshNoteBody: (id: string) => Promise<void>;
   /** New title plus the matching title heading; works for notes never opened. */
   renameNote: (id: string, title: string) => Promise<void>;
@@ -2211,6 +2213,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       forceSave,
       setDraft,
       refresh,
+      refreshVaultTree,
       refreshNoteBody,
       renameNote,
       allVaultData: shownVaultData,
@@ -2291,6 +2294,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       forceSave,
       setDraft,
       refresh,
+      refreshVaultTree,
       refreshNoteBody,
       renameNote,
       shownVaultData,

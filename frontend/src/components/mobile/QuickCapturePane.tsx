@@ -43,6 +43,7 @@ import { useNoteRefs } from "../threads/useNoteRefs";
 import { MemoBubble, type NoteRef } from "./MemoBubble";
 import { MemoComposer } from "./MemoComposer";
 import { MobileActionSheet, type SheetAction } from "./MobileActionSheet";
+import { SHELL_PALETTE } from "./mobileTheme";
 import { NotebookPicker } from "./NotebookPicker";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
 
@@ -71,18 +72,6 @@ type StreamItem =
   | { kind: "thread"; key: string; thread: Thread };
 
 const dayOf = (item: StreamItem) => item.key.slice(0, 10).trim();
-
-// MemoBubble and MemoComposer paint with the touch shell's palette, which only
-// exists under .mob-shell-root: the desktop view maps it to the theme, the
-// same way ThreadView does.
-const DESKTOP_PALETTE = {
-  "--mob-bg": "var(--background)",
-  "--mob-surface": "var(--muted)",
-  "--mob-card": "var(--sidebar)",
-  "--mob-text": "var(--foreground)",
-  "--mob-muted": "var(--muted-foreground)",
-  "--mob-accent": "var(--primary)",
-} as React.CSSProperties;
 
 function dayLabel(day: string): string {
   if (day === localDateKey()) return "Today";
@@ -647,7 +636,7 @@ export default function QuickCapturePane({
       }
       style={
         desktop
-          ? { ...DESKTOP_PALETTE, background: "var(--mob-bg)" }
+          ? { ...SHELL_PALETTE, background: "var(--mob-bg)" }
           : {
               background: "var(--mob-bg)",
               borderLeft: "1px solid var(--mob-surface)",

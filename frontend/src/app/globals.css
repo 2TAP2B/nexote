@@ -511,12 +511,25 @@ body {
   display: none;
 }
 
-/* When a collection item header is shown above the editor, shrink the
- * editor's top padding so the note text sits close to the image/info line. */
+/* Collection items show their hero (cover, collection, fields) above the
+ * editor. It sits in the editor's text column — same max width, centering and
+ * side padding as .ProseMirror — so the cover's left edge lines up with the
+ * text, and the editor's top padding shrinks so the title heading follows
+ * right under it. */
+.has-collection-header .item-hero {
+  width: 100%;
+  max-width: var(--editor-max-width, 960px);
+  margin: 0 auto;
+  padding: 48px 64px 0;
+}
 .has-collection-header .milkdown .ProseMirror {
-  padding-top: 24px;
+  padding-top: 28px;
 }
 @media (max-width: 768px) {
+  .has-collection-header .item-hero {
+    max-width: 100%;
+    padding: 24px 16px 0;
+  }
   .has-collection-header .milkdown .ProseMirror {
     padding-top: 16px;
   }
@@ -809,10 +822,15 @@ body {
   max-width: var(--editor-max-width, 100%);
   padding: 70px 20px 120px;
 }
-/* Collection items show their cover/fields header above the editor — undo
- * the floating top-bar padding so the title headline sits close to it. */
+/* Collection items: the hero clears the floating top bar (40px buttons +
+ * 8px above and below, under the safe area) and keeps the text column's
+ * width and side padding; the title heading follows right below it. */
+.mob-shell-root .has-collection-header .item-hero {
+  max-width: var(--editor-max-width, 100%);
+  padding: calc(env(safe-area-inset-top, 0px) + 68px) 20px 0;
+}
 .mob-shell-root .has-collection-header .milkdown .ProseMirror {
-  padding-top: 12px;
+  padding-top: 20px;
 }
 .mob-shell-root .milkdown,
 .mob-shell-root [data-milkdown-root] {

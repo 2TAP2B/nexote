@@ -300,6 +300,21 @@ func (h *Handler) collections(spaceID string) (*notes.CollectionRegistry, *notes
 	return cr, store, nil
 }
 
+// collectionsVaultID returns the id of a space's Collections vault ("" when
+// it has none yet), for the tree-change events of collection changes.
+func (h *Handler) collectionsVaultID(spaceID string) string {
+	vaults, err := h.Registry.ListSpace(spaceID)
+	if err != nil {
+		return ""
+	}
+	for _, v := range vaults {
+		if v.Type == notes.VaultTypeCollections {
+			return v.ID
+		}
+	}
+	return ""
+}
+
 // spaceCollections resolves the ?space= of a collections request after
 // checking the user may read (GET) or change it.
 func (h *Handler) spaceCollections(r *http.Request) (*notes.CollectionRegistry, *notes.Store, error) {

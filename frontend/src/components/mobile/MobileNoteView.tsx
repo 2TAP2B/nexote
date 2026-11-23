@@ -7,7 +7,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MilkdownEditorHandle, AIConfig } from "@/components/MilkdownEditor";
 import AICommandPanel from "@/components/AICommandPanel";
-import CollectionItemHeader from "@/components/CollectionItemHeader";
+import { ActionMenu, anchorBelow, type MenuAnchor } from "@/components/ActionMenu";
+import ItemHero from "@/components/collections/ItemHero";
+import { useItemActions } from "@/components/collections/useItemActions";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -42,6 +44,8 @@ type Props = {
   onOpenSettings: () => void;
   openDaily: () => Promise<void>;
   onCloseCollectionItem?: () => void;
+  /** Collection items: "Version history" in the item menu. */
+  onOpenHistory?: () => void;
 };
 
 export default function MobileNoteView({
@@ -54,6 +58,7 @@ export default function MobileNoteView({
   onOpenSettings,
   openDaily,
   onCloseCollectionItem,
+  onOpenHistory,
 }: Props) {
   const { settings, isJournalNote, activeVault, save, setDraft, activeId } =
     useNotes();
@@ -329,6 +334,8 @@ export default function MobileNoteView({
         viewOnly={readOnly}
         isCollectionItem={activeNote?.type === "collection-item"}
         onCloseCollectionItem={onCloseCollectionItem}
+        note={activeNote}
+        onOpenHistory={onOpenHistory}
         noteId={activeNote.id}
       />
 
@@ -358,7 +365,7 @@ export default function MobileNoteView({
           } as React.CSSProperties
         }
       >
-        {!rawMode && <CollectionItemHeader note={activeNote} mobile />}
+        {!rawMode && <ItemHero note={activeNote} variant="mobile" />}
         {rawMode ? (
           <RawMarkdownTextarea
             ref={rawTextareaRef}
@@ -449,6 +456,8 @@ function MobileTopBar({
   showThemeToggle = false,
   isCollectionItem = false,
   onCloseCollectionItem,
+  note,
+  onOpenHistory,
   noteId,
 }: {
   onOpenSidebar: () => void;
@@ -459,6 +468,9 @@ function MobileTopBar({
   showThemeToggle?: boolean;
   isCollectionItem?: boolean;
   onCloseCollectionItem?: () => void;
+  /** The open collection item, for its ⋯ menu. */
+  note?: Note;
+  onOpenHistory?: () => void;
   /** The open note: opening another one shows the bar again. */
   noteId?: string;
 }) {
@@ -469,12 +481,12 @@ function MobileTopBar({
   useEffect(() => setMounted(true), []);
   const isDark = mounted && theme === "dark";
 
-  // Collection items use a minimal bar: just a close X to return to the
-  // gallery. No sidebar toggle / three-dot menu.
+  // Collection items use a minimal bar: a close X back to the gallery and the
+  // item's own menu. No sidebar toggle / note menu.
   if (isCollectionItem) {
     return (
       <div
-        className="pointer-events-none absolute left-0 right-0 z-40 flex items-center px-4"
+        className="pointer-events-none absolute left-0 right-0 z-40 flex items-center justify-between px-4"
         style={{
           paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
           paddingBottom: 8,
@@ -489,6 +501,7 @@ function MobileTopBar({
           </CircleButton>
         </div>
         {viewOnly && <ViewOnlyPill />}
+        {note && <ItemActionsButton note={note} onOpenHistory={onOpenHistory} />}
       </div>
     );
   }
@@ -550,6 +563,31 @@ function ViewOnlyPill() {
       <Eye size={14} />
       View only
     </span>
+  );
+}
+
+// The ⋯ of an open collection item: edit details, pin, history, delete.
+function ItemActionsButton({ note, onOpenHistory }: { note: Note; onOpenHistory?: () => void }) {
+  const { sections, element } = useItemActions(note, { touch: true, onOpenHistory });
+  const [menu, setMenu] = useState<MenuAnchor | null>(null);
+  // A viewer without history has nothing to pick.
+  if (sections.every((s) => s.length === 0)) return null;
+  return (
+    <div className="pointer-events-auto">
+      <CircleButton ariaLabel="Item actions" onClick={(e) => setMenu(anchorBelow(e.currentTarget))}>
+        <Ellipsis size={20} />
+      </CircleButton>
+      {menu && (
+        <ActionMenu
+          at={menu}
+          touch
+          title={note.title || "Untitled"}
+          sections={sections}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {element}
+    </div>
   );
 }
 

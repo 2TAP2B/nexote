@@ -29,6 +29,7 @@ import {
 import { MemoBubble, type NoteRef } from "../mobile/MemoBubble";
 import { MemoComposer, type ComposerLabels } from "../mobile/MemoComposer";
 import { MobileActionSheet, type SheetAction } from "../mobile/MobileActionSheet";
+import { SHELL_PALETTE } from "../mobile/mobileTheme";
 import { useVisualViewport } from "../mobile/useVirtualKeyboardInset";
 import { JumpButton, useScrolledAway } from "./JumpButton";
 import { DraftError, HeaderButton, ImageViewer, MemoToast, SelectCircle, useMemoToast } from "./MemoChrome";
@@ -47,19 +48,6 @@ import { useNoteRefs } from "./useNoteRefs";
 // it. The header's select button picks several posts to copy or delete.
 
 type Props = { vaultId: string; id: string; variant: "mobile" | "desktop"; onClose: () => void };
-
-// MemoBubble and MemoComposer paint with the touch shell's palette, which
-// only exists under .mob-shell-root. The same mapping here makes the view
-// right in the desktop panel (light or dark theme) and wherever a host
-// mounts it.
-const PALETTE = {
-  "--mob-bg": "var(--background)",
-  "--mob-surface": "var(--muted)",
-  "--mob-card": "var(--sidebar)",
-  "--mob-text": "var(--foreground)",
-  "--mob-muted": "var(--muted-foreground)",
-  "--mob-accent": "var(--primary)",
-} as React.CSSProperties;
 
 const REPLY_LABELS: ComposerLabels = {
   send: "Reply",
@@ -987,7 +975,7 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     <section
       aria-label={thread ? `Thread: ${thread.title}` : "Thread"}
       className="relative flex h-full w-full flex-col overflow-hidden"
-      style={{ ...PALETTE, background: "var(--mob-bg)", color: "var(--mob-text)" }}
+      style={{ ...SHELL_PALETTE, background: "var(--mob-bg)", color: "var(--mob-text)" }}
     >
       {/* Exactly the visible area while the phone keyboard is open: iOS
           overlays the keyboard and may pan the visual viewport down

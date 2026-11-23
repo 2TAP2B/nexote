@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Copy,
   Database,
-  Disc3,
   Edit3,
   FileText,
   FilePlus,
@@ -53,7 +52,9 @@ import { MobileActionSheet, type SheetAction } from "./mobile/MobileActionSheet"
 import { NotebookSheet } from "./mobile/NotebookPicker";
 import { notebookKey } from "@/lib/notebooks";
 import { getIcon, ICON_OPTIONS } from "@/lib/icons";
-import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type CollectionMeta, type FolderMeta, type ImageMeta, type NoteMeta, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, FOLDER_LABEL_COLORS, FOLDER_LABEL_HEX, isCollectionsVault, type FolderMeta, type ImageMeta, type NoteMeta, type TaskItem, type VaultMeta } from "@/lib/api";
+import CollectionsList from "./collections/CollectionsList";
+import { useCollections } from "./collections/useCollections";
 import { makeSnippet } from "@/lib/note-utils";
 import { isThreadMeta, lastActivity, openThread, replyLabel, threadPreview, threadTags } from "@/lib/threads";
 
@@ -215,6 +216,8 @@ type FileTreeProps = {
   onSelectTagConsumed?: () => void;
   /** The thread showing in the thread view (highlighted in the Threads and Tags views). */
   openThreadId?: string | null;
+  /** The collection whose gallery is open (highlighted in the Collections view). */
+  openCollectionId?: string | null;
   onControlsReady?: (c: TreeControls) => void;
   onSelectView?: (view: SidebarView) => void;
   /** Touch shell: bigger rows, long press opens an action sheet. */
@@ -227,6 +230,7 @@ export default function FileTree({
   selectedTag,
   onSelectTagConsumed,
   openThreadId,
+  openCollectionId,
   onControlsReady,
   onSelectView,
   touch = false,
@@ -274,8 +278,6 @@ export default function FileTree({
     noteVaultMap,
     openDaily,
     renameFolder,
-    listCollections,
-    activeSpaceId,
   } = useNotes();
   const { canEditSpace, canEditVault } = useCanEdit();
   // Folder open/closed state, per vault ("<vaultId>:<path>": two vaults may
@@ -302,7 +304,6 @@ export default function FileTree({
     }
   }, [openMap]);
 
-  const [collections, setCollections] = useState<CollectionMeta[]>([]);
   const isFolderOpen = useCallback(
     (vaultId: string, path: string) => openMap[folderKey(vaultId, path)] ?? true,
     [openMap],
@@ -328,25 +329,11 @@ export default function FileTree({
     [openMap],
   );
 
-  // Load the active space's collection definitions so collection cards can
-  // map an item's collection id to its display name for accurate counts.
-  // Also reload on nexote:refresh-data (e.g. after a new collection is
-  // created) and when the space changes.
-  useEffect(() => {
-    const reload = () => void listCollections().then(setCollections);
-    reload();
-    window.addEventListener("nexote:refresh-data", reload);
-    return () => window.removeEventListener("nexote:refresh-data", reload);
-  }, [listCollections, activeSpaceId]);
-
-  // Names of every collection (folder-per-collection). Used to strip stale
-  // collection folders (created by older item forms, e.g. myvault/Vinyls) out
-  // of regular vault trees — collections belong to the Collections vault and
-  // their galleries, not the note tree.
-  const collectionNames = useMemo(
-    () => new Set(collections.map((c) => c.name)),
-    [collections],
-  );
+  // Collection folders (created by older item forms, e.g. myvault/Vinyls) are
+  // stripped out of regular vault trees — collections belong to their
+  // galleries, not the note tree.
+  const { collections } = useCollections();
+  const collectionNames = useMemo(() => new Set(collections.map((c) => c.name)), [collections]);
   const stripCollectionFolders = useCallback(
     (folders: FolderMeta[] | undefined) =>
       (folders ?? []).filter((f) => !collectionNames.has(f.path.split("/")[0])),
@@ -367,34 +354,6 @@ export default function FileTree({
     }
     return list;
   }, [vaults, allVaultData]);
-
-  // Collection item notes (notes tagged with a collection), aggregated across
-  // ALL vaults. Used only for the collection item counts.
-  const allCollectionNotes = useMemo(() => {
-    const list: (NoteMeta & { vaultId: string })[] = [];
-    for (const v of vaults) {
-      for (const n of allVaultData[v.id]?.notes ?? []) {
-        if (n.collection) list.push({ ...n, vaultId: v.id });
-      }
-    }
-    return list;
-  }, [vaults, allVaultData]);
-
-  // Map collection display name -> total item count aggregated across ALL
-  // vaults (items may live in any vault, not just the Collections vault).
-  // Used by the collection cards in the sidebar.
-  const collectionItemCounts = useMemo(() => {
-    const byId: Record<string, number> = {};
-    for (const n of allCollectionNotes) {
-      if (n.collection) byId[n.collection] = (byId[n.collection] ?? 0) + 1;
-    }
-    const byName: Record<string, number> = {};
-    for (const c of collections) {
-      const count = byId[c.id] ?? 0;
-      if (count > 0) byName[c.name] = count;
-    }
-    return byName;
-  }, [allCollectionNotes, collections]);
 
   // Threads kept in a vault are notes too, but they open in the thread view
   // and have their own list: not "recent notes".
@@ -1326,10 +1285,7 @@ export default function FileTree({
           ) : view === "threads" ? (
             <ThreadsList touch={touch} openThreadId={openThreadId} />
           ) : view === "collections" ? (
-            <CollectionsView
-              collections={collections}
-              collectionItemCounts={collectionItemCounts}
-            />
+            <CollectionsList touch={touch} openCollectionId={openCollectionId} />
           ) : (
             <>
               {/* Vault sections — skip the system Collections vault; collections
@@ -1396,8 +1352,6 @@ export default function FileTree({
                         activeId={activeId}
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
-                        collectionsVault={isCollectionsVault(vault)}
-                        collectionItemCounts={collectionItemCounts}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
                         onOpen={(id) => openFromSection(`vault:${vault.id}`, id)}
@@ -1443,8 +1397,6 @@ export default function FileTree({
                         activeId={activeId}
                         activeSource={activeSource}
                         sectionTag={`vault:${vault.id}`}
-                        collectionsVault={isCollectionsVault(vault)}
-                        collectionItemCounts={collectionItemCounts}
                         treeSelectedNav={navSection === "vault" ? treeSelectedNav : null}
                         setTreeSelectedNav={setTreeSelectedNav}
                         onOpen={(id) => {
@@ -1724,8 +1676,6 @@ type TreeChildProps = {
   treeSelectedNav?: string | null;
   setTreeSelectedNav?: (nav: string | null) => void;
   onOpen: (id: string) => void;
-  collectionsVault?: boolean;
-  collectionItemCounts?: Record<string, number>;
   onDelete: (id: string) => void;
   /** Bound per vault: label a folder path with one of the 6 Finder colors ("" clears). */
   setFolderLabel?: (path: string, color: string) => Promise<void>;
@@ -1772,19 +1722,15 @@ function TreeChildren(props: TreeChildProps & { node: TreeNode }) {
   // Without this, a refresh() swaps the array order and rows visibly jump.
   const folders = [...node.children.values()].sort((a, b) => byName(a.name, b.name));
   const notes = [...node.notes].sort(noteOrder(rest.sort));
-  const guide = depth > 0 && !rest.collectionsVault;
+  const guide = depth > 0;
   return (
     <ul
       className={guide ? "tree-guide" : undefined}
       style={guide ? ({ "--guide-x": `${20 + (depth - 1) * indentOf(rest.touch)}px` } as React.CSSProperties) : undefined}
     >
-      {rest.collectionsVault
-        ? folders.map((child) => (
-            <CollectionCard key={child.path} {...rest} node={child} depth={0} />
-          ))
-        : folders.map((child) => (
-            <FolderItem key={child.path} {...rest} node={child} depth={depth} />
-          ))}
+      {folders.map((child) => (
+        <FolderItem key={child.path} {...rest} node={child} depth={depth} />
+      ))}
       {notes.map((n) => (
         <NoteItem
           key={n.id}
@@ -1920,14 +1866,7 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
         >
           <button
             type="button"
-            onClick={() => {
-              // A folder in the Collections vault maps to a collection. Open
-              // its gallery instead of just expanding the folder.
-              window.dispatchEvent(
-                new CustomEvent("nexote:open-collection", { detail: node.path }),
-              );
-              setOpenMap((prev) => ({ ...prev, [node.path]: !open }));
-            }}
+            onClick={() => setOpenMap((prev) => ({ ...prev, [node.path]: !open }))}
             className="flex items-center gap-2 min-w-0 flex-1"
             style={{ height: touch ? 44 : 33 }}
           >
@@ -2004,53 +1943,6 @@ function FolderItem(props: TreeChildProps & { node: TreeNode; depth: number }) {
           depth={depth + 1}
         />
       )}
-    </li>
-  );
-}
-
-// A collection shown as a distinct card inside the Collections vault — not a
-// folder row. Clicking opens the collection's gallery.
-function CollectionCard(props: TreeChildProps & { node: TreeNode }) {
-  const { node, collectionItemCounts } = props;
-  const itemCount = collectionItemCounts?.[node.name] ?? 0;
-
-  return (
-    <li className="px-1.5">
-      <button
-        type="button"
-        data-folder-path={node.path}
-        onClick={() => {
-          window.dispatchEvent(
-            new CustomEvent("nexote:open-collection", { detail: node.path }),
-          );
-        }}
-        className="group flex w-full items-center gap-2.5 rounded-lg border border-border p-2 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
-        style={{ background: "var(--background)" }}
-      >
-        <span
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-          style={{ background: "color-mix(in oklab, var(--primary) 12%, transparent)", color: "var(--primary)" }}
-        >
-          <Disc3 className="h-4.5 w-4.5" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span
-            className="truncate"
-            style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}
-          >
-            {node.name}
-          </span>
-          <span
-            className="truncate"
-            style={{ fontSize: 11, color: "var(--muted-foreground)" }}
-          >
-            {itemCount > 0 ? `${itemCount} item${itemCount === 1 ? "" : "s"}` : "Empty collection"}
-          </span>
-        </span>
-        <ChevronRight
-          className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5"
-        />
-      </button>
     </li>
   );
 }
@@ -3472,110 +3364,6 @@ function CalendarView({
             })}
           </ul>
         </div>
-      )}
-    </div>
-  );
-}
-
-// --- Collections view ---
-// Lists every collection as a card with item count. Clicking a card dispatches
-// nexote:open-collection, which page.tsx / MobileApp.tsx handle by opening the
-// fullscreen CollectionGallery overlay.
-function CollectionsView({
-  collections,
-  collectionItemCounts,
-}: {
-  collections: CollectionMeta[];
-  collectionItemCounts: Record<string, number>;
-}) {
-  const { canEditSpace } = useCanEdit();
-  const sorted = collections
-    .filter((c) => !c.hidden)
-    .sort((a, b) => {
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  return (
-    <div className="pt-1">
-      {canEditSpace && (
-        <div className="mb-1.5 flex items-center justify-end px-1.5">
-          <button
-            type="button"
-            aria-label="New collection"
-            title="New collection"
-            onClick={() =>
-              window.dispatchEvent(
-                new CustomEvent("nexote:new-collection"),
-              )
-            }
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
-          >
-            <FilePlus size={15} />
-          </button>
-        </div>
-      )}
-      {sorted.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
-          <Disc3 size={20} style={{ color: "var(--muted-foreground)", opacity: 0.6 }} />
-          <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
-            {canEditSpace ? "No collections yet. Click + to create one." : "No collections yet."}
-          </div>
-        </div>
-      ) : (
-        <ul className="space-y-1 px-1.5">
-          {sorted.map((col) => {
-            const itemCount = collectionItemCounts[col.id] ?? 0;
-            return (
-              <li key={col.id}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("nexote:open-collection", {
-                        detail: col.name,
-                      }),
-                    )
-                  }
-                  className="group flex w-full items-center gap-2.5 rounded-lg border border-border p-2 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
-                  style={{ background: "var(--background)" }}
-                >
-                  <span
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                    style={{ background: "color-mix(in oklab, var(--primary) 12%, transparent)", color: "var(--primary)" }}
-                  >
-                    <Disc3 className="h-4.5 w-4.5" />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span
-                      className="truncate"
-                      style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}
-                    >
-                      {col.name}
-                    </span>
-                    <span
-                      className="truncate"
-                      style={{ fontSize: 11, color: "var(--muted-foreground)" }}
-                    >
-                      {itemCount > 0
-                        ? `${itemCount} item${itemCount === 1 ? "" : "s"}`
-                        : "Empty collection"}
-                    </span>
-                  </span>
-                  {col.pinned && (
-                    <Star
-                      className="h-3.5 w-3.5 shrink-0"
-                      style={{ color: "var(--primary)", fill: "var(--primary)" }}
-                    />
-                  )}
-                  <ChevronRight
-                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5"
-                  />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
       )}
     </div>
   );

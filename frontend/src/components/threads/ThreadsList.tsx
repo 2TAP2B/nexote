@@ -1,11 +1,11 @@
 "use client";
 
-import { Check, CircleCheck, MessagesSquare, Pin, Search, X } from "lucide-react";
+import { CircleCheck, MessagesSquare, Pin, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { commentLabel, lastActivity, openThread, replyLabel, threadPreview, threadTags, type Thread } from "@/lib/threads";
-import ContextMenu, { type MenuItem } from "../ContextMenu";
-import { MobileActionSheet, type SheetAction } from "../mobile/MobileActionSheet";
+import { ActionMenu, type MenuAnchor } from "../ActionMenu";
+import type { SheetAction } from "../mobile/MobileActionSheet";
 import { isPriorityLevel, PRIORITIES, PRIORITY_LEVELS, PriorityBadge, type PriorityLevel } from "./priority";
 import { threadMarkSections } from "./threadActions";
 import { useAllThreads } from "./useAllThreads";
@@ -29,24 +29,7 @@ function activityLabel(stamp: string): string {
 // newest activity.
 const rank = (t: Thread) => (t.pinned ? 0 : t.done ? 2 : 1);
 
-type Menu = { thread: Thread; x: number; y: number; via: MenuOpener };
-
-/** Sheet groups → one desktop menu: separators between groups, a check on the current choice. */
-function flattenSections(sections: SheetAction[][]): MenuItem[] {
-  return sections
-    .filter((s) => s.length > 0)
-    .flatMap((group, i) => [
-      ...(i > 0 ? [{ label: "", onClick: () => {}, separator: true }] : []),
-      ...group.map(
-        (a): MenuItem => ({
-          label: a.label,
-          icon: a.checked ? <Check size={14} /> : a.icon,
-          onClick: a.onClick,
-          danger: a.danger,
-        }),
-      ),
-    ]);
-}
+type Menu = { thread: Thread; at: MenuAnchor };
 
 /**
  * The Threads sidebar view: every thread (personal store and vaults) —
@@ -236,23 +219,21 @@ export default function ThreadsList({
             active={t.id === openThreadId}
             touch={touch}
             fs={fs}
-            onMenu={(at, via) => setMenu({ thread: t, ...at, via })}
+            onMenu={(at, via) => setMenu({ thread: t, at: { ...at, via } })}
           />
         ))}
       </ul>
 
       {/* Right-click with a mouse gets the desktop menu; a long press (or
           Android's touch contextmenu) the sheet. */}
-      {menu && !touch && menu.via === "contextmenu" ? (
-        <ContextMenu x={menu.x} y={menu.y} items={flattenSections(menuSections(menu.thread))} onClose={() => setMenu(null)} />
-      ) : (
-        menu && (
-          <MobileActionSheet
-            title={menu.thread.title || "Untitled thread"}
-            sections={menuSections(menu.thread)}
-            onClose={() => setMenu(null)}
-          />
-        )
+      {menu && (
+        <ActionMenu
+          at={menu.at}
+          touch={touch}
+          title={menu.thread.title || "Untitled thread"}
+          sections={menuSections(menu.thread)}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );

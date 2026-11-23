@@ -6,7 +6,7 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronRight,
-  Disc3,
+  Library,
   FilePlus,
   FileText,
   Hash,
@@ -17,13 +17,14 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
-import type { CollectionMeta } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
 import { isThreadMeta } from "@/lib/threads";
 import { useCanEdit } from "@/components/useCanEdit";
 import { useSharedTags } from "@/components/threads/useAllThreads";
-import CollectionFormDialog from "@/components/CollectionFormDialog";
-import CollectionGallery from "@/components/CollectionGallery";
+import { openCollection } from "@/components/collections/actions";
+import { CollectionBadge, ItemCover } from "@/components/collections/CollectionArt";
+import { useCollectionItems } from "@/components/collections/items";
+import { useCollections } from "@/components/collections/useCollections";
 
 type RecentEntry = {
   id: string;
@@ -91,18 +92,15 @@ export default function MobileDashboard({
     refreshTags,
     toggleTaskItem,
     settings,
-    listCollections,
-    activeSpaceId,
   } = useNotes();
   // Viewers of a shared space can't add notes.
   const { canEditSpace } = useCanEdit();
-  const [collections, setCollections] = useState<CollectionMeta[]>([]);
-  const [galleryCollection, setGalleryCollection] = useState<CollectionMeta | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-
-  useEffect(() => {
-    void listCollections().then(setCollections);
-  }, [listCollections, activeSpaceId]);
+  const { collections } = useCollections();
+  const collectionItems = useCollectionItems();
+  const pinnedCollections = useMemo(
+    () => collections.filter((c) => c.pinned && !c.hidden).sort((a, b) => a.name.localeCompare(b.name)),
+    [collections],
+  );
 
   useEffect(() => {
     if (vaults.length === 0) return;
@@ -261,22 +259,51 @@ export default function MobileDashboard({
       )}
 
       {/* Pinned collections */}
-      {settings.dashCollections && collections.filter((c) => c.pinned && !c.hidden).length > 0 && (
+      {settings.dashCollections && pinnedCollections.length > 0 && (
         <section className="flex flex-col gap-2">
-          <SectionHeading icon={<Disc3 size={16} />} title="Collections" />
+          <SectionHeading icon={<Library size={16} />} title="Collections" />
           <div className="grid grid-cols-2 gap-2">
-            {collections.filter((c) => c.pinned && !c.hidden).map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setGalleryCollection(c)}
-                className="flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-2xl transition-[transform,background] active:scale-[0.98]"
-                style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
-              >
-                <span style={{ color: "var(--mob-accent)" }}><Disc3 size={20} /></span>
-                <span className="text-xs font-medium">{c.name}</span>
-              </button>
-            ))}
+            {pinnedCollections.map((c) => {
+              const items = collectionItems.get(c.id) ?? [];
+              const covers = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => openCollection(c.id)}
+                  className="flex min-w-0 flex-col gap-2 rounded-2xl p-3 text-left transition-[transform,background] active:scale-[0.98]"
+                  style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <CollectionBadge collection={c} size={32} />
+                    {covers.length > 0 && (
+                      <span className="flex shrink-0 flex-row-reverse items-center">
+                        {covers.map((it, i) => (
+                          <span
+                            key={it.id}
+                            className="block"
+                            style={{
+                              marginLeft: i === covers.length - 1 ? 0 : -8,
+                              borderRadius: 6,
+                              boxShadow: "0 0 0 2px var(--mob-surface)",
+                              zIndex: covers.length - i,
+                            }}
+                          >
+                            <ItemCover cover={it.cover} collection={c} radius={6} iconSize={12} className="h-7 w-7" />
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm font-medium">{c.name}</span>
+                    <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
+                      {items.length === 1 ? "1 item" : `${items.length} items`}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
       )}
@@ -385,25 +412,6 @@ export default function MobileDashboard({
         </CollapsibleSection>
       )}
 
-      {galleryCollection && (
-        <CollectionGallery
-          open={Boolean(galleryCollection)}
-          collection={galleryCollection}
-          onClose={() => setGalleryCollection(null)}
-          onOpenNote={(vaultId, id) => void openNoteInVault(vaultId, id)}
-          onCollectionChanged={(c) => {
-            setGalleryCollection(c);
-            void listCollections().then(setCollections);
-          }}
-        />
-      )}
-      <CollectionFormDialog
-        open={formOpen}
-        onClose={() => setFormOpen(false)}
-        onSaved={() => {
-          void listCollections().then(setCollections);
-        }}
-      />
     </main>
   );
 }
