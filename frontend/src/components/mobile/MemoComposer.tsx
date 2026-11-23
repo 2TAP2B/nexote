@@ -1,8 +1,32 @@
 "use client";
 
-import { ArrowUp, Check, FileText, ImagePlus, Loader2, Maximize2, Mic, Minimize2, Pencil, Trash2, X } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  ArrowUp,
+  AtSign,
+  Bold,
+  Check,
+  Code2,
+  FileText,
+  Highlighter,
+  ImagePlus,
+  Italic,
+  List,
+  ListOrdered,
+  ListTodo,
+  Loader2,
+  Maximize2,
+  Mic,
+  Minimize2,
+  Pencil,
+  Quote,
+  Strikethrough,
+  Trash2,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
+import { applyTextEdit, continueList, toggleInline, toggleLinePrefix, type LineKind, type TextEdit } from "@/lib/markdown-edit";
 import type { NoteRef } from "./MemoBubble";
 
 export type Attachment = {
@@ -53,7 +77,9 @@ const formatElapsed = (ms: number) => {
 
 /**
  * The quick-capture composer: a chat-style bar (Enter posts) that can expand
- * to full screen for longer memos (Enter adds a line; Ctrl/⌘+Enter posts).
+ * to full screen for longer memos (Enter adds a line and continues a list;
+ * Ctrl/⌘+Enter posts), with a toolbar for images, voice, note links and
+ * Markdown (lib/markdown-edit.ts).
  * "@" suggests notes to link ([[Title]]); the image button or pasting attaches
  * images; the mic records a voice memo that is transcribed into the text. The
  * textarea keeps its place in the tree in both layouts, so switching doesn't
@@ -164,10 +190,98 @@ export function MemoComposer({
       if (e.detail === 0) action();
     },
   });
+  // The toolbar's version: the keyboard stays up the same way, but the
+  // action waits for the pointerup of a tap — the bar scrolls sideways, and
+  // a swipe along it (pointercancel or a longer move) must not format.
+  const toolPress = useRef<{ id: number; x: number; y: number } | null>(null);
+  const toolTap = (action: () => void) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      toolPress.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      const p = toolPress.current;
+      toolPress.current = null;
+      if (p && p.id === e.pointerId && Math.hypot(e.clientX - p.x, e.clientY - p.y) < 10) action();
+    },
+    onPointerCancel: () => {
+      toolPress.current = null;
+    },
+    onClick: (e: React.MouseEvent) => {
+      if (e.detail === 0) action();
+    },
+  });
   const setFullscreen = (next: boolean) => {
     onFullscreenChange(next);
     requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
   };
+
+  // A Markdown edit on the text (toolbar, list continuation), applied as one
+  // native insert over the changed span: the browser's undo keeps working
+  // and the input event reaches onChange like typing. Setting the value is
+  // the fallback where insertText isn't supported.
+  const applyEdit = (edit: TextEdit) => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(edit.from, edit.to);
+    const inserted = typeof document.execCommand === "function" && document.execCommand("insertText", false, edit.insert);
+    if (!inserted || el.value !== applyTextEdit(value, edit)) onChange(applyTextEdit(value, edit));
+    requestAnimationFrame(() => el.setSelectionRange(edit.selStart, edit.selEnd));
+  };
+  const runEdit = (make: (text: string, start: number, end: number) => TextEdit | null) => {
+    const el = inputRef.current;
+    if (!el) return;
+    const edit = make(el.value, el.selectionStart ?? el.value.length, el.selectionEnd ?? el.value.length);
+    if (edit) applyEdit(edit);
+  };
+  const applyEditRef = useRef(applyEdit);
+  applyEditRef.current = applyEdit;
+
+  // In full screen Enter adds a line: on a list or quote line the next one
+  // continues it (an empty item ends it). beforeinput, not keydown: phone
+  // keyboards don't always report Enter as a key.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el || !fullscreen) return;
+    const onBeforeInput = (e: InputEvent) => {
+      if (e.inputType !== "insertLineBreak" && e.inputType !== "insertParagraph") return;
+      const edit = continueList(el.value, el.selectionStart ?? 0, el.selectionEnd ?? 0);
+      if (!edit) return;
+      e.preventDefault();
+      // After this event: an editing command inside beforeinput may be refused.
+      queueMicrotask(() => applyEditRef.current(edit));
+    };
+    el.addEventListener("beforeinput", onBeforeInput);
+    return () => el.removeEventListener("beforeinput", onBeforeInput);
+  }, [fullscreen, inputRef]);
+
+  const inline = (marker: string) => () => runEdit((t, s, e) => toggleInline(t, s, e, marker));
+  const lines = (kind: LineKind) => () => runEdit((t, s, e) => toggleLinePrefix(t, s, e, kind));
+  // The full-screen toolbar: what memos and posts render (headings are left
+  // out — "###" lines are the Notepad's days and a thread's posts).
+  const formatGroups: { key: string; label: string; Icon: LucideIcon; run: () => void }[][] = [
+    [
+      { key: "bold", label: "Bold", Icon: Bold, run: inline("**") },
+      { key: "italic", label: "Italic", Icon: Italic, run: inline("_") },
+      { key: "strike", label: "Strikethrough", Icon: Strikethrough, run: inline("~~") },
+      { key: "highlight", label: "Highlight", Icon: Highlighter, run: inline("==") },
+      { key: "code", label: "Code", Icon: Code2, run: inline("`") },
+    ],
+    [
+      { key: "bullet", label: "Bullet list", Icon: List, run: lines("bullet") },
+      { key: "ordered", label: "Ordered list", Icon: ListOrdered, run: lines("ordered") },
+      { key: "task", label: "Task list", Icon: ListTodo, run: lines("task") },
+      { key: "quote", label: "Quote", Icon: Quote, run: lines("quote") },
+    ],
+  ];
+  // "@" opens the note suggestions; it needs a space (or the start) before it.
+  const insertMention = () =>
+    runEdit((t, s, e) => {
+      const insert = s > 0 && !/\s/.test(t[s - 1]) ? " @" : "@";
+      return { from: s, to: e, insert, selStart: s + insert.length, selEnd: s + insert.length };
+    });
 
   const sendLabel = editing && !composing ? labels.save : labels.send;
   const sendDisabled = !canSend || posting;
@@ -180,30 +294,6 @@ export function MemoComposer({
     <Check size={20} />
   ) : (
     <ArrowUp size={20} />
-  );
-  const imageButton = (
-    <button
-      type="button"
-      aria-label="Add images"
-      onClick={() => fileRef.current?.click()}
-      className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-      style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
-    >
-      <ImagePlus size={20} />
-    </button>
-  );
-  // Recording needs a real tap (onClick): browsers only grant the microphone
-  // from a user gesture.
-  const micButton = (
-    <button
-      type="button"
-      aria-label="Record a voice memo"
-      onClick={voice.onStart}
-      className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-      style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
-    >
-      <Mic size={20} />
-    </button>
   );
   const recordingVoice = voice.state === "recording";
   const voiceControls = (
@@ -510,20 +600,40 @@ export function MemoComposer({
       {fullscreen && attachmentStrip}
       {fullscreen && (
         <div
-          className="flex shrink-0 items-center gap-3 px-3 pt-2"
-          style={{
-            borderTop: "1px solid var(--mob-surface)",
-            paddingBottom: keyboardOpen ? 8 : "calc(env(safe-area-inset-bottom, 0px) + 10px)",
-          }}
+          className="flex shrink-0 items-center gap-2 px-2 pt-2"
+          style={{ paddingBottom: keyboardOpen ? 8 : "calc(env(safe-area-inset-bottom, 0px) + 10px)" }}
         >
           {voice.state === "idle" ? (
-            <>
-              {imageButton}
-              {micButton}
-              <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
-                @ links a note
-              </span>
-            </>
+            // The note editor's bar above the keyboard, for memos: images,
+            // voice, a note link, then Markdown. It scrolls sideways on
+            // narrow phones (touch-action: a swipe pans it, never formats).
+            <div
+              role="toolbar"
+              aria-label="Formatting"
+              className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-2xl px-1"
+              style={{ height: 48, background: "var(--mob-surface)", touchAction: "pan-x" }}
+            >
+              {/* A real click: the file picker and the microphone need one. */}
+              <ToolButton label="Add images" onClick={() => fileRef.current?.click()}>
+                <ImagePlus size={20} />
+              </ToolButton>
+              <ToolButton label="Record a voice memo" onClick={voice.onStart}>
+                <Mic size={20} />
+              </ToolButton>
+              <ToolButton label="Link to note (@)" handlers={toolTap(insertMention)}>
+                <AtSign size={20} />
+              </ToolButton>
+              {formatGroups.map((group) => (
+                <Fragment key={group[0].key}>
+                  <ToolDivider />
+                  {group.map(({ key, label, Icon, run }) => (
+                    <ToolButton key={key} label={label} handlers={toolTap(run)}>
+                      <Icon size={20} />
+                    </ToolButton>
+                  ))}
+                </Fragment>
+              ))}
+            </div>
           ) : (
             <div className="flex min-w-0 flex-1 items-center gap-2">{voiceControls}</div>
           )}
@@ -531,6 +641,37 @@ export function MemoComposer({
       )}
     </div>
   );
+}
+
+// A button of the full-screen toolbar (on the bar's surface, no own fill).
+function ToolButton({
+  label,
+  onClick,
+  handlers,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  handlers?: Record<string, unknown>;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      {...handlers}
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+      style={{ color: "var(--mob-text)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolDivider() {
+  return <span aria-hidden className="mx-1 h-5 w-px shrink-0" style={{ background: "color-mix(in srgb, var(--mob-muted) 60%, transparent)" }} />;
 }
 
 // An icon button inside the composer pill (no background of its own).

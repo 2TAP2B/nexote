@@ -32,7 +32,7 @@ Changing the location moves the existing Notepad. When it lives in a vault, **Sh
 ## Writing memos
 
 - Type in the composer and press Enter or the send button to post.
-- The expand button opens a full-screen composer for longer memos. There, Enter starts a new line and Ctrl/Cmd+Enter (or Post) sends.
+- The expand button opens a full-screen composer for longer memos. There, Enter starts a new line and Ctrl/Cmd+Enter (or Post) sends. A toolbar along the bottom (above the keyboard on phones) adds images, records a voice memo, starts a note link (`@`) and formats Markdown: bold, italic, strikethrough, highlight, code, bullet, numbered and task lists, and quotes. The format buttons wrap the selection (or the word under the cursor) and take the formatting away when it's already there. On a list or quote line, Enter continues it; Enter on an empty item ends the list. Thread replies use the same full-screen composer.
 - The image button adds one or more images; pasting images works too. Images are uploaded right away into the Notepad's folder, and removing an image before sending deletes the file again. Tapping an image in a bubble shows it full screen.
 - Typing `@` suggests up to six notes and inserts a `[[Title]]` link. In the bubble the link shows as an `@Title` chip; tapping it opens the note.
 
