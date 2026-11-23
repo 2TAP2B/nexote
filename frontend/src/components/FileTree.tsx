@@ -6,7 +6,6 @@ import {
   Ban,
   Bookmark,
   BookmarkCheck,
-  CalendarDays,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -83,9 +82,9 @@ function clampPopTop(y: number, h: number): number {
 }
 
 import ContextMenu, { type MenuItem } from "./ContextMenu";
+import DailyNotesView from "./DailyNotesView";
 import DeleteConfirm from "./DeleteConfirm";
 import FolderCreateDialog from "./FolderCreateDialog";
-import JournalCalendar from "./JournalCalendar";
 import { useCanEdit } from "./useCanEdit";
 
 type TreeNote = {
@@ -1246,9 +1245,10 @@ export default function FileTree({
               shortcuts={shortcuts}
             />
           ) : view === "journal" ? (
-            <CalendarView
+            <DailyNotesView
               journalNotes={journalNotes}
               activeId={activeId}
+              touch={touch}
               onOpenNote={(id) => {
                 sectionOpenRef.current = true;
                 setActiveSource("journal");
@@ -3266,104 +3266,6 @@ function TasksView({
             </div>
           )}
         </>
-      )}
-    </div>
-  );
-}
-
-// --- Calendar / Journal view ---
-// The shared JournalCalendar (same as the dashboard): days with a journal
-// note show a dot and open it, any other day (past, today or future) creates
-// its note. Below it, a compact list of the displayed month's notes.
-function CalendarView({
-  journalNotes,
-  activeId,
-  onOpenNote,
-  onOpenDaily,
-}: {
-  journalNotes: { id: string; title: string; updatedAt: string }[];
-  activeId: string | null;
-  onOpenNote: (id: string) => void;
-  onOpenDaily: (date?: string) => void;
-}) {
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() };
-  });
-  const onMonthChange = useCallback((year: number, month: number) => setCursor({ year, month }), []);
-
-  const monthNotes = useMemo(
-    () =>
-      journalNotes
-        .filter((n) => n.title.startsWith(`${cursor.year}-${String(cursor.month + 1).padStart(2, "0")}`))
-        .sort((a, b) => b.title.localeCompare(a.title)),
-    [journalNotes, cursor],
-  );
-
-  return (
-    <div className="px-1.5 pt-1">
-      <JournalCalendar
-        onOpenJournal={onOpenNote}
-        onOpenDay={(date) => onOpenDaily(date)}
-        onMonthChange={onMonthChange}
-      />
-
-      {/* Today button */}
-      <div className="mt-1.5 px-2">
-        <button
-          type="button"
-          onClick={() => onOpenDaily()}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-1.5 transition-colors hover:bg-muted/50"
-          style={{ fontSize: 12, fontWeight: 500, color: "var(--foreground)" }}
-        >
-          <CalendarDays size={13} style={{ color: "var(--primary)" }} />
-          Open today&apos;s note
-        </button>
-      </div>
-
-      {/* Month's notes list */}
-      {monthNotes.length > 0 && (
-        <div className="mt-2">
-          <div
-            className="px-3 pb-1 pt-1.5"
-            style={{ fontSize: 11, fontWeight: 500, color: "var(--muted-foreground)" }}
-          >
-            {monthNotes.length} note{monthNotes.length === 1 ? "" : "s"} this month
-          </div>
-          <ul>
-            {monthNotes.map((n) => {
-              const isActive = n.id === activeId;
-              return (
-                <li key={n.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenNote(n.id)}
-                    className="group flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors hover:bg-white/5"
-                    style={{
-                      background: isActive ? "rgba(255,255,255,0.10)" : undefined,
-                    }}
-                  >
-                    <CalendarDays
-                      size={13}
-                      className="shrink-0"
-                      style={{ color: isActive ? "var(--primary)" : "var(--muted-foreground)", opacity: 0.7 }}
-                    />
-                    <span
-                      className="truncate"
-                      style={{
-                        fontSize: 13,
-                        fontWeight: isActive ? 600 : 400,
-                        color: isActive ? "var(--primary)" : "var(--foreground)",
-                      }}
-                    >
-                      {n.title}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
       )}
     </div>
   );

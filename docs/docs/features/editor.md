@@ -153,6 +153,8 @@ History is kept indefinitely; there is no retention limit yet.
 
 Each account has a personal journal with one note per day, titled `YYYY-MM-DD`. Open today's note with Ctrl/Cmd+D, the dashboard's **Today's journal** action or **Daily notes** in the ribbon. A calendar on the desktop dashboard and in the Daily notes view marks days that have a note; clicking another day creates its note.
 
+Below the calendar, the Daily notes view lists the entries of the month shown, newest first. Each entry has a date tile (weekday and day; today's is filled), "Today", "Yesterday" or the weekday for the last week and the date for older days, and the first two lines of what you wrote. While today has no entry yet, the current month's list starts with **Write today's entry**.
+
 ## Note tree
 
 The sidebar lists the vaults of the active space with their folders and notes. Folders come first (A–Z) and show how many notes they hold, subfolders included; thin guide lines show what belongs to an open folder.
