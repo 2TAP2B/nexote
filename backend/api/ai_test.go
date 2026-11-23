@@ -11,13 +11,15 @@ import (
 	"testing"
 )
 
-// transcribeRequest builds the multipart request the quick-notes recorder sends.
-func transcribeRequest(t *testing.T, baseURL string, audio []byte) *http.Request {
+// transcribeRequest builds the multipart request the quick-notes recorder
+// sends; extra adds fields such as the language.
+func transcribeRequest(t *testing.T, baseURL string, audio []byte, extra ...[2]string) *http.Request {
 	t.Helper()
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	for k, v := range map[string]string{"baseUrl": baseURL, "apiKey": "sk-test", "model": "whisper-1"} {
-		if err := mw.WriteField(k, v); err != nil {
+	fields := [][2]string{{"baseUrl", baseURL}, {"apiKey", "sk-test"}, {"model", "whisper-1"}}
+	for _, f := range append(fields, extra...) {
+		if err := mw.WriteField(f[0], f[1]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -99,5 +101,40 @@ func TestAITranscribeReportsUpstreamError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Incorrect API key provided") {
 		t.Errorf("body %s lacks the upstream message", rec.Body.String())
+	}
+}
+
+func TestAITranscribeSendsTheLanguageOnlyWhenSet(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		extra [][2]string
+		want  []string // the upstream's language values; nil = no field
+	}{
+		{"set", [][2]string{{"language", " de "}}, []string{"de"}},
+		// An empty field is an invalid code to some servers: leave it out so
+		// the model detects the language.
+		{"empty", [][2]string{{"language", ""}}, nil},
+		{"absent", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Fatalf("upstream got a bad multipart body: %v", err)
+				}
+				got = r.MultipartForm.Value["language"]
+				_, _ = w.Write([]byte(`{"text":"Hallo"}`))
+			}))
+			defer upstream.Close()
+
+			rec := httptest.NewRecorder()
+			(&Handler{}).aiTranscribe(rec, transcribeRequest(t, upstream.URL, []byte("x"), tc.extra...))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+			}
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") || (got == nil) != (tc.want == nil) {
+				t.Errorf("upstream language = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

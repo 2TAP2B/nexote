@@ -28,6 +28,12 @@ export async function toWav16k(audio: Blob): Promise<Blob | null> {
   }
 }
 
+/** A short silent clip in the same format: enough to test a speech-to-text endpoint. */
+export function silentWav16k(ms = 1000): Blob {
+  const frames = Math.round((SAMPLE_RATE * ms) / 1000);
+  return new Blob([wavHeader(frames), new ArrayBuffer(frames * 2)], { type: "audio/wav" });
+}
+
 function floatTo16(samples: Float32Array): ArrayBuffer {
   const out = new DataView(new ArrayBuffer(samples.length * 2));
   for (let i = 0; i < samples.length; i++) {

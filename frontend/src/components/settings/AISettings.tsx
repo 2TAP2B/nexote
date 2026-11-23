@@ -2,31 +2,25 @@
 
 import { useState } from "react";
 
+import { transcriptionConfig } from "@/lib/ai";
 import { api } from "@/lib/api";
+import { silentWav16k } from "@/lib/audio-wav";
 import type { AppSettings } from "@/lib/notes-context";
 import { useNotes } from "@/lib/notes-context";
-import {
-  Button,
-  errorText,
-  SettingGroup,
-  SettingItem,
-  SettingsPage,
-  StatusText,
-  TextSetting,
-  useIsMobileSettings,
-  type Status,
-} from "./ui";
+import { Button, errorText, SettingGroup, SettingItem, SettingsPage, StatusText, TextSetting, type Status } from "./ui";
 
 export function AISettings() {
   const { settings, updateSettings } = useNotes();
-  // Voice memos only exist in the mobile app (quick notes).
-  const mobile = useIsMobileSettings();
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
+  const [voiceTesting, setVoiceTesting] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<Status | null>(null);
+  const voice = transcriptionConfig(settings);
 
   // A result is only meaningful for the values it was produced with.
   const update = (patch: Partial<AppSettings>) => {
     setStatus(null);
+    setVoiceStatus(null);
     updateSettings(patch);
   };
 
@@ -48,6 +42,22 @@ export function AISettings() {
       setStatus({ tone: "error", text: errorText(err, "Connection failed.") });
     }
     setTesting(false);
+  };
+
+  // A real transcription request with a second of silence: it checks the
+  // address (as the Nexote server sees it), the key and the model at once.
+  // A server that unloads idle models may take a few seconds to answer.
+  const testVoice = async () => {
+    if (!voice) return;
+    setVoiceTesting(true);
+    setVoiceStatus(null);
+    try {
+      await api.transcribeAudio(voice, silentWav16k(), "voice-memo.wav");
+      setVoiceStatus({ tone: "ok", text: "Transcription works." });
+    } catch (err) {
+      setVoiceStatus({ tone: "error", text: errorText(err, "Transcription failed.") });
+    }
+    setVoiceTesting(false);
   };
 
   return (
@@ -91,21 +101,52 @@ export function AISettings() {
         </SettingItem>
       </SettingGroup>
 
-      {mobile && (
-        <SettingGroup
-          heading="Voice memos"
-          description="Quick notes turn recorded speech into text with this endpoint. It needs to support /v1/audio/transcriptions, as OpenAI, Groq and LocalAI do."
+      <SettingGroup
+        heading="Voice memos"
+        description="Recordings in quick notes and threads become text through an endpoint with /v1/audio/transcriptions: OpenAI, Groq, or a speech-to-text server of your own such as speaches or whisper.cpp."
+      >
+        <TextSetting
+          name="Base URL"
+          description="Empty: the connection above. The Nexote server connects to this address — when it runs in Docker, use the machine's LAN or Tailscale address, not 127.0.0.1."
+          technical
+          value={settings.aiTranscribeBaseUrl}
+          onChange={(v) => update({ aiTranscribeBaseUrl: v })}
+          placeholder={settings.aiBaseUrl.trim() || "http://192.168.1.20:8000/v1"}
+        />
+        <TextSetting
+          name="API key"
+          description="Only sent to this base URL. With the base URL empty, the connection's key is used."
+          type="password"
+          technical
+          value={settings.aiTranscribeApiKey}
+          onChange={(v) => update({ aiTranscribeApiKey: v })}
+          placeholder="Key of the speech-to-text server"
+        />
+        <TextSetting
+          name="Transcription model"
+          description="For example whisper-1 (OpenAI), whisper-large-v3 (Groq) or Systran/faster-whisper-small (speaches)."
+          technical
+          value={settings.aiTranscribeModel}
+          onChange={(v) => update({ aiTranscribeModel: v })}
+          placeholder="whisper-1"
+        />
+        <TextSetting
+          name="Language"
+          description="What you speak, as a two-letter code such as de or en. Empty: the model guesses, which is less reliable for short memos."
+          technical
+          value={settings.aiTranscribeLanguage}
+          onChange={(v) => update({ aiTranscribeLanguage: v })}
+          placeholder="auto"
+        />
+        <SettingItem
+          name="Test transcription"
+          description={voiceStatus ? <StatusText status={voiceStatus} /> : "Send a second of silence with these settings."}
         >
-          <TextSetting
-            name="Transcription model"
-            description="For example whisper-1 (OpenAI) or whisper-large-v3 (Groq)."
-            technical
-            value={settings.aiTranscribeModel}
-            onChange={(v) => update({ aiTranscribeModel: v })}
-            placeholder="whisper-1"
-          />
-        </SettingGroup>
-      )}
+          <Button onClick={() => void testVoice()} disabled={voiceTesting || !voice}>
+            {voiceTesting ? "Testing…" : "Test"}
+          </Button>
+        </SettingItem>
+      </SettingGroup>
     </SettingsPage>
   );
 }

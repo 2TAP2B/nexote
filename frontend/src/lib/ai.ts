@@ -6,6 +6,34 @@ export type AIConfig = {
   model: string;
 };
 
+/** Where voice memos are transcribed, with the spoken language ("" = detect). */
+export type TranscriptionConfig = AIConfig & { language: string };
+
+/**
+ * The speech-to-text endpoint of voice memos: a server of their own when
+ * one is set (speaches, whisper.cpp, …), else the AI connection. A server of
+ * its own gets its own key (maybe none), never the AI connection's. Null
+ * while neither is set up.
+ */
+export function transcriptionConfig(s: {
+  aiBaseUrl: string;
+  aiApiKey: string;
+  aiTranscribeBaseUrl: string;
+  aiTranscribeApiKey: string;
+  aiTranscribeModel: string;
+  aiTranscribeLanguage: string;
+}): TranscriptionConfig | null {
+  const own = s.aiTranscribeBaseUrl.trim();
+  const baseUrl = own || s.aiBaseUrl.trim();
+  if (!baseUrl) return null;
+  return {
+    baseUrl,
+    apiKey: own ? s.aiTranscribeApiKey.trim() : s.aiApiKey,
+    model: s.aiTranscribeModel.trim() || "whisper-1",
+    language: s.aiTranscribeLanguage.trim().toLowerCase(),
+  };
+}
+
 const TITLE_SYSTEM_PROMPT = `You are an assistant that names markdown notes.
 
 Rules:

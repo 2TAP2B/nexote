@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { transcriptionConfig } from "@/lib/ai";
 import { api } from "@/lib/api";
 import { toWav16k } from "@/lib/audio-wav";
 import { cacheImage } from "@/lib/image-cache";
@@ -11,15 +12,17 @@ import type { Attachment, VoiceState } from "../mobile/MemoComposer";
 import { useVoiceRecorder, VoiceError, type VoiceClip } from "../mobile/useVoiceRecorder";
 
 // The draft behind a MemoComposer, shared by quick notes and thread replies:
-// the text, images uploaded as soon as they're attached, voice memos the AI
-// endpoint transcribes into the text, and the memo being edited. The host
-// decides where images are uploaded (`ensureTarget`) and how a memo is saved
-// (`submit`'s callback).
+// the text, images uploaded as soon as they're attached, voice memos the
+// speech-to-text endpoint transcribes into the text (lib/ai.ts
+// transcriptionConfig), and the memo being edited. The host decides where
+// images are uploaded (`ensureTarget`) and how a memo is saved (`submit`'s
+// callback).
 
 /** The note images are uploaded to. */
 export type MemoTarget = { vaultId: string; id: string };
 
 const MAX_RECORDING_MS = 10 * 60_000;
+const NO_ENDPOINT = "Voice memos need a speech-to-text endpoint: set one up in Settings › AI on this device.";
 
 export const errorText = (err: unknown, fallback: string) =>
   err instanceof Error && err.message ? err.message : fallback;
@@ -194,9 +197,16 @@ export function useMemoDraft<E extends { text: string }>({
     reset();
   };
 
-  // Voice memos: record, then the AI endpoint transcribes the clip and the
-  // text lands in the composer to check before posting.
+  // Voice memos: record, then the speech-to-text endpoint (its own server or
+  // the AI connection) transcribes the clip and the text lands in the
+  // composer to check before posting.
   const transcribe = async (clip: VoiceClip) => {
+    const endpoint = transcriptionConfig(settings);
+    if (!endpoint) {
+      setFailedClip(clip);
+      setError(NO_ENDPOINT);
+      return;
+    }
     setTranscribing(true);
     setError(null);
     setFailedClip(null);
@@ -208,16 +218,7 @@ export function useMemoDraft<E extends { text: string }>({
       const wav = await toWav16k(clip.blob);
       if (abort.signal.aborted) return;
       const text = (
-        await api.transcribeAudio(
-          {
-            baseUrl: settings.aiBaseUrl,
-            apiKey: settings.aiApiKey,
-            model: settings.aiTranscribeModel.trim() || "whisper-1",
-          },
-          wav ?? clip.blob,
-          wav ? "voice-memo.wav" : clip.fileName,
-          abort.signal,
-        )
+        await api.transcribeAudio(endpoint, wav ?? clip.blob, wav ? "voice-memo.wav" : clip.fileName, abort.signal)
       ).trim();
       if (!text) {
         setError("No speech was recognized.");
@@ -238,8 +239,8 @@ export function useMemoDraft<E extends { text: string }>({
   const startVoice = async () => {
     setError(null);
     setFailedClip(null);
-    if (!settings.aiBaseUrl.trim()) {
-      setError("Voice memos are transcribed by your AI endpoint: set it up in Settings › AI on this device.");
+    if (!transcriptionConfig(settings)) {
+      setError(NO_ENDPOINT);
       return;
     }
     try {

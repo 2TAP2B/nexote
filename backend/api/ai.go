@@ -221,7 +221,8 @@ var quoteEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 // aiTranscribe turns a recorded voice memo into text through the configured
 // OpenAI-compatible speech-to-text endpoint (POST /v1/audio/transcriptions,
 // served by OpenAI, Groq, LocalAI, speaches, …). Multipart fields: file,
-// baseUrl, apiKey, model. Responds {"text": "..."}.
+// baseUrl, apiKey, model and an optional language (ISO-639-1, e.g. "de";
+// absent lets the model detect it). Responds {"text": "..."}.
 func (h *Handler) aiTranscribe(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAudioBytes+(1<<20))
 	if err := r.ParseMultipartForm(8 << 20); err != nil {
@@ -235,6 +236,11 @@ func (h *Handler) aiTranscribe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("baseUrl and model are required"))
 		return
 	}
+	language := strings.TrimSpace(r.FormValue("language"))
+	if len(language) > 16 {
+		writeError(w, http.StatusBadRequest, errors.New("language must be a language code such as de or en"))
+		return
+	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("missing file: %w", err))
@@ -246,7 +252,12 @@ func (h *Handler) aiTranscribe(w http.ResponseWriter, r *http.Request) {
 	// audio format from its extension.
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
-	if err := mw.WriteField("model", model); err != nil {
+	err = mw.WriteField("model", model)
+	// Only when set: an empty language field is an invalid code to some servers.
+	if err == nil && language != "" {
+		err = mw.WriteField("language", language)
+	}
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -293,7 +304,7 @@ func (h *Handler) aiTranscribe(w http.ResponseWriter, r *http.Request) {
 		// (no audio encoder / mmproj); the "model" field doesn't switch models
 		// on a single-model server.
 		if strings.Contains(strings.ToLower(msg), "does not support audio") {
-			msg += " The model loaded on your AI server can't take audio: load one with audio input (llama.cpp: with its mmproj file), or set Settings › AI › Transcription model to such a model if your server switches models by name."
+			msg += " The model loaded on your AI server can't take audio: load one with audio input (llama.cpp: with its mmproj file), give voice memos a speech-to-text server of their own in Settings › AI › Voice memos (speaches, whisper.cpp), or set the transcription model to an audio model if your server switches models by name."
 		}
 		writeError(w, http.StatusBadGateway, fmt.Errorf("transcription failed (%s): %s", resp.Status, msg))
 		return

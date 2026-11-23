@@ -43,6 +43,13 @@ export type AppSettings = {
   aiModel: string;
   // Speech-to-text model for quick-notes voice memos (/v1/audio/transcriptions).
   aiTranscribeModel: string;
+  // Voice memos may go to a speech-to-text server of their own (speaches,
+  // whisper.cpp, Groq…); "" = the AI connection above. The key belongs to
+  // that server and is only sent there (lib/ai.ts transcriptionConfig).
+  aiTranscribeBaseUrl: string;
+  aiTranscribeApiKey: string;
+  // Spoken language as an ISO-639-1 code ("de"); "" lets the model detect it.
+  aiTranscribeLanguage: string;
   // General — start-up behaviour
   openDashboardOnStart: boolean;
   startVaultId: string; // "" = last active vault
@@ -97,6 +104,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   aiApiKey: "",
   aiModel: "",
   aiTranscribeModel: "whisper-1",
+  aiTranscribeBaseUrl: "",
+  aiTranscribeApiKey: "",
+  aiTranscribeLanguage: "",
   openDashboardOnStart: false,
   startVaultId: "",
   editorFontFamily: "",

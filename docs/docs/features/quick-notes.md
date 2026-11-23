@@ -70,10 +70,10 @@ Images stay in the Notepad's folder; the new note links to them there.
 
 ## Voice memos
 
-While the composer is empty, a microphone button takes the place of the send button. Record, then tap the check mark to stop. The recording is sent to your AI endpoint for transcription, and the text lands in the composer so you can correct it before posting. The audio itself is not stored, only the text.
+While the composer is empty, a microphone button takes the place of the send button. Record, then tap the check mark to stop. The recording is sent to your speech-to-text endpoint, and the text lands in the composer so you can correct it before posting. The audio itself is not stored, only the text.
 
-- Requires an AI connection in **Settings › AI** on that device. The endpoint must offer `/v1/audio/transcriptions` (OpenAI and compatible services, including llama.cpp with an audio model). Recordings are sent as WAV. See [AI](./ai#voice-memos).
-- The model is set in **Settings › AI › Voice memos › Transcription model** (default `whisper-1`).
+- Requires a speech-to-text endpoint in **Settings › AI › Voice memos** on that device: a server of its own (speaches, whisper.cpp, Groq…) or, with that left empty, the AI connection. It must offer `/v1/audio/transcriptions`. Recordings are sent as WAV. See [AI](./ai#voice-memos).
+- The model (default `whisper-1`) and the spoken language (for example `de`; empty = detect) are set there too; **Test transcription** checks the settings.
 - Browsers only allow microphone access on https origins or `localhost`. Over plain http the button explains this instead of recording.
 - A recording stops automatically after 10 minutes. The server accepts audio files up to 25 MB.
 - If the transcription fails, the recording is kept so you can retry or discard it.

@@ -594,9 +594,9 @@ export const api = {
     }),
   // Speech-to-text for voice memos: the backend forwards the clip to the
   // endpoint's /v1/audio/transcriptions. The file name's extension tells the
-  // API the audio format.
+  // API the audio format. No language: the model detects it.
   transcribeAudio: async (
-    config: { baseUrl: string; apiKey: string; model: string },
+    config: { baseUrl: string; apiKey: string; model: string; language?: string },
     audio: Blob,
     fileName: string,
     signal?: AbortSignal,
@@ -606,6 +606,7 @@ export const api = {
     form.append("baseUrl", config.baseUrl);
     form.append("apiKey", config.apiKey);
     form.append("model", config.model);
+    if (config.language) form.append("language", config.language);
     const res = await fetch("/api/ai/transcribe", { method: "POST", body: form, signal });
     if (!res.ok) throw await failure(res, "/api/ai/transcribe");
     const data: unknown = await res.json();

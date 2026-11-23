@@ -44,6 +44,17 @@ The answer streams in as it is generated.
 
 ## Voice memos
 
-In [Quick notes](./quick-notes#voice-memos), recordings are transcribed through `/api/ai/transcribe`, which sends the audio to the service's `/v1/audio/transcriptions` endpoint. The model is set in **Settings › AI › Voice memos › Transcription model** (default `whisper-1`). The browser converts each recording to 16 kHz mono WAV before sending it, a format every compatible service reads. Audio files can be up to 25 MB; only the text is kept.
+In [Quick notes](./quick-notes#voice-memos) and thread replies, recordings are transcribed through `/api/ai/transcribe`, which sends the audio to an endpoint's `/v1/audio/transcriptions`. The browser converts each recording to 16 kHz mono WAV before sending it, a format every compatible service reads. Audio files can be up to 25 MB; only the text is kept.
 
-With **llama.cpp** (`llama-server`), the model the server has loaded must accept audio: start it with an audio-capable model and its `mmproj` file. A single-model server ignores the model name Nexote sends; with llama-swap or router mode, set the transcription model to the name your server lists. Otherwise the server answers "The current model does not support audio input".
+**Settings › AI › Voice memos** sets where they go:
+
+| Setting | Meaning |
+| --- | --- |
+| Base URL | A speech-to-text server of their own, for example [speaches](https://speaches.ai/) or whisper.cpp. Empty: the connection above. |
+| API key | The key of that server, sent only to it. With the base URL empty, the connection's key is used. |
+| Transcription model | Default `whisper-1`; for example `whisper-large-v3` on Groq or `Systran/faster-whisper-small` on speaches. |
+| Language | The spoken language as a two-letter code (`de`, `en`). Empty lets the model detect it, which is less reliable for short memos. |
+
+**Test transcription** sends a second of silence with these settings and reports whether the server answered. Like every AI request, transcription goes from the Nexote server, not from the browser: the base URL must be reachable from there. When Nexote runs in Docker, `127.0.0.1` is the container itself; use the speech server's LAN or Tailscale address instead, for example `http://192.168.1.20:8000/v1`.
+
+With **llama.cpp** (`llama-server`) as the endpoint, the model the server has loaded must accept audio: start it with an audio-capable model and its `mmproj` file. A single-model server ignores the model name Nexote sends; with llama-swap or router mode, set the transcription model to the name your server lists. Otherwise the server answers "The current model does not support audio input" — or point voice memos at a speech-to-text server of their own.

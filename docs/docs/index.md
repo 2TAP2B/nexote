@@ -27,7 +27,7 @@ features:
     details: A touch-first interface with swipeable panes, bottom sheets, a scroll-hiding toolbar and haptic feedback, picked automatically per device.
     link: /features/mobile-app
   - title: Quick notes
-    details: A messenger-style Notepad for short memos, with images, note links and voice memos transcribed by your AI endpoint.
+    details: A messenger-style Notepad for short memos, with images, note links and voice memos transcribed by a speech-to-text server or your AI endpoint.
     link: /features/quick-notes
   - title: Collections
     details: Typed sets of notes with custom fields, shown as a cover gallery. Books and records can be looked up by ISBN or on Discogs.
