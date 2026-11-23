@@ -14,11 +14,12 @@ import {
   LayoutGrid,
   ListTodo,
   Search,
+  SlidersHorizontal,
   Star,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
+import { DASH_SECTIONS, dashLayout, type DashSection } from "@/lib/dashboard";
 import { useNotes } from "@/lib/notes-context";
 import { isThreadMeta } from "@/lib/threads";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -177,92 +178,142 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
   const [tagsOpen, toggleTags] = useSectionState("tags", true);
   const [keysOpen, toggleKeys] = useSectionState("hotkeys", false);
 
-  const visibleRecents = recents.slice(0, recentsExpanded ? 12 : 6);
+  const layout = dashLayout(settings.dashboardDesktop, "desktop").filter((s) => s.shown);
+  const main = layout.filter((s) => DASH_SECTIONS[s.id].column === "main");
+  const side = layout.filter((s) => DASH_SECTIONS[s.id].column === "side");
 
-  return (
-    <main className="flex flex-1 justify-center overflow-y-auto bg-background">
-      <div className="flex w-full max-w-6xl flex-col gap-8 px-6 py-8 md:px-10 md:py-12">
-        {/* Header: greeting, stats, search */}
-        <header className="flex flex-col gap-5">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
-                {now ? now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "\u00a0"}
-              </p>
-              <h1 className="text-3xl font-semibold tracking-tight text-foreground">
-                {now ? greeting(now.getHours()) : "Welcome"}
-              </h1>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Stat label="Notes" value={vaultEntries.length} onClick={() => selectView("tree")} />
-              <Stat label="Journal" value={journalNotes.length} onClick={() => selectView("journal")} />
-              <Stat label="Tags" value={allTags.length} onClick={() => selectView("tags")} />
-              <Stat label="Open tasks" value={openTasks.length} onClick={() => selectView("tasks")} />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={openPalette}
-            className="group flex h-12 w-full items-center gap-3 rounded-xl border border-border bg-muted/60 px-4 text-left text-sm text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:bg-muted"
-          >
-            <Search className="h-4 w-4 transition-colors group-hover:text-primary" />
-            <span className="flex-1">Search notes, run commands…</span>
-            <Kbd>Ctrl P</Kbd>
-          </button>
-          {settings.dashActions && (
-          <div className={canEditSpace ? "grid grid-cols-1 gap-3 sm:grid-cols-3" : "grid grid-cols-1 gap-3"}>
-            {canEditSpace && (
-              <QuickAction icon={<FilePlus className="h-4 w-4" />} label="New note" hint="Ctrl Shift N" onClick={() => void create()} />
-            )}
-            <QuickAction icon={<CalendarDays className="h-4 w-4" />} label="Today's journal" hint="Ctrl D" onClick={() => void openDaily()} />
-            {canEditSpace && (
-              <QuickAction icon={<LayoutGrid className="h-4 w-4" />} label="New collection" onClick={newCollection} />
-            )}
-          </div>
-          )}
-        </header>
+  // Compact recents are one-line rows, so they show more of them.
+  const recentsCompact = layout.some((s) => s.id === "recents" && s.compact);
+  const recentsStep = recentsCompact ? 8 : 6;
+  const visibleRecents = recents.slice(0, recentsExpanded ? recentsStep * 2 : recentsStep);
+  const recentsMore = recents.length > recentsStep;
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          {/* Main column */}
-          <div className="flex min-w-0 flex-col gap-8 lg:col-span-2">
-            {settings.dashRecents && (
-            <section className="flex flex-col gap-3">
-              <SectionHeader
-                icon={<History className="h-4 w-4" />}
-                title="Recently edited"
-                action={recents.length > 6 ? (
-                  <button type="button" onClick={toggleRecentsExpanded} className="text-xs font-medium text-primary hover:underline">
-                    {recentsExpanded ? "Show less" : "Show more"}
-                  </button>
-                ) : null}
-              />
-              {visibleRecents.length > 0 ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {visibleRecents.map((entry) => (
-                    <NoteCard
+  const tagClick = (name: string) => window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: name }));
+
+  const renderSection = ({ id, compact }: DashSection): React.ReactNode => {
+    switch (id) {
+      case "actions": {
+        const actions = [
+          canEditSpace && { key: "note", icon: FilePlus, label: "New note", hint: "Ctrl Shift N", onClick: () => void create() },
+          { key: "journal", icon: CalendarDays, label: "Today's journal", hint: "Ctrl D", onClick: () => void openDaily() },
+          canEditSpace && { key: "collection", icon: LayoutGrid, label: "New collection", hint: undefined, onClick: newCollection },
+        ].filter((a) => a !== false);
+        if (compact) {
+          return (
+            <div key={id} className="flex flex-wrap gap-2">
+              {actions.map(({ key, icon: Icon, label, onClick }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={onClick}
+                  className="flex h-9 items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-muted"
+                >
+                  <Icon size={14} className="text-primary" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          );
+        }
+        return (
+          <div key={id} className={canEditSpace ? "grid grid-cols-1 gap-3 sm:grid-cols-3" : "grid grid-cols-1 gap-3"}>
+            {actions.map(({ key, icon: Icon, label, hint, onClick }) => (
+              <QuickAction key={key} icon={<Icon className="h-4 w-4" />} label={label} hint={hint} onClick={onClick} />
+            ))}
+          </div>
+        );
+      }
+
+      case "recents":
+        return (
+          <section key={id} className="flex flex-col gap-3">
+            <SectionHeader
+              icon={<History className="h-4 w-4" />}
+              title="Recently edited"
+              action={recentsMore ? (
+                <button type="button" onClick={toggleRecentsExpanded} className="text-xs font-medium text-primary hover:underline">
+                  {recentsExpanded ? "Show less" : "Show more"}
+                </button>
+              ) : null}
+            />
+            {visibleRecents.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border px-6 py-12 text-center">
+                <FileText className="h-6 w-6 text-muted-foreground" />
+                <p className="text-sm font-medium text-foreground">No notes yet</p>
+                <p className="text-xs text-muted-foreground">Create a note or open today&apos;s journal to get started.</p>
+              </div>
+            ) : compact ? (
+              <div className="flex flex-col rounded-2xl border border-border bg-muted/30 p-2">
+                {visibleRecents.map((entry) => {
+                  const Icon = entry.source === "journal" ? CalendarDays : FileText;
+                  return (
+                    <button
                       key={`${entry.source}-${entry.id}`}
-                      icon={entry.source === "journal" ? <CalendarDays className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
-                      title={entry.title || "Untitled"}
-                      snippet={entry.snippet}
-                      folder={entry.source === "journal" ? "Journal" : entry.path || "Root"}
-                      time={formatRelative(entry.updatedAt)}
+                      type="button"
                       onClick={() => openItem(entry)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border px-6 py-12 text-center">
-                  <FileText className="h-6 w-6 text-muted-foreground" />
-                  <p className="text-sm font-medium text-foreground">No notes yet</p>
-                  <p className="text-xs text-muted-foreground">Create a note or open today&apos;s journal to get started.</p>
-                </div>
-              )}
-            </section>
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-background/60"
+                    >
+                      <Icon size={14} className="shrink-0 text-primary" />
+                      <span className="min-w-0 truncate text-sm text-foreground">{entry.title || "Untitled"}</span>
+                      <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:inline">
+                        {entry.source === "journal" ? "Journal" : entry.path || "Root"}
+                      </span>
+                      <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">{formatRelative(entry.updatedAt)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {visibleRecents.map((entry) => (
+                  <NoteCard
+                    key={`${entry.source}-${entry.id}`}
+                    icon={entry.source === "journal" ? <CalendarDays className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                    title={entry.title || "Untitled"}
+                    snippet={entry.snippet}
+                    folder={entry.source === "journal" ? "Journal" : entry.path || "Root"}
+                    time={formatRelative(entry.updatedAt)}
+                    onClick={() => openItem(entry)}
+                  />
+                ))}
+              </div>
             )}
+          </section>
+        );
 
-            {settings.dashCollections && (
-            <section className="flex flex-col gap-3">
-              <SectionHeader icon={<Database className="h-4 w-4" />} title="Collections" />
+      case "collections":
+        return (
+          <section key={id} className="flex flex-col gap-3">
+            <SectionHeader icon={<Database className="h-4 w-4" />} title="Collections" />
+            {compact ? (
+              <div className="flex flex-wrap gap-2">
+                {pinned.map((c) => {
+                  const count = collectionItems.get(c.id)?.length ?? 0;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => openCollection(c.id)}
+                      className="flex h-9 items-center gap-2 rounded-full border border-border bg-muted/40 pl-1 pr-3 transition-colors hover:border-primary/40 hover:bg-muted"
+                    >
+                      <CollectionBadge collection={c} size={26} />
+                      <span className="truncate text-sm font-medium text-foreground">{c.name}</span>
+                      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+                    </button>
+                  );
+                })}
+                {canEditSpace && (
+                  <button
+                    type="button"
+                    onClick={newCollection}
+                    className="flex h-9 items-center gap-2 rounded-full border border-dashed border-border px-3 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  >
+                    <FolderPlus size={14} />
+                    New collection
+                  </button>
+                )}
+              </div>
+            ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {pinned.map((c) => {
                   const items = collectionItems.get(c.id) ?? [];
@@ -318,119 +369,213 @@ export default function WelcomeDashboard({ onOpenPalette }: { onOpenPalette?: ()
                   </button>
                 )}
               </div>
-            </section>
+            )}
+          </section>
+        );
+
+      case "calendar":
+        return (
+          <JournalCalendar
+            key={id}
+            onOpenDay={(date) => void openDaily(date)}
+            onOpenJournal={(noteId) => void openJournalNote(noteId)}
+          />
+        );
+
+      case "shortcuts":
+      case "bookmarks": {
+        const isShortcuts = id === "shortcuts";
+        const notes = isShortcuts ? shortcutNotes : bookmarkNotes;
+        if (notes.length === 0) return null;
+        return (
+          <Panel
+            key={id}
+            icon={isShortcuts ? <Star className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+            title={isShortcuts ? "Shortcuts" : "Bookmarks"}
+            count={notes.length}
+            open={isShortcuts ? shortcutsOpen : bookmarksOpen}
+            onToggle={isShortcuts ? toggleShortcuts : toggleBookmarks}
+            onViewAll={() => selectView(isShortcuts ? "shortcuts" : "bookmarks")}
+          >
+            {notes.slice(0, 6).map((n) =>
+              compact ? (
+                <ListRow key={n.id} title={n.title || "Untitled"} meta={formatRelative(n.updatedAt)} onClick={() => openItem(n)} />
+              ) : (
+                <NoteRow
+                  key={n.id}
+                  title={n.title || "Untitled"}
+                  detail={n.snippet || n.path || "Root"}
+                  meta={formatRelative(n.updatedAt)}
+                  onClick={() => openItem(n)}
+                />
+              ),
+            )}
+          </Panel>
+        );
+      }
+
+      case "tasks":
+        if (openTasks.length === 0) return null;
+        return (
+          <Panel
+            key={id}
+            icon={<ListTodo className="h-4 w-4" />}
+            title="Tasks"
+            count={openTasks.length}
+            open={tasksOpen}
+            onToggle={toggleTasks}
+            onViewAll={() => selectView("tasks")}
+          >
+            {openTasks.slice(0, 6).map((t) => (
+              <div
+                key={`${t.vaultId}-${t.noteId}-${t.line}`}
+                className={`flex gap-2.5 rounded-lg px-2 py-1.5 hover:bg-background/60 ${compact ? "items-center" : "items-start"}`}
+              >
+                <button
+                  type="button"
+                  aria-label="Complete task"
+                  onClick={() => void toggleTaskItem(t.vaultId, t.noteId, t.line, !t.checked)}
+                  className={`h-4 w-4 shrink-0 rounded border-2 border-primary/70 transition-colors hover:bg-primary/20 ${compact ? "" : "mt-0.5"}`}
+                />
+                <button type="button" onClick={() => openTaskNote(t)} className="flex min-w-0 flex-1 flex-col text-left">
+                  <span className="truncate text-sm text-foreground">{t.text}</span>
+                  {!compact && <span className="truncate text-xs text-muted-foreground">{t.noteTitle || "Untitled"}</span>}
+                </button>
+              </div>
+            ))}
+          </Panel>
+        );
+
+      case "tags":
+        if (allTags.length === 0) return null;
+        return (
+          <Panel
+            key={id}
+            icon={<Hash className="h-4 w-4" />}
+            title="Tags"
+            count={allTags.length}
+            open={tagsOpen}
+            onToggle={toggleTags}
+            onViewAll={() => selectView("tags")}
+          >
+            {compact ? (
+              <div className="no-scrollbar flex gap-1.5 overflow-x-auto px-1 pb-1">
+                {allTags.slice(0, 24).map((t) => (
+                  <button
+                    key={t.name}
+                    type="button"
+                    onClick={() => tagClick(t.name)}
+                    className="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                  >
+                    #{t.name}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 px-1 pb-1">
+                {allTags.slice(0, 24).map((t) => (
+                  <button
+                    key={t.name}
+                    type="button"
+                    onClick={() => tagClick(t.name)}
+                    className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
+                  >
+                    #{t.name}
+                    <span className="opacity-60">{t.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
+        );
+
+      case "hotkeys":
+        return (
+          <Panel key={id} icon={<Keyboard className="h-4 w-4" />} title="Hotkeys" open={keysOpen} onToggle={toggleKeys}>
+            <dl className="flex flex-col gap-1 px-2 pb-1 text-xs">
+              {[
+                ["Ctrl Shift N", "New note"],
+                ["Ctrl D", "Daily note"],
+                ["Ctrl Shift D", "Dashboard"],
+                ["Ctrl P", "Command palette"],
+                ["Ctrl S", "Save note"],
+                ["Ctrl W", "Close tab"],
+                ["Ctrl Tab", "Next tab"],
+                ["Ctrl B", "Toggle sidebar"],
+              ].map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between gap-2 py-0.5">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd><Kbd>{key}</Kbd></dd>
+                </div>
+              ))}
+            </dl>
+          </Panel>
+        );
+    }
+  };
+
+  return (
+    <main className="flex flex-1 justify-center overflow-y-auto bg-background">
+      <div className="flex w-full max-w-6xl flex-col gap-8 px-6 py-8 md:px-10 md:py-12">
+        {/* Header: greeting, stats, search */}
+        <header className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-primary">
+                {now ? now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }) : "\u00a0"}
+              </p>
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+                {now ? greeting(now.getHours()) : "Welcome"}
+              </h1>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Stat label="Notes" value={vaultEntries.length} onClick={() => selectView("tree")} />
+              <Stat label="Journal" value={journalNotes.length} onClick={() => selectView("journal")} />
+              <Stat label="Tags" value={allTags.length} onClick={() => selectView("tags")} />
+              <Stat label="Open tasks" value={openTasks.length} onClick={() => selectView("tasks")} />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={openPalette}
+            className="group flex h-12 w-full items-center gap-3 rounded-xl border border-border bg-muted/60 px-4 text-left text-sm text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:bg-muted"
+          >
+            <Search className="h-4 w-4 transition-colors group-hover:text-primary" />
+            <span className="flex-1">Search notes, run commands…</span>
+            <Kbd>Ctrl P</Kbd>
+          </button>
+        </header>
+
+        {layout.length > 0 && (
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            {main.length > 0 && (
+              <div className={`flex min-w-0 flex-col gap-8 ${side.length > 0 ? "lg:col-span-2" : "lg:col-span-3"}`}>
+                {main.map(renderSection)}
+              </div>
+            )}
+            {side.length > 0 && (
+              // Without a main column the side sections share the full width.
+              <aside
+                className={
+                  main.length > 0
+                    ? "flex min-w-0 flex-col gap-4"
+                    : "grid min-w-0 items-start gap-4 sm:grid-cols-2 lg:col-span-3 lg:grid-cols-3"
+                }
+              >
+                {side.map(renderSection)}
+              </aside>
             )}
           </div>
+        )}
 
-          {/* Side column */}
-          <aside className="flex min-w-0 flex-col gap-4">
-            <JournalCalendar
-              onOpenDay={(date) => void openDaily(date)}
-              onOpenJournal={(id) => void openJournalNote(id)}
-            />
-
-            {settings.dashShortcuts && shortcutNotes.length > 0 && (
-              <Panel
-                icon={<Star className="h-4 w-4" />}
-                title="Shortcuts"
-                count={shortcutNotes.length}
-                open={shortcutsOpen}
-                onToggle={toggleShortcuts}
-                onViewAll={() => selectView("shortcuts")}
-              >
-                {shortcutNotes.slice(0, 6).map((n) => (
-                  <ListRow key={n.id} title={n.title || "Untitled"} meta={formatRelative(n.updatedAt)} onClick={() => openItem(n)} />
-                ))}
-              </Panel>
-            )}
-
-            {settings.dashBookmarks && bookmarkNotes.length > 0 && (
-              <Panel
-                icon={<Bookmark className="h-4 w-4" />}
-                title="Bookmarks"
-                count={bookmarkNotes.length}
-                open={bookmarksOpen}
-                onToggle={toggleBookmarks}
-                onViewAll={() => selectView("bookmarks")}
-              >
-                {bookmarkNotes.slice(0, 6).map((n) => (
-                  <ListRow key={n.id} title={n.title || "Untitled"} meta={formatRelative(n.updatedAt)} onClick={() => openItem(n)} />
-                ))}
-              </Panel>
-            )}
-
-            {settings.dashTasks && openTasks.length > 0 && (
-              <Panel
-                icon={<ListTodo className="h-4 w-4" />}
-                title="Tasks"
-                count={openTasks.length}
-                open={tasksOpen}
-                onToggle={toggleTasks}
-                onViewAll={() => selectView("tasks")}
-              >
-                {openTasks.slice(0, 6).map((t) => (
-                  <div key={`${t.vaultId}-${t.noteId}-${t.line}`} className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-background/60">
-                    <button
-                      type="button"
-                      aria-label="Complete task"
-                      onClick={() => void toggleTaskItem(t.vaultId, t.noteId, t.line, !t.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-2 border-primary/70 transition-colors hover:bg-primary/20"
-                    />
-                    <button type="button" onClick={() => openTaskNote(t)} className="flex min-w-0 flex-1 flex-col text-left">
-                      <span className="truncate text-sm text-foreground">{t.text}</span>
-                      <span className="truncate text-xs text-muted-foreground">{t.noteTitle || "Untitled"}</span>
-                    </button>
-                  </div>
-                ))}
-              </Panel>
-            )}
-
-            {settings.dashTags && allTags.length > 0 && (
-              <Panel
-                icon={<Hash className="h-4 w-4" />}
-                title="Tags"
-                count={allTags.length}
-                open={tagsOpen}
-                onToggle={toggleTags}
-                onViewAll={() => selectView("tags")}
-              >
-                <div className="flex flex-wrap gap-1.5 px-1 pb-1">
-                  {allTags.slice(0, 24).map((t) => (
-                    <button
-                      key={t.name}
-                      type="button"
-                      onClick={() => window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: t.name }))}
-                      className="flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
-                    >
-                      #{t.name}
-                      <span className="opacity-60">{t.count}</span>
-                    </button>
-                  ))}
-                </div>
-              </Panel>
-            )}
-
-            <Panel icon={<Keyboard className="h-4 w-4" />} title="Hotkeys" open={keysOpen} onToggle={toggleKeys}>
-              <dl className="flex flex-col gap-1 px-2 pb-1 text-xs">
-                {[
-                  ["Ctrl Shift N", "New note"],
-                  ["Ctrl D", "Daily note"],
-                  ["Ctrl Shift D", "Dashboard"],
-                  ["Ctrl P", "Command palette"],
-                  ["Ctrl S", "Save note"],
-                  ["Ctrl W", "Close tab"],
-                  ["Ctrl Tab", "Next tab"],
-                  ["Ctrl B", "Toggle sidebar"],
-                ].map(([key, label]) => (
-                  <div key={key} className="flex items-center justify-between gap-2 py-0.5">
-                    <dt className="text-muted-foreground">{label}</dt>
-                    <dd><Kbd>{key}</Kbd></dd>
-                  </div>
-                ))}
-              </dl>
-            </Panel>
-          </aside>
-        </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("nexote:open-settings", { detail: "dashboard" }))}
+          className="mx-auto flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <SlidersHorizontal size={14} />
+          Customize dashboard
+        </button>
       </div>
     </main>
   );
@@ -478,7 +623,9 @@ function QuickAction({
         {icon}
       </span>
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{label}</span>
-      {hint && <span className="hidden xl:inline"><Kbd>{hint}</Kbd></span>}
+      {/* The actions share the main column with the side column beside it:
+          the hint only fits next to the label on very wide screens. */}
+      {hint && <span className="hidden 2xl:inline"><Kbd>{hint}</Kbd></span>}
     </button>
   );
 }
@@ -584,6 +731,23 @@ function ListRow({ title, meta, onClick }: { title: string; meta: string; onClic
       className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-background/60"
     >
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">{title}</span>
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{meta}</span>
+    </button>
+  );
+}
+
+// A detailed list row: the title above a line of the note's text.
+function NoteRow({ title, detail, meta, onClick }: { title: string; detail: string; meta: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-background/60"
+    >
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium text-foreground">{title}</span>
+        <span className="truncate text-xs text-muted-foreground">{detail}</span>
+      </span>
       <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{meta}</span>
     </button>
   );

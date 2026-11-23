@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { migrateLegacyDashboard, type DashSection } from "@/lib/dashboard";
 import { localDateKey, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
@@ -68,14 +69,11 @@ export type AppSettings = {
   notepadFolder: string;
   // Whether the Notepad shows in the note tree when it lives in a vault.
   notepadInTree: boolean;
-  // Dashboard sections (Settings › Dashboard), desktop and mobile.
-  dashActions: boolean;
-  dashShortcuts: boolean;
-  dashRecents: boolean;
-  dashCollections: boolean;
-  dashBookmarks: boolean;
-  dashTasks: boolean;
-  dashTags: boolean;
+  // Dashboard layouts (Settings › Dashboard): section order, on/off and
+  // compact or detailed look, one per interface; null = the default
+  // (lib/dashboard.ts). Read them through dashLayout(), which validates.
+  dashboardDesktop: DashSection[] | null;
+  dashboardTouch: DashSection[] | null;
   // Format of the toolbar's "insert date" (formatTitle codes).
   dateFormat: string;
   // Touch or desktop interface on this device (Settings › General).
@@ -114,13 +112,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notepadVault: "",
   notepadFolder: "",
   notepadInTree: true,
-  dashActions: true,
-  dashShortcuts: true,
-  dashRecents: true,
-  dashCollections: true,
-  dashBookmarks: true,
-  dashTasks: true,
-  dashTags: true,
+  dashboardDesktop: null,
+  dashboardTouch: null,
   dateFormat: "YYYY-MM-DD",
   interface: "auto",
   calloutsAndHighlights: true,
@@ -479,7 +472,13 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         const known = Object.fromEntries(
           Object.entries(parsed).filter(([key]) => key in DEFAULT_SETTINGS),
         ) as Partial<AppSettings>;
-        setSettings({ ...DEFAULT_SETTINGS, ...known });
+        // The dashboard's on/off switches of earlier versions become layouts.
+        const legacy = "dashboardDesktop" in parsed || "dashboardTouch" in parsed ? null : migrateLegacyDashboard(parsed);
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...known,
+          ...(legacy ? { dashboardDesktop: legacy.desktop, dashboardTouch: legacy.touch } : {}),
+        });
       }
     } catch {
       // ignore malformed settings
@@ -498,8 +497,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     // device reads the same values. Booleans travel as "true"/"false".
     const prefs: Record<string, string> = {};
     for (const [k, v] of Object.entries(patch)) {
-      if (!isAccountSetting(k) || v === undefined) continue;
-      prefs[k] = typeof v === "boolean" || typeof v === "number" ? String(v) : v;
+      if (!isAccountSetting(k)) continue;
+      if (typeof v === "string") prefs[k] = v;
+      else if (typeof v === "boolean" || typeof v === "number") prefs[k] = String(v);
     }
     if (Object.keys(prefs).length > 0) void api.updatePrefs(prefs).catch(() => {});
     setSettings((prev) => {

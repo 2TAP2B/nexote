@@ -91,7 +91,7 @@ The app watches the visual viewport to detect the on-screen keyboard. While it i
 
 ## Dashboard
 
-The mobile dashboard has collapsible sections: quick actions (New note, Today, Search), Shortcuts, Continue where you left off (the ten most recently edited notes), pinned Collections, Bookmarks, Todo (open tasks, which can be ticked off) and Tags. Each section can be hidden in **Settings › Dashboard**. The same switches apply to the desktop dashboard.
+The mobile dashboard has collapsible sections: quick actions (New note, Today, Search), Shortcuts, Continue where you left off (the ten most recently edited notes), pinned Collections, Bookmarks, Todo (open tasks, which can be ticked off), Tags and, if you turn it on, the journal calendar. **Settings › Dashboard** (or **Customize dashboard** at its end) shows or hides each section, changes their order and switches between a detailed and a compact look; see [Dashboard](./editor#dashboard). The phone's layout is separate from the desktop's.
 
 ## Installing
 

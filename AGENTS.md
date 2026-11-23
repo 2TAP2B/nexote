@@ -131,6 +131,7 @@ touches**. Do not re-read the whole repo per session.
 | Offline / sync | `public/sw.js`, `offline-status.tsx`, `NotesProvider.tsx` (precache, refresh after sync/SSE reconnect) |
 | Mobile / tablet UI | `src/components/mobile/*`, shell choice in `src/lib/shell.ts` |
 | Add or change a setting | `AppSettings` + `DEFAULT_SETTINGS` in `NotesProvider.tsx`, the page in `src/components/settings/`, and the code that reads it (only add options that visibly do something) |
+| Dashboard sections / layout | `src/lib/dashboard.ts` (section registry `DASH_SECTIONS`: name, column, has compact look; per-interface defaults; `dashLayout()` validates and fills new sections; `moveSection`; migration of the old `dash*` switches), `settings.dashboardDesktop` / `dashboardTouch` (null = default), `settings/DashboardSettings.tsx` (edits the layout of the interface in use), `WelcomeDashboard.tsx` (main + side column) and `mobile/MobileDashboard.tsx` render each section by id |
 | Real-time updates | `api/events.go`, SSE handling in `NotesProvider.tsx` |
 
 ## Do-not-break invariants

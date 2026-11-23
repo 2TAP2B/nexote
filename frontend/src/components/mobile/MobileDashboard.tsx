@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Bookmark,
   CalendarDays,
@@ -13,10 +13,11 @@ import {
   History,
   ListTodo,
   Search,
+  SlidersHorizontal,
   Star,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { dashLayout, type DashSection } from "@/lib/dashboard";
 import { useNotes } from "@/lib/notes-context";
 import { isThreadMeta } from "@/lib/threads";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -25,6 +26,7 @@ import { openCollection } from "@/components/collections/actions";
 import { CollectionBadge, ItemCover } from "@/components/collections/CollectionArt";
 import { useCollectionItems } from "@/components/collections/items";
 import { useCollections } from "@/components/collections/useCollections";
+import JournalCalendar from "@/components/JournalCalendar";
 
 type RecentEntry = {
   id: string;
@@ -88,6 +90,7 @@ export default function MobileDashboard({
     journalNotes,
     openNoteInVault,
     openJournalNote,
+    openDaily,
     tasks,
     refreshTags,
     toggleTaskItem,
@@ -177,7 +180,314 @@ export default function MobileDashboard({
   const [tasksOpen, toggleTasks] = useSectionState("tasks", true);
   const [tagsOpen, toggleTags] = useSectionState("tags", true);
 
-  const isEmpty = recents.length === 0;
+  const layout = dashLayout(settings.dashboardTouch, "touch").filter((s) => s.shown);
+
+  // Note lists (shortcuts, recents, bookmarks) share their rows: today's
+  // two-line NoteRow, or one line per note when compact.
+  const noteRows = (
+    entries: RecentEntry[],
+    open: boolean,
+    compact: boolean,
+    icon: (entry: RecentEntry, size: number) => React.ReactNode,
+    subtitle: (entry: RecentEntry) => string,
+  ) => (
+    <div className={compact ? "flex flex-col gap-0.5" : "flex flex-col gap-1.5"}>
+      {(open ? entries : entries.slice(0, 3)).map((entry) =>
+        compact ? (
+          <CompactRow
+            key={`${entry.source}-${entry.id}`}
+            icon={icon(entry, 16)}
+            title={entry.title || "Untitled"}
+            time={formatRelative(entry.updatedAt)}
+            onClick={() => openItem(entry)}
+          />
+        ) : (
+          <NoteRow
+            key={`${entry.source}-${entry.id}`}
+            icon={icon(entry, 18)}
+            title={entry.title || "Untitled"}
+            subtitle={subtitle(entry)}
+            time={formatRelative(entry.updatedAt)}
+            onClick={() => openItem(entry)}
+          />
+        ),
+      )}
+    </div>
+  );
+
+  const renderSection = ({ id, compact }: DashSection): React.ReactNode => {
+    switch (id) {
+      case "actions":
+        return compact ? (
+          <div className={canEditSpace ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+            {canEditSpace && <SlimAction icon={<FilePlus size={18} />} label="New note" onClick={onNewNote} />}
+            <SlimAction icon={<CalendarDays size={18} />} label="Today" onClick={onOpenDaily} />
+            <SlimAction icon={<Search size={18} />} label="Search" onClick={onOpenSearch} />
+          </div>
+        ) : (
+          <div className={canEditSpace ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+            {canEditSpace && <QuickAction icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />}
+            <QuickAction icon={<CalendarDays size={22} />} label="Today" onClick={onOpenDaily} />
+            <QuickAction icon={<Search size={22} />} label="Search" onClick={onOpenSearch} />
+          </div>
+        );
+
+      case "shortcuts":
+        if (shortcutNotes.length === 0) return null;
+        return (
+          <CollapsibleSection
+            icon={<Star size={16} />}
+            title="Shortcuts"
+            count={shortcutNotes.length}
+            open={shortcutsOpen}
+            onToggle={toggleShortcuts}
+            onViewAll={() =>
+              window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "shortcuts" }))
+            }
+          >
+            {noteRows(shortcutNotes, shortcutsOpen, compact, (_, size) => <Star size={size} />, (n) => n.path || "No folder")}
+          </CollapsibleSection>
+        );
+
+      case "recents":
+        // With no notes at all the hint to create one takes the section's place.
+        if (recents.length === 0) {
+          return (
+            <div
+              className="flex flex-col items-center gap-2 rounded-2xl px-6 py-8 text-center"
+              style={{ background: "var(--mob-card)" }}
+            >
+              <FileText size={24} style={{ color: "var(--mob-muted)" }} />
+              <p className="text-sm font-medium">No notes yet</p>
+              <p className="text-xs" style={{ color: "var(--mob-muted)" }}>
+                Tap "New note" to create your first note, or open the journal.
+              </p>
+            </div>
+          );
+        }
+        return (
+          <CollapsibleSection
+            icon={<History size={16} />}
+            title="Continue where you left off"
+            count={recents.length}
+            open={recentsOpen}
+            onToggle={toggleRecents}
+          >
+            {noteRows(
+              recents,
+              recentsOpen,
+              compact,
+              (entry, size) => (entry.source === "journal" ? <CalendarDays size={size} /> : <FileText size={size} />),
+              (entry) => (entry.source === "journal" ? "Journal" : entry.path || "No folder"),
+            )}
+          </CollapsibleSection>
+        );
+
+      case "collections":
+        if (pinnedCollections.length === 0) return null;
+        if (compact) {
+          return (
+            <section
+              className="flex flex-col gap-2 rounded-2xl p-3"
+              style={{ background: "color-mix(in oklab, var(--mob-surface) 50%, transparent)" }}
+            >
+              <div className="flex items-center gap-2">
+                <span style={{ color: "var(--mob-accent)" }}><Library size={16} /></span>
+                <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--mob-text)" }}>
+                  Collections
+                </h2>
+                <span className="text-xs" style={{ color: "var(--mob-muted)" }}>{pinnedCollections.length}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {pinnedCollections.map((c) => {
+                  const count = collectionItems.get(c.id)?.length ?? 0;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => openCollection(c.id)}
+                      className="flex min-h-[40px] items-center gap-3 rounded-xl px-2 py-1 text-left transition-[transform,background] active:scale-[0.98] active:bg-white/5"
+                    >
+                      <CollectionBadge collection={c} size={26} />
+                      <span className="min-w-0 flex-1 truncate text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>
+                        {c.name}
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums" style={{ color: "var(--mob-muted)" }}>
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        }
+        return (
+          <section className="flex flex-col gap-2">
+            <SectionHeading icon={<Library size={16} />} title="Collections" />
+            <div className="grid grid-cols-2 gap-2">
+              {pinnedCollections.map((c) => {
+                const items = collectionItems.get(c.id) ?? [];
+                const covers = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => openCollection(c.id)}
+                    className="flex min-w-0 flex-col gap-2 rounded-2xl p-3 text-left transition-[transform,background] active:scale-[0.98]"
+                    style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <CollectionBadge collection={c} size={32} />
+                      {covers.length > 0 && (
+                        <span className="flex shrink-0 flex-row-reverse items-center">
+                          {covers.map((it, i) => (
+                            <span
+                              key={it.id}
+                              className="block"
+                              style={{
+                                marginLeft: i === covers.length - 1 ? 0 : -8,
+                                borderRadius: 6,
+                                boxShadow: "0 0 0 2px var(--mob-surface)",
+                                zIndex: covers.length - i,
+                              }}
+                            >
+                              <ItemCover cover={it.cover} collection={c} radius={6} iconSize={12} className="h-7 w-7" />
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium">{c.name}</span>
+                      <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
+                        {items.length === 1 ? "1 item" : `${items.length} items`}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+
+      case "calendar":
+        // The calendar brings its own card and month header (as in the
+        // Daily-notes view), so it needs no section heading.
+        return (
+          <JournalCalendar
+            onOpenJournal={(journalId) => void openJournalNote(journalId)}
+            onOpenDay={(date) => void openDaily(date)}
+          />
+        );
+
+      case "bookmarks":
+        if (bookmarkNotes.length === 0) return null;
+        return (
+          <CollapsibleSection
+            icon={<Bookmark size={16} />}
+            title="Bookmarks"
+            count={bookmarkNotes.length}
+            open={bookmarksOpen}
+            onToggle={toggleBookmarks}
+            onViewAll={() =>
+              window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "bookmarks" }))
+            }
+          >
+            {noteRows(bookmarkNotes, bookmarksOpen, compact, (_, size) => <Bookmark size={size} />, (n) => n.path || "No folder")}
+          </CollapsibleSection>
+        );
+
+      case "tasks":
+        if (openTasks.length === 0) return null;
+        return (
+          <CollapsibleSection
+            icon={<ListTodo size={16} />}
+            title="Todo"
+            count={openTasks.length}
+            open={tasksOpen}
+            onToggle={toggleTasks}
+            onViewAll={() =>
+              window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))
+            }
+          >
+            <div className={compact ? "flex flex-col gap-0.5" : "flex flex-col gap-1.5"}>
+              {(tasksOpen ? openTasks : openTasks.slice(0, 3)).map((t) => (
+                <div
+                  key={`${t.vaultId}-${t.noteId}-${t.line}`}
+                  className={`flex items-center gap-3 rounded-xl px-2 ${compact ? "min-h-[40px] py-1" : "min-h-[48px] py-1.5"}`}
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggleTaskItem(t.vaultId, t.noteId, t.line, !t.checked);
+                    }}
+                    className="flex shrink-0 items-center justify-center"
+                    style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid var(--mob-accent)`, background: "transparent" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => openTaskNote(t)}
+                    className="flex min-w-0 flex-1 flex-col text-left"
+                  >
+                    <span className="truncate text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>
+                      {t.text}
+                    </span>
+                    {!compact && (
+                      <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>
+                        {t.noteTitle || "Untitled"}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
+        );
+
+      case "tags":
+        if (allTags.length === 0) return null;
+        return (
+          <CollapsibleSection
+            icon={<Hash size={16} />}
+            title="Tags"
+            count={allTags.length}
+            open={tagsOpen}
+            onToggle={toggleTags}
+            onViewAll={() =>
+              window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tags" }))
+            }
+          >
+            {/* Compact: one sideways-scrolling line. The pager leaves
+                horizontally overflowing scrollers alone (useSwipeSidebar's
+                overflow check), so swiping the chips scrolls them; when they
+                all fit, the row swipes panes like the rest of the page. */}
+            <div className={compact ? "no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1" : "flex flex-wrap gap-2 px-1"}>
+              {allTags.map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() =>
+                    window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: t.name }))
+                  }
+                  className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-transform active:scale-95"
+                  style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+                >
+                  <Hash size={13} style={{ color: "var(--mob-accent)" }} />
+                  {t.name}
+                  {!compact && <span className="text-xs" style={{ color: "var(--mob-muted)" }}>{t.count}</span>}
+                </button>
+              ))}
+            </div>
+          </CollapsibleSection>
+        );
+
+      // Hotkeys are desktop-only; dashLayout never yields them for touch.
+      case "hotkeys":
+        return null;
+    }
+  };
 
   return (
     <main
@@ -186,232 +496,19 @@ export default function MobileDashboard({
     >
       {/* Header is the top bar row (gear + theme toggle synced by the
           dashboard variant), so no local title/greeting/actions here. */}
+      {layout.map((s) => (
+        <Fragment key={s.id}>{renderSection(s)}</Fragment>
+      ))}
 
-      {/* Row 1: Quick actions */}
-      {settings.dashActions && (
-        <div className={canEditSpace ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
-          {canEditSpace && <QuickAction icon={<FilePlus size={22} />} label="New note" onClick={onNewNote} />}
-          <QuickAction icon={<CalendarDays size={22} />} label="Today" onClick={onOpenDaily} />
-          <QuickAction icon={<Search size={22} />} label="Search" onClick={onOpenSearch} />
-        </div>
-      )}
-
-      {/* Row 2: Shortcuts (3 preview, clickable header → all shortcuts) */}
-      {settings.dashShortcuts && shortcutNotes.length > 0 && (
-        <CollapsibleSection
-          icon={<Star size={16} />}
-          title="Shortcuts"
-          count={shortcutNotes.length}
-          open={shortcutsOpen}
-          onToggle={toggleShortcuts}
-          onViewAll={() =>
-            window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "shortcuts" }))
-          }
-        >
-          <div className="flex flex-col gap-1.5">
-            {(shortcutsOpen ? shortcutNotes : shortcutNotes.slice(0, 3)).map((n) => (
-              <NoteRow
-                key={n.id}
-                icon={<Star size={18} />}
-                title={n.title || "Untitled"}
-                subtitle={n.path || "No folder"}
-                time={formatRelative(n.updatedAt)}
-                onClick={() => openItem(n)}
-              />
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {/* Continue where you left off */}
-      {isEmpty ? (
-        <div
-          className="flex flex-col items-center gap-2 rounded-2xl px-6 py-8 text-center"
-          style={{ background: "var(--mob-card)" }}
-        >
-          <FileText size={24} style={{ color: "var(--mob-muted)" }} />
-          <p className="text-sm font-medium">No notes yet</p>
-          <p className="text-xs" style={{ color: "var(--mob-muted)" }}>
-            Tap "New note" to create your first note, or open the journal.
-          </p>
-        </div>
-      ) : settings.dashRecents && (
-        <CollapsibleSection
-          icon={<History size={16} />}
-          title="Continue where you left off"
-          count={recents.length}
-          open={recentsOpen}
-          onToggle={toggleRecents}
-        >
-          <div className="flex flex-col gap-1.5">
-            {(recentsOpen ? recents : recents.slice(0, 3)).map((entry) => (
-              <NoteRow
-                key={`${entry.source}-${entry.id}`}
-                icon={entry.source === "journal" ? <CalendarDays size={18} /> : <FileText size={18} />}
-                title={entry.title || "Untitled"}
-                subtitle={entry.source === "journal" ? "Journal" : entry.path || "No folder"}
-                time={formatRelative(entry.updatedAt)}
-                onClick={() => openItem(entry)}
-              />
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {/* Pinned collections */}
-      {settings.dashCollections && pinnedCollections.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <SectionHeading icon={<Library size={16} />} title="Collections" />
-          <div className="grid grid-cols-2 gap-2">
-            {pinnedCollections.map((c) => {
-              const items = collectionItems.get(c.id) ?? [];
-              const covers = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 2);
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => openCollection(c.id)}
-                  className="flex min-w-0 flex-col gap-2 rounded-2xl p-3 text-left transition-[transform,background] active:scale-[0.98]"
-                  style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <CollectionBadge collection={c} size={32} />
-                    {covers.length > 0 && (
-                      <span className="flex shrink-0 flex-row-reverse items-center">
-                        {covers.map((it, i) => (
-                          <span
-                            key={it.id}
-                            className="block"
-                            style={{
-                              marginLeft: i === covers.length - 1 ? 0 : -8,
-                              borderRadius: 6,
-                              boxShadow: "0 0 0 2px var(--mob-surface)",
-                              zIndex: covers.length - i,
-                            }}
-                          >
-                            <ItemCover cover={it.cover} collection={c} radius={6} iconSize={12} className="h-7 w-7" />
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium">{c.name}</span>
-                    <span className="text-xs" style={{ color: "var(--mob-muted)" }}>
-                      {items.length === 1 ? "1 item" : `${items.length} items`}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Bookmarks */}
-      {settings.dashBookmarks && bookmarkNotes.length > 0 && (
-        <CollapsibleSection
-          icon={<Bookmark size={16} />}
-          title="Bookmarks"
-          count={bookmarkNotes.length}
-          open={bookmarksOpen}
-          onToggle={toggleBookmarks}
-          onViewAll={() =>
-            window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "bookmarks" }))
-          }
-        >
-          <div className="flex flex-col gap-1.5">
-            {(bookmarksOpen ? bookmarkNotes : bookmarkNotes.slice(0, 3)).map((n) => (
-              <NoteRow
-                key={n.id}
-                icon={<Bookmark size={18} />}
-                title={n.title || "Untitled"}
-                subtitle={n.path || "No folder"}
-                time={formatRelative(n.updatedAt)}
-                onClick={() => openItem(n)}
-              />
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {/* Todo list */}
-      {settings.dashTasks && openTasks.length > 0 && (
-        <CollapsibleSection
-          icon={<ListTodo size={16} />}
-          title="Todo"
-          count={openTasks.length}
-          open={tasksOpen}
-          onToggle={toggleTasks}
-          onViewAll={() =>
-            window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tasks" }))
-          }
-        >
-          <div className="flex flex-col gap-1.5">
-            {(tasksOpen ? openTasks : openTasks.slice(0, 3)).map((t) => (
-              <div
-                key={`${t.vaultId}-${t.noteId}-${t.line}`}
-                className="flex min-h-[48px] items-center gap-3 rounded-xl px-2 py-1.5"
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void toggleTaskItem(t.vaultId, t.noteId, t.line, !t.checked);
-                  }}
-                  className="flex shrink-0 items-center justify-center"
-                  style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid var(--mob-accent)`, background: "transparent" }}
-                />
-                <button
-                  type="button"
-                  onClick={() => openTaskNote(t)}
-                  className="flex min-w-0 flex-1 flex-col text-left"
-                >
-                  <span className="truncate text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>
-                    {t.text}
-                  </span>
-                  <span className="truncate text-xs" style={{ color: "var(--mob-muted)" }}>
-                    {t.noteTitle || "Untitled"}
-                  </span>
-                </button>
-              </div>
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-
-      {/* Tags at the bottom */}
-      {settings.dashTags && allTags.length > 0 && (
-        <CollapsibleSection
-          icon={<Hash size={16} />}
-          title="Tags"
-          count={allTags.length}
-          open={tagsOpen}
-          onToggle={toggleTags}
-          onViewAll={() =>
-            window.dispatchEvent(new CustomEvent("nexote:select-view", { detail: "tags" }))
-          }
-        >
-          <div className="flex flex-wrap gap-2 px-1">
-            {allTags.map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                onClick={() =>
-                  window.dispatchEvent(new CustomEvent("nexote:select-tag", { detail: t.name }))
-                }
-                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-transform active:scale-95"
-                style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
-              >
-                <Hash size={13} style={{ color: "var(--mob-accent)" }} />
-                {t.name}
-                <span className="text-xs" style={{ color: "var(--mob-muted)" }}>{t.count}</span>
-              </button>
-            ))}
-          </div>
-        </CollapsibleSection>
-      )}
-
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent("nexote:open-settings", { detail: "dashboard" }))}
+        className="mx-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-transform active:scale-95"
+        style={{ color: "var(--mob-muted)" }}
+      >
+        <SlidersHorizontal size={14} />
+        Customize dashboard
+      </button>
     </main>
   );
 }
@@ -572,6 +669,60 @@ function QuickAction({
     >
       <span style={{ color: "var(--mob-accent)" }}>{icon}</span>
       <span className="text-xs font-medium">{label}</span>
+    </button>
+  );
+}
+
+// The compact look of a note row: one line, no folder.
+function CompactRow({
+  icon,
+  title,
+  time,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  time: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-[40px] items-center gap-3 rounded-xl px-2 py-1 text-left transition-[transform,background] active:scale-[0.98] active:bg-white/5"
+    >
+      <span className="flex w-6 shrink-0 items-center justify-center" style={{ color: "var(--mob-accent)" }}>
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[15px] font-medium" style={{ color: "var(--mob-text)" }}>
+        {title}
+      </span>
+      <span className="shrink-0 text-xs tabular-nums" style={{ color: "var(--mob-muted)" }}>
+        {time}
+      </span>
+    </button>
+  );
+}
+
+// The compact look of a quick action: icon and label side by side.
+function SlimAction({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-11 min-w-0 items-center justify-center gap-2 rounded-xl px-2 transition-[transform,background] active:scale-[0.98]"
+      style={{ background: "var(--mob-surface)", color: "var(--mob-text)" }}
+    >
+      <span className="shrink-0" style={{ color: "var(--mob-accent)" }}>{icon}</span>
+      <span className="truncate text-xs font-medium">{label}</span>
     </button>
   );
 }

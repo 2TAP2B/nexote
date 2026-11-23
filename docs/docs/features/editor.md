@@ -171,6 +171,19 @@ The buttons above the tree, from left to right:
 
 The tree follows the open note: opening a note (from search, a link or the dashboard) opens its folders so it is visible. Sort order, card view and which folders are open are remembered per device; folders with the same name in different vaults open and close independently.
 
+## Dashboard
+
+The dashboard is the pinned first tab: a greeting with counts, the search bar and sections for quick actions, recently edited notes, collections, the journal calendar, shortcuts, bookmarks, open tasks, tags and (desktop only) the hotkeys.
+
+**Settings › Dashboard** arranges them (also reachable with **Customize dashboard** at the end of the dashboard):
+
+- The switch shows or hides a section.
+- The arrows move it up or down. On the desktop, quick actions, recently edited notes and collections sit in the wide main column and the other sections in the side column; the arrows move a section within its column.
+- Sections that have two looks offer **Detailed** and **Compact**: compact quick actions are a slim row of buttons, compact note lists show one line per note (detailed ones add the folder or a preview), compact collections are small chips instead of tiles with covers, compact tasks leave out the note's name, and compact tags fit on one line that scrolls sideways.
+- **Reset to default** brings back the original layout.
+
+The desktop and the phone dashboards have separate layouts, each kept on the device. The phone adds the calendar as an option (off at first).
+
 ## Navigation
 
 - **Command palette** (Ctrl/Cmd+P or Ctrl/Cmd+Shift+F): runs commands, switches spaces, and searches notes. Title matches in the active vault appear immediately; after two characters a full-text search over the active space and your journal is added. Editors can create a note from the typed text.
