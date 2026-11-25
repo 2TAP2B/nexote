@@ -4,6 +4,7 @@ import { Check, Folder, Notebook as NotebookIcon, X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { listNotebooks, notebookKey, type Notebook } from "@/lib/notebooks";
 import { useNotes } from "@/lib/notes-context";
 
@@ -35,6 +36,7 @@ export function NotebookSheet({
 }) {
   const { allVaults, allVaultData, spaces } = useNotes();
   const notebooks = listNotebooks(allVaults, allVaultData, spaces);
+  useAndroidBack(onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -3,6 +3,7 @@
 import { Check, ChevronLeft, CircleCheck, Copy, MessageSquareReply, MoreHorizontal, Pencil, Pin, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { copyText } from "@/lib/clipboard";
 import { makeSnippet } from "@/lib/note-utils";
 import { splitMemo } from "@/lib/notepad";
@@ -263,6 +264,12 @@ function ThreadPane({ vaultId, id, variant, onClose }: Props) {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [selectMode, menuOpen]);
+  // Back steps out of the comment page, selection, full screen and the menu
+  // before the host closes the thread.
+  useAndroidBack(() => setDetailPostKey(null), detailPostKey !== null);
+  useAndroidBack(clearSelection, selectMode);
+  useAndroidBack(() => setFullscreen(false), fullscreen);
+  useAndroidBack(() => setMenuOpen(false), menuOpen && !mobile);
 
   // The desktop menu closes on a click elsewhere.
   useEffect(() => {

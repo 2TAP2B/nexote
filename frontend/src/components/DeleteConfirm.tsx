@@ -3,6 +3,8 @@
 import { AlertTriangle, Trash2 } from "lucide-react";
 import { useEffect } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
+
 type DeleteConfirmProps = {
   open: boolean;
   noteId: string | null;
@@ -18,6 +20,7 @@ export default function DeleteConfirm({
   onCancel,
   onConfirm,
 }: DeleteConfirmProps) {
+  useAndroidBack(onCancel, open && noteId !== null);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

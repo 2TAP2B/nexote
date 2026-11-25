@@ -41,6 +41,7 @@ More screenshots, including the phone app, are in the [documentation](https://2t
 - Touch interface for phones and tablets at the same address as the desktop one, chosen per device (switchable in Settings › General).
 - Four swipeable panes: spaces, note tree, note, and table of contents or quick notes.
 - Bottom pill navigation, bottom sheets, a toolbar above the keyboard, chrome that hides while scrolling, haptic feedback.
+- Android app without a server: notes stay as Markdown files in a folder on the phone, "Share to Nexote" opens Quick notes. The signed APK is attached to every [release](https://github.com/2TAP2B/nexote/releases) (Obtainium works with this repository).
 
 **Quick notes**
 - Messenger-style Notepad for short memos, with images and `@` note links.
@@ -123,6 +124,17 @@ Both at once, from the repository root, then open http://localhost:3000:
 
 ```bash
 (cd backend && go run .) & (cd frontend && pnpm dev) & wait
+```
+
+Android app (JDK, Android SDK/NDK and an emulator come from the flake's `android` shell):
+
+```bash
+nix develop .#android
+android/build-engine.sh                          # frontend export + Go engine (gomobile) → android/app/libs
+(cd android && ./gradlew assembleDebug)          # android/app/build/outputs/apk/debug/
+# The app's engine on desktop (:8092), serving frontend/out from `NEXOTE_EXPORT=1 pnpm build`;
+# a browser needs the cookie nexote_engine=dev.
+(cd backend && go run ./cmd/nexote-local -home /tmp/nexote-local -secret dev)
 ```
 
 [AGENTS.md](AGENTS.md) is a file index and map of the code base. The [development guide](https://2tap2b.github.io/nexote/reference/development) describes the architecture.

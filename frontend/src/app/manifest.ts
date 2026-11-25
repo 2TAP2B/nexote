@@ -1,5 +1,9 @@
 import type { MetadataRoute } from "next";
 
+// Already prerendered in the server build; the static export (Android app)
+// requires saying so.
+export const dynamic = "force-static";
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Nexote",

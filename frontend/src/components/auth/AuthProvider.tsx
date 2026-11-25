@@ -3,12 +3,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, ApiError, AUTH_REQUIRED_EVENT, type AuthUser } from "@/lib/api";
+import { isAndroidApp } from "@/lib/app-info";
 import { offlineOutboxCount } from "@/lib/offline-db";
 import { AuthErrorScreen, AuthSplash, LoginScreen, SetupScreen } from "./AuthScreens";
 import { isDifferentAccount, readLastUser, rememberUser, wipeUserData } from "./session";
 
 export type AuthContextValue = {
   user: AuthUser;
+  /** Local mode (the Android app's on-device engine): the only account is
+   *  always signed in. No sign-out, passkeys, other accounts, members or
+   *  anything else that needs a server. */
+  local: boolean;
   /** Ends the session, removes the account's data from this device and
    *  returns to the login screen. Rejects with the server's message. */
   logout: () => Promise<void>;
@@ -33,13 +38,16 @@ type Phase =
   | { kind: "ready" };
 
 /** Shows setup/login until an account is signed in, then renders the app.
- *  The app (NotesProvider) never mounts without a known user. */
+ *  The app (NotesProvider) never mounts without a known user. In local mode
+ *  the engine's account is signed in from the start: no setup or login. */
 export function AuthGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [local, setLocal] = useState(false);
   // Session lost while the app is open: login shown above it, drafts intact.
   const [overlayOrigin, setOverlayOrigin] = useState<string | null>(null);
   const userRef = useRef<AuthUser | null>(null);
+  const localRef = useRef(false);
   const overlayRef = useRef(false);
   const checking = useRef(false);
 
@@ -49,9 +57,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, []);
 
   // Before the app mounts: a different account than last time first gets a
-  // clean device (no previous person's tabs, offline data or AI key).
+  // clean device (no previous person's tabs, offline data or AI key). In
+  // local mode that's another data folder of the same person: the AI
+  // connection stays.
   const enter = useCallback(async (next: AuthUser) => {
-    if (isDifferentAccount(next)) await wipeUserData({ personalSettings: true });
+    if (isDifferentAccount(next)) {
+      await wipeUserData({ settings: localRef.current ? "vault-choices" : "personal" });
+    }
     rememberUser(next);
     userRef.current = next;
     setUser(next);
@@ -75,7 +87,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           await api.logout().catch(() => {});
           return;
         }
-        await wipeUserData({ personalSettings: true });
+        await wipeUserData({ settings: localRef.current ? "vault-choices" : "personal" });
         rememberUser(next);
         window.location.reload();
         return;
@@ -98,14 +110,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setPhase({ kind: "loading" });
     try {
       const status = await api.authStatus();
+      localRef.current = status.local;
+      setLocal(status.local);
       if (status.user) await enter(status.user);
+      else if (status.local) setPhase({ kind: "error", message: "The local engine has no account." });
       else if (status.setupRequired) setPhase({ kind: "setup", origin: status.origin });
       else setPhase({ kind: "login", origin: status.origin });
     } catch (e) {
       // An HTTP error means the server answered but can't be used (old
       // backend, crash): never show the app then. A failed fetch means no
-      // connection: the offline app still works for the last account.
-      const cached = e instanceof ApiError ? null : readLastUser();
+      // connection: the offline app still works for the last account. The
+      // Android app has no offline layer: without its engine nothing works.
+      const cached = e instanceof ApiError || isAndroidApp ? null : readLastUser();
       if (cached) {
         userRef.current = cached;
         setUser(cached);
@@ -117,20 +133,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
         message:
           e instanceof ApiError
             ? `The server answered with an error (${e.status}${e.message ? `: ${e.message}` : ""}).`
-            : "Can't reach the server. Check your connection and try again.",
+            : isAndroidApp
+              ? "Nexote's engine isn't responding. Try again."
+              : "Can't reach the server. Check your connection and try again.",
       });
     }
   }, [enter]);
 
   // Re-reads the session while the app is mounted. Network errors keep the
-  // app as it is (offline); a signed-out answer shows the login overlay.
+  // app as it is (offline); a signed-out answer shows the login overlay
+  // (never in local mode: there is nobody to sign in as).
   const recheck = useCallback(async () => {
     if (checking.current || overlayRef.current) return;
     checking.current = true;
     try {
       const status = await api.authStatus();
       if (status.user) await resume(status.user);
-      else showOverlay(status.origin);
+      else if (!status.local) showOverlay(status.origin);
     } catch {
       // offline or server trouble: try again on the next trigger
     } finally {
@@ -171,13 +190,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
       // Already signed out on the server: just clean up here.
       if (!(e instanceof ApiError && e.status === 401)) throw e;
     }
-    await wipeUserData({ personalSettings: false });
+    await wipeUserData({ settings: "keep" });
     window.location.assign("/");
   }, []);
 
   const value = useMemo<AuthContextValue | null>(
-    () => (user ? { user, logout, refresh: recheck } : null),
-    [user, logout, recheck],
+    () => (user ? { user, local, logout, refresh: recheck } : null),
+    [user, local, logout, recheck],
   );
 
   switch (phase.kind) {

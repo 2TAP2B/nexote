@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Lora } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import { isAndroidApp } from "@/lib/app-info";
 import OfflineStatus from "@/lib/offline-status";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import "./globals.css";
@@ -77,7 +78,9 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {children}
-          <OfflineStatus />
+          {/* The offline indicator reports the service worker's sync; the
+              Android app has neither (its engine is on the device). */}
+          {!isAndroidApp && <OfflineStatus />}
           <ServiceWorkerRegister />
         </ThemeProvider>
       </body>

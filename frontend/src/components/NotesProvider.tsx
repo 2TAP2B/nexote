@@ -17,6 +17,7 @@ import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
 import { NOTE_CHANGE_EVENT } from "@/lib/threads";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { isAndroidApp } from "@/lib/app-info";
 import type { InterfaceMode } from "@/lib/shell";
 
 // Settings that must be one per account (the Notepad has to be the same
@@ -526,7 +527,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // Pull the account's preferences over this device's settings: the server
   // wins, so every device points at the same Notepad. When the account has
   // none yet (first use), this device's choice is uploaded.
-  const { user } = useAuth();
+  const { user, local } = useAuth();
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -841,10 +842,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // (open tabs, bookmarks, the Notepad, the most recently edited) once while
   // online; the service worker stores each response. Only with an active
   // worker (production; on a first visit it takes control after load), and
-  // the bodies at most every 10 minutes.
+  // the bodies at most every 10 minutes. The Android app has no worker.
   useEffect(() => {
     const sw = typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
-    if (!allVaults.length || !sw) return;
+    if (isAndroidApp || !allVaults.length || !sw) return;
     let cancelled = false;
     const precache = async () => {
       const ok = <T,>(p: Promise<T>) => p.catch(() => undefined);
@@ -2140,10 +2141,12 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refresh, refreshAllMarks, refreshJournal, refreshGitStatus]);
 
+  // Git sync needs a server; local mode has none.
   useEffect(() => {
+    if (local) return;
     void refreshGitConfig();
     void refreshGitStatus();
-  }, [refreshGitConfig, refreshGitStatus]);
+  }, [local, refreshGitConfig, refreshGitStatus]);
 
   // Settings › Features can keep the quick-capture Notepad out of the tree
   // (when it lives in a vault). Everything listing notes reads these.

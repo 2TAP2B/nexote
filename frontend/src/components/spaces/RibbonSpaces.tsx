@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import ContextMenu, { type MenuItem } from "@/components/ContextMenu";
+import { useAndroidBack } from "@/lib/android-back";
 import { api, type SpaceInfo } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
 
@@ -34,12 +35,14 @@ async function canLeaveSpace(space: SpaceInfo): Promise<boolean> {
  */
 export function SpaceSwitcher() {
   const { spaces, activeSpace, switchSpace } = useNotes();
+  const { local } = useAuth();
   const [panel, setPanel] = useState<{ bottom: number; left: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const [settingsFor, setSettingsFor] = useState<{ id: string; section?: SpaceSettingsSection } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  useAndroidBack(() => setPanel(null), panel !== null);
 
   // Close on outside click / Escape (the ⋯ menu handles its own clicks).
   useEffect(() => {
@@ -72,7 +75,9 @@ export function SpaceSwitcher() {
   };
 
   const openSpaceMenu = async (space: SpaceInfo, x: number, y: number) => {
-    const leavable = await canLeaveSpace(space);
+    // Local mode: the only account owns every space; leaving one would just
+    // lose it.
+    const leavable = !local && (await canLeaveSpace(space));
     const open = (section?: SpaceSettingsSection) => () => {
       setPanel(null);
       setSettingsFor({ id: space.id, section });
@@ -214,10 +219,12 @@ export function SpaceSwitcher() {
   );
 }
 
-/** Bottom of the desktop ribbon: the signed-in account (settings, sign out). */
+/** Bottom of the desktop ribbon: the signed-in account (settings, sign out).
+ *  None in local mode: one account, nothing to manage or sign out of. */
 export function AccountButton() {
-  const { user, logout } = useAuth();
+  const { user, local, logout } = useAuth();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  if (local) return null;
   return (
     <>
       <button

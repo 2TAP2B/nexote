@@ -3,6 +3,8 @@
 import { Camera, Keyboard, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
+
 type Props = {
   onScan: (isbn: string) => void;
   onManual: () => void;
@@ -38,6 +40,7 @@ function extractISBN(raw: string): string | null {
 // bottom so scanning is never a dead end.
 export default function IsbnScanner({ onScan, onManual, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  useAndroidBack(onClose);
   const [error, setError] = useState<string | null>(null);
   const [detected, setDetected] = useState(false);
   const doneRef = useRef(false);

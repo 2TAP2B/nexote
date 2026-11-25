@@ -22,6 +22,7 @@ import QuickCapturePane from "./QuickCapturePane";
 import ThreadView from "@/components/threads/ThreadView";
 import { OPEN_QUICK_NOTES_EVENT, threadRefFrom, type ThreadRef } from "@/components/threads/threadEvents";
 import { useSwipeToClose } from "@/components/threads/useSwipeToClose";
+import { useAndroidBack, useAndroidBackFallback } from "@/lib/android-back";
 import { api } from "@/lib/api";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { OPEN_THREAD_EVENT } from "@/lib/threads";
@@ -105,6 +106,15 @@ export default function MobileApp() {
     if (activeIsItem) void openTab(DASHBOARD_ID);
   }, [activeIsItem, openTab]);
   useSwipeToClose(collectionOverlayRef, closeCollection, openCollectionId !== null);
+  useAndroidBack(closeThread, openThreadRef !== null);
+  useAndroidBack(closeCollection, openCollectionId !== null);
+  // Back with nothing open: from the spaces, sidebar or right pane (TOC, or
+  // quick notes on the dashboard) to the note; on the note the app goes back.
+  useAndroidBackFallback(() => {
+    if (pagerFocus === "editor") return false;
+    setPagerFocus("editor");
+    return true;
+  });
 
   // Persist the sidebar section (tree/recent/shortcuts/bookmarks/tags/tasks/
   // collections/journal) + selected tag across reloads, so the app reopens where

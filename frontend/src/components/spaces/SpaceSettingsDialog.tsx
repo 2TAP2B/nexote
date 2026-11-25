@@ -41,6 +41,8 @@ const ADD_ROLE_OPTIONS: readonly Option<"editor" | "viewer">[] = [
  * A space's name/icon, members and leave/delete. Owners edit everything;
  * other members see the member list read-only and can leave. Server
  * refusals (e.g. the last owner leaving) show inline next to the action.
+ * Local mode (one account, the owner of everything) has only name, icon and
+ * delete.
  */
 export default function SpaceSettingsDialog({
   spaceId,
@@ -80,7 +82,7 @@ function SpaceSettingsBody({
   onClose: () => void;
 }) {
   const { spaces, updateSpace, deleteSpace, leaveSpace, refreshSpaces } = useNotes();
-  const { user } = useAuth();
+  const { user, local } = useAuth();
   const mobile = useIsMobileSettings();
   const space = spaces.find((s) => s.id === spaceId);
   const isOwner = space?.role === "owner";
@@ -118,13 +120,14 @@ function SpaceSettingsBody({
   const [members, setMembers] = useState<SpaceMember[] | null>(null);
   const [membersStatus, setMembersStatus] = useState<string | null>(null);
   const loadMembers = useCallback(async () => {
+    if (local) return;
     try {
       const res = await api.listMembers(spaceId);
       setMembers(res.members ?? []);
     } catch (err) {
       setMembersStatus(errorText(err, "Couldn't load the members."));
     }
-  }, [spaceId]);
+  }, [spaceId, local]);
   // Reload when someone else changes the membership (SSE spaces-change
   // updates memberCount and fires nexote:refresh-data, which also covers
   // role changes that keep the count).
@@ -164,12 +167,12 @@ function SpaceSettingsBody({
   const [addRole, setAddRole] = useState<"editor" | "viewer">("editor");
   const [addStatus, setAddStatus] = useState<string | null>(null);
   useEffect(() => {
-    if (!isOwner) return;
+    if (!isOwner || local) return;
     api
       .listUsers()
       .then((res) => setDirectory(res.users ?? []))
       .catch((err: unknown) => setAddStatus(errorText(err, "Couldn't load the accounts.")));
-  }, [isOwner]);
+  }, [isOwner, local]);
   const candidates = useMemo(() => {
     if (!directory || !members) return [];
     const taken = new Set(members.map((m) => m.userId));
@@ -230,14 +233,15 @@ function SpaceSettingsBody({
   const deleteRef = useRef<HTMLDivElement>(null);
   const scrolled = useRef(false);
   useEffect(() => {
-    if (scrolled.current || !initialSection || !members) return;
+    // Without members (local mode) the sections are there from the start.
+    if (scrolled.current || !initialSection || (!members && !local)) return;
     scrolled.current = true;
     const el = initialSection === "delete" ? deleteRef.current : leaveRef.current;
     el?.scrollIntoView({ block: "center" });
     if (initialSection === "delete" && !mobile) {
       document.getElementById(confirmId)?.focus({ preventScroll: true });
     }
-  }, [initialSection, members, confirmId, mobile]);
+  }, [initialSection, members, local, confirmId, mobile]);
 
   if (!space) return null;
   const text = mobile ? "text-[15px]" : "text-sm";
@@ -285,55 +289,57 @@ function SpaceSettingsBody({
         </SettingGroup>
       )}
 
-      <SettingGroup
-        heading="Members"
-        description={
-          membersStatus ? (
-            <StatusText status={{ tone: "error", text: membersStatus }} />
-          ) : isOwner ? (
-            "Editors can change notes, viewers can only read. Owners also manage members and the space."
-          ) : undefined
-        }
-      >
-        {members === null ? (
-          <SettingRow>
-            <span className={cx("text-muted-foreground", small)}>Loading…</span>
-          </SettingRow>
-        ) : (
-          members.map((m) => {
-            const self = m.userId === user.id;
-            return (
-              <SettingRow key={m.userId}>
-                <UserAvatar name={m.displayName} userId={m.userId} avatar={m.avatar} size={mobile ? 36 : 30} />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className={cx("truncate text-foreground", text)}>
-                    {m.displayName}
-                    {self && <span className={cx("ml-1.5 text-muted-foreground", small)}>(you)</span>}
+      {!local && (
+        <SettingGroup
+          heading="Members"
+          description={
+            membersStatus ? (
+              <StatusText status={{ tone: "error", text: membersStatus }} />
+            ) : isOwner ? (
+              "Editors can change notes, viewers can only read. Owners also manage members and the space."
+            ) : undefined
+          }
+        >
+          {members === null ? (
+            <SettingRow>
+              <span className={cx("text-muted-foreground", small)}>Loading…</span>
+            </SettingRow>
+          ) : (
+            members.map((m) => {
+              const self = m.userId === user.id;
+              return (
+                <SettingRow key={m.userId}>
+                  <UserAvatar name={m.displayName} userId={m.userId} avatar={m.avatar} size={mobile ? 36 : 30} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className={cx("truncate text-foreground", text)}>
+                      {m.displayName}
+                      {self && <span className={cx("ml-1.5 text-muted-foreground", small)}>(you)</span>}
+                    </span>
+                    <span className={cx("truncate text-muted-foreground", small)}>@{m.username}</span>
                   </span>
-                  <span className={cx("truncate text-muted-foreground", small)}>@{m.username}</span>
-                </span>
-                {isOwner && !self ? (
-                  <>
-                    <Dropdown
-                      value={m.role}
-                      options={ROLE_OPTIONS}
-                      onChange={(role) => void changeRole(m, role)}
-                      label={`Role of ${m.displayName}`}
-                    />
-                    <IconButton label={`Remove ${m.displayName}`} danger onClick={() => void removeMember(m)}>
-                      <X size={16} />
-                    </IconButton>
-                  </>
-                ) : (
-                  <span className={cx("shrink-0 text-muted-foreground", small)}>{ROLE_LABELS[m.role]}</span>
-                )}
-              </SettingRow>
-            );
-          })
-        )}
-      </SettingGroup>
+                  {isOwner && !self ? (
+                    <>
+                      <Dropdown
+                        value={m.role}
+                        options={ROLE_OPTIONS}
+                        onChange={(role) => void changeRole(m, role)}
+                        label={`Role of ${m.displayName}`}
+                      />
+                      <IconButton label={`Remove ${m.displayName}`} danger onClick={() => void removeMember(m)}>
+                        <X size={16} />
+                      </IconButton>
+                    </>
+                  ) : (
+                    <span className={cx("shrink-0 text-muted-foreground", small)}>{ROLE_LABELS[m.role]}</span>
+                  )}
+                </SettingRow>
+              );
+            })
+          )}
+        </SettingGroup>
+      )}
 
-      {isOwner && (
+      {isOwner && !local && (
         <SettingGroup
           heading="Add people"
           description={addStatus ? <StatusText status={{ tone: "error", text: addStatus }} /> : undefined}
@@ -381,7 +387,7 @@ function SpaceSettingsBody({
         </SettingGroup>
       )}
 
-      {members !== null && (
+      {members !== null && !local && (
         <div ref={leaveRef}>
           <SettingGroup>
             <SettingItem
@@ -430,7 +436,9 @@ function SpaceSettingsBody({
                 deleteStatus ? (
                   <StatusText status={{ tone: "error", text: deleteStatus }} />
                 ) : (
-                  "Deletes the space with all its vaults and notes, for every member. This can't be undone."
+                  local
+                    ? "Deletes the space with all its vaults and notes. This can't be undone."
+                    : "Deletes the space with all its vaults and notes, for every member. This can't be undone."
                 )
               }
               htmlFor={confirmId}

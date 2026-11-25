@@ -3,7 +3,10 @@
 import { ArrowDown, CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Pin, PinOff, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
+import { appendToDraft, shareFiles, shareText, takeAndroidShares, type AndroidShare } from "@/lib/android-bridge";
 import { api, isCollectionsVault } from "@/lib/api";
+import { isAndroidApp } from "@/lib/app-info";
 import { copyText } from "@/lib/clipboard";
 import { localDateKey, makeSnippet } from "@/lib/note-utils";
 import {
@@ -148,6 +151,10 @@ export default function QuickCapturePane({
     setBody("");
     setTagFilter(null);
   }, [locVault, locFolder]);
+  // The location whose Notepad was looked up (found or not): only then may
+  // shared images be uploaded, or they would create a second Notepad.
+  const locKey = `${locVault}\n${locFolder}`;
+  const [lookedUp, setLookedUp] = useState<string | null>(null);
   useEffect(() => {
     if (!focused) return;
     let cancelled = false;
@@ -160,6 +167,8 @@ export default function QuickCapturePane({
         if (!cancelled) setBody(note.body);
       } catch {
         // Offline or not created yet: the pane keeps what it shows.
+      } finally {
+        if (!cancelled) setLookedUp(`${locVault}\n${locFolder}`);
       }
     })();
     return () => {
@@ -183,6 +192,8 @@ export default function QuickCapturePane({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [selectMode]);
+  useAndroidBack(clearSelection, selectMode);
+  useAndroidBack(() => setFullscreen(false), fullscreen);
 
   const entries = useMemo(() => parseNotepad(body), [body]);
   const selected = useMemo(() => entries.filter((e) => selectedKeys.has(memoKey(e))), [entries, selectedKeys]);
@@ -332,6 +343,27 @@ export default function QuickCapturePane({
     targetErrorText: "Couldn't create the notepad",
     canFocus: () => focusedRef.current,
   });
+
+  // Android app: content shared from another app lands in the composer as if
+  // typed and picked here (images upload right away), after any draft. Only
+  // while the pane is shown, its Notepad was looked up and no memo is being
+  // edited (a share must never become part of an edit); until then shares
+  // wait in the bridge.
+  const applyShare = useRef<(share: AndroidShare) => boolean>(() => false);
+  useEffect(() => {
+    applyShare.current = (share) => {
+      if (editing) return false;
+      setInput((current) => appendToDraft(current, shareText(share)));
+      const files = shareFiles(share);
+      if (files.length > 0) void attach(files);
+      return true;
+    };
+  });
+  const editingMemo = editing !== null;
+  useEffect(() => {
+    if (!isAndroidApp || !focused || lookedUp !== locKey || editingMemo) return;
+    return takeAndroidShares((share) => applyShare.current(share));
+  }, [focused, lookedUp, locKey, editingMemo]);
 
   const post = () =>
     submit(

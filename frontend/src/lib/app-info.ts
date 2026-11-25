@@ -4,9 +4,17 @@
 
 const repository = "https://github.com/2tap2b/nexote";
 
+/** Which build this is (next.config.mjs): "server" = the self-hosted web
+ *  app, "app" = the static export the Android app's local engine serves. */
+export const BUILD_TARGET: "server" | "app" = process.env.NEXOTE_BUILD_TARGET === "app" ? "app" : "server";
+
+/** The Android app's build: no service worker, no offline layer (the engine
+ *  runs on the device), and the native bridge (lib/android-bridge.ts). */
+export const isAndroidApp = BUILD_TARGET === "app";
+
 export const APP = {
   name: "Nexote",
-  tagline: "Self-hosted Markdown notes",
+  tagline: isAndroidApp ? "Markdown notes on your phone" : "Self-hosted Markdown notes",
   version: process.env.NEXOTE_BUILD_VERSION ?? "",
   /** Commits after the release tag; above 0 means a development build. */
   commitsAhead: Number(process.env.NEXOTE_BUILD_AHEAD ?? "0"),

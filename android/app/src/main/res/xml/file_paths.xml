@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only files fetched from the engine to open in another app
+     (EngineDownloads, cache/shared/). -->
+<paths>
+    <cache-path name="shared" path="shared/" />
+</paths>

@@ -41,6 +41,15 @@ func (h *Handler) sessionUser(r *http.Request) *accounts.User {
 	return &u
 }
 
+// requestUser is who a request acts as: the local user in local mode, else
+// the session's user (nil without one).
+func (h *Handler) requestUser(r *http.Request) *accounts.User {
+	if u := h.localUser(); u != nil {
+		return u
+	}
+	return h.sessionUser(r)
+}
+
 // setSessionCookie logs the browser in. The cookie outlives the server-side
 // session on purpose: the session expires after SessionTTL without use.
 func (h *Handler) setSessionCookie(w http.ResponseWriter, token string) {
@@ -71,9 +80,9 @@ var errLoginRequired = errors.New("login required")
 
 // authenticate attaches the session's user to the request and refuses
 // requests without one, except for the login/setup/invite routes under
-// /api/auth/. Changing requests must come from the public origin: the
-// SameSite cookie already stops cross-site posts, this also stops other
-// sites on the same domain.
+// /api/auth/. In local mode the local user needs no session. Changing
+// requests must come from the public origin: the SameSite cookie already
+// stops cross-site posts, this also stops other sites on the same domain.
 func (h *Handler) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -83,7 +92,7 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 				return
 			}
 		}
-		if u := h.sessionUser(r); u != nil {
+		if u := h.requestUser(r); u != nil {
 			r = r.WithContext(context.WithValue(r.Context(), userKey{}, u))
 		} else if !strings.HasPrefix(r.URL.Path, "/api/auth/") {
 			writeError(w, http.StatusUnauthorized, errLoginRequired)

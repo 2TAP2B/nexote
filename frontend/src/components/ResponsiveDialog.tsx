@@ -4,6 +4,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { BottomSheet } from "./mobile/BottomSheet";
 import { ConfirmSheet } from "./mobile/ConfirmSheet";
 
@@ -16,9 +17,11 @@ import { ConfirmSheet } from "./mobile/ConfirmSheet";
 // confirmation over an editor closes alone).
 const stack: string[] = [];
 
+// (The touch sheet registers its own Android Back.)
 function useEscapeOnTop(id: string, onClose: () => void, enabled: boolean) {
   const close = useRef(onClose);
   close.current = onClose;
+  useAndroidBack(onClose, enabled);
   useEffect(() => {
     if (!enabled) return;
     stack.push(id);

@@ -67,7 +67,8 @@ pnpm build     # static site in docs/doc_build
 
 | Path | Contents |
 | --- | --- |
-| `backend/main.go` | Entry point: reads the environment, opens the registries and accounts, starts git sync, adopts legacy data, normalizes file names, serves HTTP. Also the `recover` command. |
+| `backend/main.go` · `backend/server/` | Entry point: reads the environment, serves HTTP, and the `recover` command. `server.Open` opens the registries and accounts, starts git sync, adopts legacy data and normalizes file names; the Android engine uses it too. |
+| `backend/engine/`, `backend/mobile/`, `backend/cmd/nexote-local/` | The Android app's engine: the API in local mode plus the frontend's static export on `127.0.0.1`, the gomobile facade, and a desktop runner of the engine. |
 | `backend/api/` | HTTP layer. `handler.go` holds every route; `access.go` authorization; `auth.go`, `account.go`, `admin.go` accounts; `spaces.go` spaces and collections; `events.go` the SSE hub; `ai.go` the AI proxy; `metadata.go` and `dnb.go` collection lookups. |
 | `backend/notes/` | Storage. `store.go` the note store; `frontmatter.go` the file format; `filenames.go` title-based file names; `vaults.go`, `spaces.go`, `collections.go` registries; `history.go` snapshots; `images.go` images; `bookmarks.go`; `gitsync.go`. |
 | `backend/accounts/` | Users, sessions and invites (`store.go`), WebAuthn configuration and ceremonies (`passkeys.go`). |
@@ -76,6 +77,7 @@ pnpm build     # static site in docs/doc_build
 | `frontend/src/lib/` | `api.ts` (API client and shared types), `ai.ts`, `offline-db.ts`, `notepad.ts`, `note-utils.ts` and other helpers. |
 | `frontend/public/sw.js` | Service worker for offline use. |
 | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh` | Single-container build that runs both servers. |
+| `android/` | The Android app: a Kotlin WebView shell around the engine, and `build-engine.sh`, which builds the frontend export and the engine library. |
 | `docs/` | This site. |
 
 `AGENTS.md` in the repository root is a detailed file index with a "task to files" table, written for coding agents and useful for people too.
@@ -102,11 +104,21 @@ The backend uses only the Go standard library for HTTP, with method-pattern rout
 - **Live updates.** `NotesProvider` listens on `/api/events` and reloads what changed.
 - **Offline.** `public/sw.js` is the sync engine: it caches the app (every build file, listed by the `/sw-assets` route) and mirrors data GETs into IndexedDB, queues allowed writes in an outbox, applies them to the local copies, and replays them in order with `expectedUpdatedAt` (a conflict becomes an "(offline copy)" note). Notes get client-chosen ids (`newNoteId` in `lib/api.ts`), so a replayed create is idempotent. `lib/offline-status.tsx` detects the server and shows queue and sync reports; `lib/offline-db.ts` only counts and clears the outbox. AI, git, account and admin requests are never cached or queued.
 - **Settings.** The pages in `components/settings/` are shared by the desktop dialog and the mobile settings screen. Options live in `AppSettings` in `NotesProvider.tsx` and are stored per device. A new option should only be added if it visibly changes something on every platform that shows it.
-- **Production build.** `next.config.mjs` builds a standalone server and turns off response compression, which would otherwise break the SSE stream through the `/api` rewrite.
+- **Production build.** `next.config.mjs` builds a standalone server and turns off response compression, which would otherwise break the SSE stream through the `/api` rewrite. `NEXOTE_EXPORT=1` builds the static export for the Android app instead (`out/`); routes that only exist on a server are named `*.standalone.ts(x)` and left out of it.
+
+### Android app
+
+The app runs the backend on the phone. `android/build-engine.sh` builds the frontend's static export, copies it into `backend/mobile/web/` and compiles `backend/mobile` with `gomobile bind` into an Android library. The Kotlin app (`android/`) starts the engine with the chosen data folder (`mobile.Start(folder, port, secret)`), sets the secret as a cookie and loads `http://127.0.0.1:<port>/` in a WebView.
+
+- **Local mode.** The engine opens the folder with `server.Open` in local mode: there is one user, created on first start or taken from the folder's first admin, and every request acts as that user. `/api/auth/status` reports `local: true`, so the frontend shows no sign-in, accounts or sharing.
+- **Only the app gets in.** Every request has to carry the `nexote_engine` cookie; the engine listens on `127.0.0.1` only, so other apps on the phone get 403.
+- **Same origin across starts.** The app keeps the port, so the WebView's origin, and with it localStorage and IndexedDB, stays the same.
+- **Bridge.** The app injects a `NexoteAndroid` object (`addWebMessageListener`, restricted to the engine's origin). The page sends `hello`, `chooseFolder` and `theme`; the app answers with `info` (data folder, version) and delivers content shared from other apps as `share`. System Back first asks the page through `window.__nexoteAndroidBack()` whether it closed an overlay.
+- **No service worker.** The app build unregisters service workers: the engine is always on the phone, and a cached shell would outlive app updates.
 
 ## Releases
 
-Pushing a `v*` tag creates the GitHub release (with the commits since the previous tag as notes) and publishes the Docker image `ghcr.io/2tap2b/nexote` for `linux/amd64` and `linux/arm64`, tagged `latest` and with the version number. Pushes to `main` alone don't release. Features get a minor version (`v0.6.0`), bugfixes a patch (`v0.6.1`).
+Pushing a `v*` tag creates the GitHub release (with the commits since the previous tag as notes), publishes the Docker image `ghcr.io/2tap2b/nexote` for `linux/amd64` and `linux/arm64`, tagged `latest` and with the version number, and attaches the Android app as `nexote-<version>.apk`, signed with the release key from the repository secrets. Pushes to `main` alone don't release. Features get a minor version (`v0.6.0`), bugfixes a patch (`v0.6.1`).
 
 ## License
 

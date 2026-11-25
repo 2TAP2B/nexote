@@ -6,12 +6,16 @@
 // Other tools show the name. In the editor it is a block with the file
 // name, an "Open" link and (on desktop) the browser's inline viewer. Phone
 // browsers can't show PDFs in a frame, so there the block is a card that
-// opens the system viewer, with the first page drawn by pdf.js below it.
+// opens the system viewer, with the first page drawn by pdf.js below it. The
+// Android app always shows the card: its WebView turns a framed PDF into a
+// download, and the app opens "Open" in the phone's PDF viewer.
 
 import type { Node as ProseNode } from "@milkdown/kit/prose/model";
 import type * as PdfJs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { TextSelection } from "@milkdown/kit/prose/state";
 import { $command, $nodeSchema, $remark, $view } from "@milkdown/kit/utils";
+
+import { isAndroidApp } from "@/lib/app-info";
 
 /** True for a URL whose path ends in .pdf (query and fragment ignored). */
 export function isPdfUrl(url: string): boolean {
@@ -287,8 +291,9 @@ export const pdfView = $view(pdfSchema.node, () => (initial) => {
   dom.append(head);
   let frame: HTMLIFrameElement | null = null;
   let preview: TouchPreview | null = null;
-  // Phones and tablets have no inline PDF viewer in the browser.
-  if (!window.matchMedia("(pointer: coarse)").matches) {
+  // Phones and tablets have no inline PDF viewer in the browser, nor does
+  // the Android app's WebView.
+  if (!isAndroidApp && !window.matchMedia("(pointer: coarse)").matches) {
     frame = document.createElement("iframe");
     frame.className = "nexote-pdf-frame";
     frame.loading = "lazy";

@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
+
 export type MenuItem = {
   label: string;
   icon?: React.ReactNode;
@@ -24,6 +26,7 @@ type ContextMenuProps = {
 // and sidebar regardless of their stacking contexts.
 export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  useAndroidBack(onClose);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {

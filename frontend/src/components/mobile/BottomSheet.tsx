@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { useVisualViewport } from "./useVirtualKeyboardInset";
 
 const DISMISS_PX = 80;
@@ -36,6 +37,9 @@ export function BottomSheet({
   const [dragY, setDragY] = useState(0);
   const dragStart = useRef<number | null>(null);
   const closing = useRef(false);
+  // Mirrors `closing` for Android Back: a sheet sliding out (tap outside,
+  // drag, a button) no longer counts as open, so Back reaches what's below.
+  const [leaving, setLeaving] = useState(false);
   const vv = useVisualViewport();
 
   useEffect(() => {
@@ -47,6 +51,7 @@ export function BottomSheet({
   const dismiss = () => {
     if (closing.current) return;
     closing.current = true;
+    setLeaving(true);
     setShown(false);
     setDragY(0);
     window.setTimeout(onClose, ANIM_MS);
@@ -54,8 +59,10 @@ export function BottomSheet({
   // Content that opens something of its own closes at once.
   const closeNow = () => {
     closing.current = true;
+    setLeaving(true);
     onClose();
   };
+  useAndroidBack(dismiss, !leaving);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

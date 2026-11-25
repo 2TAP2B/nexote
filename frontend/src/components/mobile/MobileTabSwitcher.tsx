@@ -2,6 +2,7 @@
 
 import { FileText, Home, Plus, X } from "lucide-react";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
 // each card; "+" and "Done" in the bottom bar.
 export default function MobileTabSwitcher({ onClose, onNewTab }: Props) {
   const { openTabs, activeId, notesById, openTab, closeTab } = useNotes();
+  useAndroidBack(onClose);
 
   const handleClose = (id: string) => {
     closeTab(id);

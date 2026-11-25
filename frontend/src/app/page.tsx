@@ -39,7 +39,10 @@ import MobileApp from "@/components/mobile/MobileApp";
 import QuickCapturePane from "@/components/mobile/QuickCapturePane";
 import ThreadView from "@/components/threads/ThreadView";
 import { OPEN_QUICK_NOTES_EVENT, threadRefFrom } from "@/components/threads/threadEvents";
+import { useAndroidBack } from "@/lib/android-back";
+import { refreshAndroidTheme, startAndroidBridge, useAndroidShareCount } from "@/lib/android-bridge";
 import { api } from "@/lib/api";
+import { isAndroidApp } from "@/lib/app-info";
 import { DASHBOARD_ID, NotesProvider, useNotes, type TreeSort } from "@/lib/notes-context";
 import { pickShell, savedInterfaceMode, type Shell } from "@/lib/shell";
 import { OPEN_THREAD_EVENT } from "@/lib/threads";
@@ -65,6 +68,9 @@ function useStartShell(): Shell | null {
 
 export default function Page() {
   const shell = useStartShell();
+  // Android app: hello, info and theme right away, independent of sign-in,
+  // so the engine error screen can still offer another data folder.
+  useEffect(() => startAndroidBridge(), []);
   // Server render (static HTML) and the first client frame: the splash, so
   // something branded shows before the scripts have loaded.
   if (!shell) return <AuthSplash />;
@@ -73,6 +79,7 @@ export default function Page() {
       <NotesProvider>
         <ShellSwitch shell={shell} />
         {shell === "touch" ? <MobileApp /> : <AppShell />}
+        {isAndroidApp && <AndroidShareOpener />}
       </NotesProvider>
     </AuthGate>
   );
@@ -87,6 +94,25 @@ function ShellSwitch({ shell }: { shell: Shell }) {
   useEffect(() => {
     if (pickShell(savedInterfaceMode()) !== shell) window.location.reload();
   }, [settings.interface, shell]);
+  return null;
+}
+
+// Android app: opens quick notes for every share from another app (the
+// quick-notes composer takes its text and files). After the shell, so the
+// shell's listeners are up when this effect runs, and only once the provider
+// has restored the tabs, which would otherwise replace the dashboard quick
+// notes open on. The shell's own background now exists: the system bars
+// follow it.
+function AndroidShareOpener() {
+  const { loading } = useNotes();
+  const shares = useAndroidShareCount();
+  const opened = useRef(0);
+  useEffect(() => refreshAndroidTheme(), []);
+  useEffect(() => {
+    if (loading || shares === opened.current) return;
+    opened.current = shares;
+    window.dispatchEvent(new CustomEvent(OPEN_QUICK_NOTES_EVENT));
+  }, [loading, shares]);
   return null;
 }
 
@@ -210,6 +236,10 @@ function AppShell() {
     }
     setMainView((prev) => (prev?.kind === "thread" && prev.fromQuick ? { kind: "quick" } : null));
   }, [mainView, activeNote?.collection, openTab]);
+  // Keyed by the view: stepping from a thread back to quick notes keeps a
+  // main view open, and the next Back must reach it again.
+  useAndroidBack(leaveMainView, mainView?.kind ?? false);
+  useAndroidBack(() => setMobileOpen(false), mobileOpen);
 
   // Opening a note (another active tab) shows the editor again. Not on the
   // first run: the tab restore at startup isn't the user opening a note.

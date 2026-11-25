@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nexote</string>
+
+    <string name="setup_title">Welcome to Nexote</string>
+    <string name="setup_body">Nexote keeps your notes as Markdown files in a folder on this phone. Other apps can open them too, and you can back them up or sync them like any other files.</string>
+    <string name="setup_folder_label">Folder</string>
+    <string name="setup_use_folder">Use this folder</string>
+    <string name="setup_choose_folder">Choose another folder</string>
+    <string name="setup_permission_all_files">Nexote needs access to all files to read and write the notes in this folder. Android opens a settings page next: turn on access for Nexote, then come back.</string>
+    <string name="setup_permission_storage">Nexote needs access to your files to read and write the notes in this folder.</string>
+    <string name="setup_permission_denied">Nexote can\'t use the folder without access to your files.</string>
+
+    <string name="folder_error_title">Can\'t use this folder</string>
+    <string name="folder_unsupported">Choose a folder on the phone\'s storage or on an SD card. Folders from other apps or cloud storage can\'t hold Nexote\'s files.</string>
+    <string name="folder_not_writable">Nexote can\'t create files in %1$s.</string>
+
+    <string name="loading">Starting Nexote…</string>
+    <string name="error_title">Nexote couldn\'t start</string>
+    <string name="error_unknown">Something went wrong.</string>
+
+    <string name="no_app_for_link">No app can open this link.</string>
+    <string name="no_app_for_file">No app on this phone can open this file.</string>
+    <string name="open_file_failed">Couldn\'t open the file.</string>
+    <string name="ok">OK</string>
+</resources>

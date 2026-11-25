@@ -123,17 +123,71 @@ type GitSync struct {
 	repo          *git.Repository
 	timer         *time.Timer
 	autosyncTimer *time.Timer
+
+	// runMu guards stopped and admits timer bodies into runs, so Stop can
+	// wait for the ones in flight and no later one starts. ctx is the
+	// timer bodies' context; Stop cancels it to cut a running push short.
+	runMu   sync.Mutex
+	stopped bool
+	runs    sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewGitSync creates a GitSync for the given root. If a git repo already
 // exists it is opened; otherwise it is created lazily on the first commit.
 func NewGitSync(root string, cfg GitConfig) *GitSync {
 	gs := &GitSync{root: root, cfg: cfg}
+	gs.ctx, gs.cancel = context.WithCancel(context.Background())
 	if repo, err := git.PlainOpen(root); err == nil {
 		gs.repo = repo
 	}
 	gs.scheduleAutoSync()
 	return gs
+}
+
+// Stop ends background syncing for good: pending debounced commits and the
+// auto-sync timer are dropped, a running push is cancelled, and Stop
+// returns once no timer body touches the repository anymore. Explicit
+// calls (Commit, Push, …) keep working. A server never stops its GitSync;
+// the on-device engine does when it closes a data folder, which must not
+// keep committing and pushing in the background.
+func (gs *GitSync) Stop() {
+	gs.runMu.Lock()
+	gs.stopped = true
+	gs.runMu.Unlock()
+	gs.cancel()
+	gs.mu.Lock()
+	if gs.autosyncTimer != nil {
+		gs.autosyncTimer.Stop()
+		gs.autosyncTimer = nil
+	}
+	gs.mu.Unlock()
+	gs.commitMu.Lock()
+	if gs.timer != nil {
+		gs.timer.Stop()
+		gs.timer = nil
+	}
+	gs.commitMu.Unlock()
+	gs.runs.Wait()
+}
+
+// beginRun admits a timer body unless the GitSync is stopped; an admitted
+// body must call gs.runs.Done when finished.
+func (gs *GitSync) beginRun() bool {
+	gs.runMu.Lock()
+	defer gs.runMu.Unlock()
+	if gs.stopped {
+		return false
+	}
+	gs.runs.Add(1)
+	return true
+}
+
+func (gs *GitSync) isStopped() bool {
+	gs.runMu.Lock()
+	defer gs.runMu.Unlock()
+	return gs.stopped
 }
 
 // SetConfig updates the config and re-opens the repo if needed.
@@ -165,7 +219,7 @@ func (gs *GitSync) scheduleAutoSync() {
 		gs.autosyncTimer.Stop()
 		gs.autosyncTimer = nil
 	}
-	if !gs.cfg.Enabled || gs.cfg.AutoSyncMinutes <= 0 {
+	if !gs.cfg.Enabled || gs.cfg.AutoSyncMinutes <= 0 || gs.isStopped() {
 		return
 	}
 	interval := time.Duration(gs.cfg.AutoSyncMinutes) * time.Minute
@@ -176,12 +230,16 @@ func (gs *GitSync) scheduleAutoSync() {
 // gs.mu across Commit/Push — both take the lock themselves, and holding it
 // here deadlocked every later git call (manual push/pull spun forever).
 func (gs *GitSync) runAutoSync() {
+	if !gs.beginRun() {
+		return
+	}
+	defer gs.runs.Done()
 	gs.mu.Lock()
 	enabled := gs.cfg.Enabled && gs.cfg.AutoSyncMinutes > 0
 	gs.mu.Unlock()
 	if enabled {
 		_ = gs.Commit("Auto-sync from Nexote")
-		_ = gs.Push(context.Background(), GitCredentials{})
+		_ = gs.Push(gs.ctx, GitCredentials{})
 	}
 	gs.mu.Lock()
 	gs.scheduleAutoSync()
@@ -296,7 +354,7 @@ func (gs *GitSync) ensureRepo() error {	if gs.repo != nil {
 // commitDebounced schedules a commit after a short delay. Multiple calls
 // within the debounce window coalesce into one commit.
 func (gs *GitSync) commitDebounced() {
-	if !gs.Config().Enabled {
+	if !gs.Config().Enabled || gs.isStopped() {
 		return
 	}
 	gs.commitMu.Lock()
@@ -305,9 +363,13 @@ func (gs *GitSync) commitDebounced() {
 		gs.timer.Stop()
 	}
 	gs.timer = time.AfterFunc(500*time.Millisecond, func() {
+		if !gs.beginRun() {
+			return
+		}
+		defer gs.runs.Done()
 		_ = gs.Commit("Auto-commit from Nexote")
 		if gs.Config().AutoPush {
-			_ = gs.Push(context.Background(), GitCredentials{})
+			_ = gs.Push(gs.ctx, GitCredentials{})
 		}
 	})
 }

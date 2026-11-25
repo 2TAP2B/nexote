@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 
 import type { MilkdownEditorHandle } from "@/components/MilkdownEditor";
+import { useAndroidBack } from "@/lib/android-back";
 
 type PresetItem = {
   id: string;
@@ -99,6 +100,9 @@ export default function AICommandPanel({ editorRef, onClose, mobile }: Props) {
   const [submenu, setSubmenu] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  // Back leaves a submenu first, then closes the panel.
+  useAndroidBack(onClose);
+  useAndroidBack(() => setSubmenu(null), submenu !== null);
 
   useEffect(() => {
     inputRef.current?.focus();

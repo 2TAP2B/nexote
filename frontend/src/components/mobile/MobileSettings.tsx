@@ -13,6 +13,7 @@ import {
   type SettingsCategoryId,
 } from "@/components/settings/categories";
 import { SettingsPlatformProvider } from "@/components/settings/ui";
+import { useAndroidBack } from "@/lib/android-back";
 
 type Props = {
   open: boolean;
@@ -24,10 +25,13 @@ type Props = {
 /** Mobile settings: a list of categories, each opening the shared section page. */
 export default function MobileSettings({ open, onClose, colorScheme, onColorSchemeChange }: Props) {
   const { theme } = useTheme();
-  const { user } = useAuth();
-  const NAV = useMemo(() => settingsNav(user.role, "mobile"), [user.role]);
+  const { user, local } = useAuth();
+  const NAV = useMemo(() => settingsNav(user.role, "mobile", local), [user.role, local]);
   const CATEGORIES = NAV.flatMap((group) => group.categories);
   const [page, setPage] = useState<SettingsCategoryId | null>(null);
+  // Back leaves a page for the list first, then closes settings.
+  useAndroidBack(onClose, open);
+  useAndroidBack(() => setPage(null), open && CATEGORIES.some((c) => c.id === page));
 
   useEffect(() => {
     if (!open) setPage(null);

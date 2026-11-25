@@ -3,6 +3,7 @@
 import { Clock, History, Loader2, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { api, type HistoryVersion } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
@@ -38,6 +39,7 @@ export default function NoteHistoryPanel({
 }: Props) {
   const { activeVault, isJournalNote } = useNotes();
   const canRestore = useCanEdit().canEditNote(noteId);
+  useAndroidBack(onClose, open);
   const [versions, setVersions] = useState<HistoryVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);

@@ -4,8 +4,10 @@ import { LayoutGrid, X } from "lucide-react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useAuth } from "@/components/auth/AuthProvider";
 import { IconPicker } from "@/components/settings/IconPicker";
 import { Button, errorText, SettingsPlatformProvider, StatusText, TextInput, cx } from "@/components/settings/ui";
+import { useAndroidBack } from "@/lib/android-back";
 import type { SpaceInfo } from "@/lib/api";
 import { useNotes } from "@/lib/notes-context";
 
@@ -30,6 +32,7 @@ export function SpaceDialogShell({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  useAndroidBack(onClose);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -121,6 +124,7 @@ export function NewSpaceDialog({
   onCreated?: (space: SpaceInfo) => void;
 }) {
   const { createSpace } = useNotes();
+  const { local } = useAuth();
   const [name, setName] = useState("");
   const [icon, setIcon] = useState("");
   const [busy, setBusy] = useState(false);
@@ -183,7 +187,9 @@ export function NewSpaceDialog({
           </button>
         )}
         <p className={cx("leading-snug text-muted-foreground", mobile ? "text-[13px]" : "text-xs")}>
-          A space has its own vaults, notes and collections. It stays private until you add members.
+          {local
+            ? "A space has its own vaults, notes and collections."
+            : "A space has its own vaults, notes and collections. It stays private until you add members."}
         </p>
         {error && (
           <p className="text-sm">

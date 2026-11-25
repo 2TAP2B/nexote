@@ -23,8 +23,22 @@ const build = {
   time: new Date().toISOString(),
 };
 
+// Two builds from one source:
+// - Standalone (default): the server build for Docker. Next serves the pages
+//   and proxies /api/* to the Go backend.
+// - `NEXOTE_EXPORT=1`: the Android app. A static export into `out/` that the
+//   Go engine embeds and serves on 127.0.0.1 itself, including the deep-link
+//   fallbacks and the /m redirects below (a static export can't have
+//   rewrites or redirects).
+// Routes only the server build has (they need a Next server: the service
+// worker's asset list, invite links into a multi-account server) are named
+// `*.standalone.ts(x)`; only the standalone build lists that extension in
+// `pageExtensions`, so the export never sees them. The target is inlined as
+// NEXOTE_BUILD_TARGET ("server" | "app", read in src/lib/app-info.ts).
+const exportBuild = process.env.NEXOTE_EXPORT === "1";
+
 /** @type {import('next').NextConfig} */
-const nextConfig = {
+const shared = {
   // Tell Turbopack the workspace root so it stops warning about the two
   // pnpm-lock.yaml files (repo root + frontend/).
   turbopack: {
@@ -38,16 +52,29 @@ const nextConfig = {
   // Allow LAN access to the dev server (HMR/websocket) from the machine's
   // local IP and Tailscale IP so phones on the LAN can load the dev server.
   allowedDevOrigins: ["192.168.178.94", "100.64.0.26"],
-  // Emit a self-contained server bundle (`.next/standalone`) so the app can
-  // ship inside a single Docker container alongside the Go backend.
-  output: "standalone",
   // Inlined into the client bundle at build time (src/lib/app-info.ts).
   env: {
     NEXOTE_BUILD_VERSION: build.version,
     NEXOTE_BUILD_AHEAD: String(build.ahead),
     NEXOTE_BUILD_COMMIT: build.commit,
     NEXOTE_BUILD_TIME: build.time,
+    NEXOTE_BUILD_TARGET: exportBuild ? "app" : "server",
   },
+};
+
+/** @type {import('next').NextConfig} */
+const appConfig = {
+  ...shared,
+  output: "export",
+};
+
+/** @type {import('next').NextConfig} */
+const serverConfig = {
+  ...shared,
+  // Emit a self-contained server bundle (`.next/standalone`) so the app can
+  // ship inside a single Docker container alongside the Go backend.
+  output: "standalone",
+  pageExtensions: ["standalone.tsx", "standalone.ts", "tsx", "ts", "jsx", "js"],
   // Proxy /api/* to the Go backend during development so the app and API
   // share an origin. In production the same routes can be served by a
   // reverse proxy in front of both processes.
@@ -75,4 +102,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default exportBuild ? appConfig : serverConfig;

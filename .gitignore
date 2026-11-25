@@ -15,6 +15,17 @@ backend/nexote
 backend/coverage.out
 *.prof
 
+# android (the engine .aar and its sources jar come from android/build-engine.sh)
+android/.gradle
+android/build
+android/app/build
+android/local.properties
+android/.kotlin
+android/app/libs/*.aar
+android/app/libs/*-sources.jar
+*.jks
+*.keystore
+
 # nix
 result
 result-*

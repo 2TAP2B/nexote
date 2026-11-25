@@ -3,6 +3,8 @@
 import { FolderPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
+
 type FolderCreateDialogProps = {
   open: boolean;
   onClose: () => void;
@@ -21,6 +23,7 @@ export default function FolderCreateDialog({
 }: FolderCreateDialogProps) {
   const [name, setName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  useAndroidBack(onClose, open);
 
   useEffect(() => {
     if (open) {

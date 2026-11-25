@@ -4,6 +4,7 @@ import { Database } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { getIcon, ICON_OPTIONS, type IconComponent } from "@/lib/icons";
 import { cx, useIsMobileSettings } from "./ui";
 
@@ -36,6 +37,7 @@ export function IconPicker({
   const popRef = useRef<HTMLDivElement>(null);
   const Current = getIcon(value, fallback);
   const open = pos !== null;
+  useAndroidBack(() => setPos(null), open);
 
   const toggle = () => {
     if (open || !btnRef.current) {

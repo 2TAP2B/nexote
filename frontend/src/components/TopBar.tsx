@@ -3,6 +3,7 @@
 import { ChevronDown, LayoutDashboard, MessageSquareText, Plus, X } from "lucide-react";
 import { Fragment, useEffect, useRef, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
 
@@ -36,6 +37,7 @@ export default function TopBar({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+  useAndroidBack(() => setMenuOpen(false), menuOpen);
   const plusRef = useRef<HTMLButtonElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
 

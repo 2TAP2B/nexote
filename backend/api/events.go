@@ -113,7 +113,7 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, data)
 			flusher.Flush()
 		case <-ticker.C:
-			if h.sessionUser(r) == nil {
+			if h.requestUser(r) == nil {
 				return
 			}
 			fmt.Fprint(w, ": keepalive\n\n")

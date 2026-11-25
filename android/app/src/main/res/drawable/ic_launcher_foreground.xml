@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ic_launcher_art is the web app's maskable icon: its content stays inside
+     a centered circle of 80% of the image. The adaptive icon only promises
+     the central 66dp of its 108dp layer, so the art is shrunk to 82.5dp
+     (0.8 × 82.5 = 66): 12.75dp, or 11.8%, on every side. The art's own
+     background matches launcher_background, so the gap doesn't show. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_launcher_art"
+    android:inset="11.8%" />

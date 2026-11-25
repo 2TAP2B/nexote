@@ -43,6 +43,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { useNotes, type TreeSort } from "@/lib/notes-context";
 import { haptic } from "@/lib/haptics";
 import { ConfirmSheet } from "./mobile/ConfirmSheet";
@@ -589,6 +590,8 @@ export default function FileTree({
     y: number;
   } | null>(null);
   const noteIconPickerRef = useRef<HTMLDivElement>(null);
+  useAndroidBack(() => setVaultIconPicker(null), vaultIconPicker !== null);
+  useAndroidBack(() => setNoteIconPicker(null), noteIconPicker !== null);
 
   // Inline rename state.
   const [renaming, setRenaming] = useState<{
@@ -3291,6 +3294,7 @@ function ImagesView({
   const [items, setItems] = useState<ImageItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<ImageItem | null>(null);
+  useAndroidBack(() => setPreview(null), preview !== null);
   const [mode, setMode] = useState<"gallery" | "list">(() => {
     if (typeof window === "undefined") return "gallery";
     return window.localStorage.getItem("nexote-images-view") === "list" ? "list" : "gallery";
@@ -3614,6 +3618,7 @@ export function MoveToDialog({
   onMove: (dstVaultId: string, dstPath: string) => void;
 }) {
   const { allVaults, allVaultData, spaces, activeSpaceId } = useNotes();
+  useAndroidBack(onClose, open);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

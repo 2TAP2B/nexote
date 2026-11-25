@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
 import type { ToolbarAction, ToolbarMenuItem } from "./toolbarActions";
 
 export type OpenMenu = { key: string; anchor: DOMRect; items: ToolbarMenuItem[] };
@@ -38,6 +39,7 @@ export function ToolbarMenu({
   touch?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  useAndroidBack(onClose);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {

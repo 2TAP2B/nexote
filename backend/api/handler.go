@@ -47,6 +47,11 @@ type Handler struct {
 	setupMu   sync.Mutex
 	setupCode string
 
+	// localUserID is set by StartLocalMode before serving and never
+	// changes afterwards: "" on a server, else the user every request acts
+	// as.
+	localUserID string
+
 	// personal caches each user's journal and home stores, one Store per
 	// directory like the registry's vault stores.
 	storesMu sync.Mutex

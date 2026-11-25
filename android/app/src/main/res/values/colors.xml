@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Behind the page and the native screens, so nothing flashes white or
+         black while the page loads. -->
+    <color name="background">#ffffff</color>
+    <!-- The web app's default theme (globals.css). -->
+    <color name="text_primary">#1e1e1e</color>
+    <color name="text_secondary">#6a6a6a</color>
+    <color name="surface">#f5f5f5</color>
+    <color name="accent">#7c6ff0</color>
+    <!-- The background of frontend/public/icon-maskable-512.png. -->
+    <color name="launcher_background">#1a1d29</color>
+</resources>

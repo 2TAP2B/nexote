@@ -1,5 +1,6 @@
 import {
   FolderPlus,
+  FolderOpen,
   GitBranch,
   Home,
   Info,
@@ -17,6 +18,7 @@ import {
 import type { ReactNode } from "react";
 
 import type { UserRole } from "@/lib/api";
+import { isAndroidApp } from "@/lib/app-info";
 import { AboutSettings } from "./AboutSettings";
 import { AccountSettings } from "./AccountSettings";
 import { AISettings } from "./AISettings";
@@ -27,6 +29,7 @@ import { FeatureSettings } from "./FeatureSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { MetadataSettings } from "./MetadataSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { StorageSettings } from "./StorageSettings";
 import { SyncSettings } from "./SyncSettings";
 import { UsersSettings } from "./UsersSettings";
 import { VaultSettings } from "./VaultSettings";
@@ -38,6 +41,7 @@ export type SectionProps = {
 };
 
 export type SettingsCategoryId =
+  | "storage"
   | "account"
   | "users"
   | "general"
@@ -61,16 +65,26 @@ export type SettingsCategory = {
   desktopOnly?: boolean;
   /** Server-wide settings only admins may change. */
   adminOnly?: boolean;
+  /** Only with a server: hidden in local mode (the Android app's engine has
+   *  one account, no passkeys and no git sync). */
+  serverOnly?: boolean;
+  /** Only in the Android app's build. */
+  appOnly?: boolean;
 };
 
 type SettingsNav = { label?: string; categories: SettingsCategory[] }[];
 
 const SETTINGS_NAV: SettingsNav = [
   {
+    categories: [{ id: "storage", label: "Storage", icon: FolderOpen, Section: StorageSettings, appOnly: true }],
+  },
+  {
     label: "Account",
     categories: [
-      { id: "account", label: "Account", icon: UserRound, Section: AccountSettings },
-      { id: "users", label: "Users", icon: Users, Section: UsersSettings, adminOnly: true },
+      // Without other accounts only server things remain: the name and
+      // picture are for the other members, the rest is passkeys and sign-out.
+      { id: "account", label: "Account", icon: UserRound, Section: AccountSettings, serverOnly: true },
+      { id: "users", label: "Users", icon: Users, Section: UsersSettings, adminOnly: true, serverOnly: true },
     ],
   },
   {
@@ -90,7 +104,7 @@ const SETTINGS_NAV: SettingsNav = [
     categories: [
       { id: "ai", label: "AI", icon: Zap, Section: AISettings },
       { id: "metadata", label: "Metadata lookup", icon: Music, Section: MetadataSettings, adminOnly: true },
-      { id: "sync", label: "Git sync", icon: GitBranch, Section: SyncSettings, adminOnly: true },
+      { id: "sync", label: "Git sync", icon: GitBranch, Section: SyncSettings, adminOnly: true, serverOnly: true },
     ],
   },
   {
@@ -99,12 +113,17 @@ const SETTINGS_NAV: SettingsNav = [
 ];
 
 /** Settings navigation for the desktop sidebar and the mobile list: admin
- *  pages only for admins, keyboard pages only with a keyboard. */
-export function settingsNav(role: UserRole, platform: "desktop" | "mobile"): SettingsNav {
+ *  pages only for admins, keyboard pages only with a keyboard, server pages
+ *  not in local mode, app pages only in the app. */
+export function settingsNav(role: UserRole, platform: "desktop" | "mobile", local: boolean): SettingsNav {
   return SETTINGS_NAV.map((group) => ({
     ...group,
     categories: group.categories.filter(
-      (c) => (role === "admin" || !c.adminOnly) && (platform === "desktop" || !c.desktopOnly),
+      (c) =>
+        (role === "admin" || !c.adminOnly) &&
+        (platform === "desktop" || !c.desktopOnly) &&
+        (!local || !c.serverOnly) &&
+        (isAndroidApp || !c.appOnly),
     ),
   })).filter((group) => group.categories.length > 0);
 }

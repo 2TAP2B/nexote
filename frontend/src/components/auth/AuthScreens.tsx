@@ -1,9 +1,11 @@
 "use client";
 
-import { KeyRound, Loader2, RotateCw, TriangleAlert } from "lucide-react";
+import { FolderOpen, KeyRound, Loader2, RotateCw, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState, type ReactNode } from "react";
 
+import { chooseAndroidFolder } from "@/lib/android-bridge";
 import { api, type AuthUser } from "@/lib/api";
+import { isAndroidApp } from "@/lib/app-info";
 import { authenticateWithPasskey, passkeyErrorMessage, passkeyUnsupportedReason, registerPasskey } from "@/lib/webauthn";
 import { cx } from "@/components/settings/ui";
 
@@ -341,9 +343,19 @@ export function SetupScreen({
 export function AuthErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <AuthLayout title="Can't load Nexote" subtitle={message}>
-      <PrimaryButton icon={<RotateCw size={17} />} onClick={onRetry}>
-        Retry
-      </PrimaryButton>
+      <div className="flex flex-col gap-3">
+        <PrimaryButton icon={<RotateCw size={17} />} onClick={onRetry}>
+          Retry
+        </PrimaryButton>
+        {/* The Android app's engine may fail on its data folder: another
+            one is the way out (the app restarts the engine and reloads). */}
+        {isAndroidApp && (
+          <SecondaryButton onClick={chooseAndroidFolder}>
+            <FolderOpen size={17} />
+            Change folder
+          </SecondaryButton>
+        )}
+      </div>
     </AuthLayout>
   );
 }

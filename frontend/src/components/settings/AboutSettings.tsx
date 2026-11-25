@@ -3,14 +3,18 @@
 import { Bug, Check, Copy, ScrollText, ShieldCheck } from "lucide-react";
 import { Fragment, useState } from "react";
 
+import { useAndroidInfo } from "@/lib/android-bridge";
 import { isCollectionsVault } from "@/lib/api";
-import { APP } from "@/lib/app-info";
+import { APP, isAndroidApp } from "@/lib/app-info";
 import { copyText } from "@/lib/clipboard";
 import { useNotes } from "@/lib/notes-context";
 import { Button, cx, LinkItem, SettingGroup, SettingItem, SettingsPage, useIsMobileSettings } from "./ui";
 
 export function AboutSettings() {
   const { allVaults, spaces, gitConfig } = useNotes();
+  // The app's own version (versionName) once it answered; the web part's
+  // version is APP.version.
+  const android = useAndroidInfo();
   const mobile = useIsMobileSettings();
   const [copied, setCopied] = useState(false);
   // Folders on the server are only sent to admins (they run the server).
@@ -32,11 +36,12 @@ export function AboutSettings() {
         (APP.commit ? ` (${APP.commit})` : "") +
         (APP.commitsAhead > 0 ? `, ${APP.commitsAhead} commits after the release` : ""),
       APP.builtAt && `Built: ${APP.builtAt}`,
-      `App: ${mobile ? "mobile" : "desktop"}`,
+      isAndroidApp ? `App: Android${android?.version ? ` ${android.version}` : ""}` : `App: ${mobile ? "mobile" : "desktop"}`,
       `Browser: ${navigator.userAgent}`,
       `Window: ${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}x`,
       `Spaces: ${spaces.length}, vaults: ${allVaults.filter((v) => !isCollectionsVault(v)).length}`,
-      `Git sync: ${gitConfig?.enabled ? (gitConfig.remote ? "on, with a remote" : "on, local only") : "off"}`,
+      !isAndroidApp &&
+        `Git sync: ${gitConfig?.enabled ? (gitConfig.remote ? "on, with a remote" : "on, local only") : "off"}`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -55,6 +60,11 @@ export function AboutSettings() {
           <div className="text-lg font-semibold leading-tight text-foreground">{APP.name}</div>
           <div className="text-[13px] text-muted-foreground">{APP.tagline}</div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            {isAndroidApp && (
+              <span className="rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary">
+                Android app{android?.version ? ` ${android.version}` : ""}
+              </span>
+            )}
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">Version {APP.version}</span>
             {APP.commitsAhead > 0 && (
               <span
@@ -99,7 +109,11 @@ export function AboutSettings() {
             </span>
           }
           name="No tracking"
-          description="Nexote has no analytics or telemetry. Your notes only leave this server when you use AI, metadata lookups, or git sync with a remote."
+          description={
+            isAndroidApp
+              ? "Nexote has no analytics or telemetry. Your notes stay on this device; only AI and metadata lookups send something out."
+              : "Nexote has no analytics or telemetry. Your notes only leave this server when you use AI, metadata lookups, or git sync with a remote."
+          }
         />
       </SettingGroup>
 

@@ -4,7 +4,7 @@
 // tabs and spaces belong to one account; theme, layout and editor options
 // belong to the device and survive signing out.
 
-import type { AuthUser } from "@/lib/api";
+import { isAuthUser, type AuthUser } from "@/lib/api";
 import { offlineClearAll } from "@/lib/offline-db";
 
 /** The last signed-in account (JSON), for starting offline. */
@@ -27,8 +27,8 @@ const USER_KEYS = [
 const USER_KEY_PREFIXES = ["nexote:space-tabs:", "nexote:space-vault:"];
 
 // Fields of nexote:settings that are one person's: the AI connection (an API
-// key) and choices pointing at that account's vaults.
-const PERSONAL_SETTINGS = [
+// key) …
+const AI_SETTINGS = [
   "aiBaseUrl",
   "aiApiKey",
   "aiModel",
@@ -36,24 +36,15 @@ const PERSONAL_SETTINGS = [
   "aiTranscribeBaseUrl",
   "aiTranscribeApiKey",
   "aiTranscribeLanguage",
-  "startVaultId",
-  "memoNoteVault",
-  "memoNoteFolder",
-  "notepadVault",
-  "notepadFolder",
 ];
+// … and choices pointing at that account's vaults.
+const VAULT_CHOICES = ["startVaultId", "memoNoteVault", "memoNoteFolder", "notepadVault", "notepadFolder"];
 
-const isAuthUser = (v: unknown): v is AuthUser =>
-  typeof v === "object" &&
-  v !== null &&
-  "id" in v &&
-  typeof v.id === "string" &&
-  "username" in v &&
-  typeof v.username === "string" &&
-  "displayName" in v &&
-  typeof v.displayName === "string" &&
-  "role" in v &&
-  (v.role === "admin" || v.role === "member");
+/** Which of nexote:settings' personal fields go with the account's data:
+ *  "keep" none (signing out), "vault-choices" the ones pointing into its
+ *  vaults (the Android app opened another data folder: same person, so the AI
+ *  connection stays), "personal" also the AI connection (another person). */
+export type SettingsWipe = "keep" | "vault-choices" | "personal";
 
 export function readLastUser(): AuthUser | null {
   try {
@@ -87,9 +78,9 @@ export function rememberUser(user: AuthUser): void {
 
 /** Removes the account's data from this device: cached images and data, the
  *  offline database and per-account localStorage keys. The app-shell cache
- *  (no account data) stays, so the app still starts offline. `personalSettings`
- *  also drops the AI credentials (another person is signing in). */
-export async function wipeUserData({ personalSettings }: { personalSettings: boolean }): Promise<void> {
+ *  (no account data) stays, so the app still starts offline. `settings` says
+ *  which personal settings go too (see SettingsWipe). */
+export async function wipeUserData({ settings }: { settings: SettingsWipe }): Promise<void> {
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
@@ -97,10 +88,11 @@ export async function wipeUserData({ personalSettings }: { personalSettings: boo
         localStorage.removeItem(key);
       }
     }
-    if (personalSettings) {
+    if (settings !== "keep") {
+      const dropped = settings === "personal" ? [...AI_SETTINGS, ...VAULT_CHOICES] : VAULT_CHOICES;
       const parsed: unknown = JSON.parse(localStorage.getItem("nexote:settings") ?? "null");
       if (typeof parsed === "object" && parsed !== null) {
-        const kept = Object.fromEntries(Object.entries(parsed).filter(([k]) => !PERSONAL_SETTINGS.includes(k)));
+        const kept = Object.fromEntries(Object.entries(parsed).filter(([k]) => !dropped.includes(k)));
         localStorage.setItem("nexote:settings", JSON.stringify(kept));
       }
     }

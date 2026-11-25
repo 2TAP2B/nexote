@@ -154,7 +154,35 @@ export type AuthStatus = {
   user: AuthUser | null;
   /** NEXOTE_PUBLIC_URL's origin; passkeys only work when opened there. */
   origin: string;
+  /** The Android app's on-device engine: one account, always signed in, no
+   *  login, invites, passkeys or anything else that needs a server. */
+  local: boolean;
 };
+
+export const isAuthUser = (v: unknown): v is AuthUser =>
+  typeof v === "object" &&
+  v !== null &&
+  "id" in v &&
+  typeof v.id === "string" &&
+  "username" in v &&
+  typeof v.username === "string" &&
+  "displayName" in v &&
+  typeof v.displayName === "string" &&
+  "role" in v &&
+  (v.role === "admin" || v.role === "member");
+
+/** Reads `GET /api/auth/status`. Servers without local mode omit `local`. */
+export function parseAuthStatus(data: unknown): AuthStatus | null {
+  if (typeof data !== "object" || data === null) return null;
+  const user = "user" in data ? data.user : null;
+  if (user !== null && user !== undefined && !isAuthUser(user)) return null;
+  return {
+    setupRequired: "setupRequired" in data && data.setupRequired === true,
+    user: user ?? null,
+    origin: "origin" in data && typeof data.origin === "string" ? data.origin : "",
+    local: "local" in data && data.local === true,
+  };
+}
 
 /** Server half of a passkey prompt: pass `options` to lib/webauthn. */
 export type CeremonyStart = { ceremonyId: string; options: unknown };
@@ -666,7 +694,11 @@ export const api = {
     }),
 
   // --- Accounts: passkey login, setup, invites (see lib/webauthn.ts) ---
-  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  authStatus: async (): Promise<AuthStatus> => {
+    const status = parseAuthStatus(await request<unknown>("/api/auth/status"));
+    if (!status) throw new ApiError(200, "unexpected answer to the sign-in check");
+    return status;
+  },
   setupBegin: (input: { setupCode: string; username: string; displayName: string }) =>
     request<CeremonyStart>("/api/auth/setup/begin", json("POST", input)),
   setupFinish: (input: CeremonyFinish) =>

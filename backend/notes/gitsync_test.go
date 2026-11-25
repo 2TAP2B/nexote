@@ -100,3 +100,43 @@ func TestGitSyncAutoSyncReleasesLock(t *testing.T) {
 		t.Fatal("auto-sync left gs.mu locked: push blocked")
 	}
 }
+
+// The on-device engine stops a folder's GitSync when it closes the folder;
+// nothing may commit there in the background afterwards.
+func TestGitSyncStopEndsBackgroundCommits(t *testing.T) {
+	gs, root := newSyncedPair(t, GitConfig{AutoSyncMinutes: 60, AutoPush: true})
+	head := func() string {
+		t.Helper()
+		ref, err := gs.repo.Head()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ref.Hash().String()
+	}
+	before := head()
+	if err := os.WriteFile(filepath.Join(root, "b.md"), []byte("edit"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gs.commitDebounced()
+	gs.Stop()
+	// Timers that fire or get armed after Stop do nothing.
+	gs.commitDebounced()
+	gs.runAutoSync()
+	time.Sleep(time.Second) // past the 500 ms commit debounce
+	if after := head(); after != before {
+		t.Fatal("committed in the background after Stop")
+	}
+	gs.mu.Lock()
+	armed := gs.autosyncTimer != nil
+	gs.mu.Unlock()
+	if armed {
+		t.Fatal("auto-sync timer re-armed after Stop")
+	}
+	// Explicit commits still work (and prove the edit was there to commit).
+	if err := gs.Commit("manual"); err != nil {
+		t.Fatalf("commit after Stop: %v", err)
+	}
+	if head() == before {
+		t.Fatal("manual commit after Stop made no commit")
+	}
+}

@@ -26,6 +26,9 @@ features:
   - title: Touch app for phones and tablets
     details: A touch-first interface with swipeable panes, bottom sheets, a scroll-hiding toolbar and haptic feedback, picked automatically per device.
     link: /features/mobile-app
+  - title: Android app
+    details: Nexote without a server. The app keeps your notes as Markdown files in a folder on the phone and opens text and images shared from other apps in Quick notes.
+    link: /features/android-app
   - title: Quick notes
     details: A messenger-style Notepad for short memos, with images, note links and voice memos transcribed by a speech-to-text server or your AI endpoint.
     link: /features/quick-notes

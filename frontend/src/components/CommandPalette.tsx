@@ -25,6 +25,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { DASHBOARD_ID, useNotes } from "@/lib/notes-context";
 import { api, type SearchHit } from "@/lib/api";
 import { makeSnippet } from "@/lib/note-utils";
@@ -58,6 +59,7 @@ type Item =
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { notes, openTab, create, openDaily, openJournalNote, openNoteInVault, vaults, spaces, switchSpace, activeVault, settings, activeSpaceId } = useNotes();
   const { canEditSpace } = useCanEdit();
+  useAndroidBack(onClose, open);
   const { theme, setTheme } = useTheme();
   // Track the visual viewport: when the touch keyboard opens (iOS keeps the
   // layout viewport full-height), the backdrop must shrink to end at the

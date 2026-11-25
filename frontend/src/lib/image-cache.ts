@@ -8,10 +8,15 @@
 //
 // Must match IMAGE_CACHE in public/sw.js. Unlike the app shell, this cache
 // is not versioned: it holds user content and survives releases.
+//
+// The Android app has no service worker to read it (the images are on the
+// device already), so it stores nothing.
+import { isAndroidApp } from "./app-info";
+
 const IMAGE_CACHE = "nexote-images";
 
 export async function cacheImage(url: string, data: Blob): Promise<void> {
-  if (typeof caches === "undefined" || !url) return;
+  if (isAndroidApp || typeof caches === "undefined" || !url) return;
   try {
     const cache = await caches.open(IMAGE_CACHE);
     const res = new Response(data, {

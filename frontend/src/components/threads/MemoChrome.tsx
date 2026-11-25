@@ -4,6 +4,8 @@ import { Check, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useAndroidBack } from "@/lib/android-back";
+
 // Chrome shared by the chat-style memo views (quick notes, a thread): header
 // buttons, selection circles, the toast, the composer's error line and the
 // full-screen image viewer. Painted with the --mob-* palette.
@@ -147,6 +149,7 @@ export function DraftError({
 // Full-screen image, portaled out of the pager (its transform would anchor a
 // fixed overlay to the track instead of the screen).
 export function ImageViewer({ url, onClose }: { url: string; onClose: () => void }) {
+  useAndroidBack(onClose);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;

@@ -60,6 +60,7 @@ import {
 import { api } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
 import { BLOCK_SELECT_EVENT, OPEN_WIKILINK_EVENT, SELECT_ALL_NOTE_EVENT } from "@/lib/editor-events";
+import { useAndroidBack } from "@/lib/android-back";
 import { cacheImage } from "@/lib/image-cache";
 import { formatTitle, useNotes } from "@/lib/notes-context";
 import {
@@ -1016,13 +1017,19 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         if (live) insertMention(view, live, entry.title);
       });
     };
+    const dismissMention = (m: MentionView) => {
+      dismissedMentionRef.current = m.from;
+      mentionRef.current = null;
+      setMention(null);
+    };
+    useAndroidBack(() => {
+      if (mentionRef.current) dismissMention(mentionRef.current);
+    }, mention !== null && mentionEntries.length > 0);
     const onMentionKey = (e: KeyboardEvent): boolean => {
       const m = mentionRef.current;
       if (!m) return false;
       if (e.key === "Escape") {
-        dismissedMentionRef.current = m.from;
-        mentionRef.current = null;
-        setMention(null);
+        dismissMention(m);
         return true;
       }
       const entries = mentionEntriesRef.current;
@@ -1094,6 +1101,8 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
       slashRef.current = s;
       setSlash(s);
     };
+    useAndroidBack(() => applySlash(null), mobile && slash !== null);
+    useAndroidBack(() => withView((view) => setBlockSelectMode(view, false)), blockSel.active);
 
     // The format bar dismisses itself when the on-screen keyboard closes;
     // drop the slash panel too so it doesn't linger floating above content.
@@ -2061,6 +2070,8 @@ const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(
         }
         setAiReview(null);
       };
+      // Back cancels like closing a dialog: the suggestion is undone.
+      useAndroidBack(rejectReview, aiReview !== null);
 
       return (
         <>

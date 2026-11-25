@@ -3,6 +3,7 @@
 import { Settings, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAndroidBack } from "@/lib/android-back";
 import { useAuth } from "./auth/AuthProvider";
 import { requestedCategory, settingsNav, type SettingsCategoryId } from "./settings/categories";
 import { cx, SettingsPlatformProvider } from "./settings/ui";
@@ -19,9 +20,10 @@ let lastCategory: SettingsCategoryId = "general";
 
 /** Desktop settings dialog: category sidebar + the shared section pages. */
 export default function SettingsPanel({ open, onClose, colorScheme, onColorSchemeChange }: Props) {
-  const { user } = useAuth();
-  const nav = useMemo(() => settingsNav(user.role, "desktop"), [user.role]);
+  const { user, local } = useAuth();
+  const nav = useMemo(() => settingsNav(user.role, "desktop", local), [user.role, local]);
   const [active, setActive] = useState<SettingsCategoryId>(lastCategory);
+  useAndroidBack(onClose, open);
 
   // `nexote:open-settings` with a category (detail) opens at that page; the
   // shell that owns `open` listens to the same event.

@@ -83,7 +83,7 @@ function SignedInNotice({ user, onSignedOut }: { user: AuthUser; onSignedOut: ()
     setError(null);
     try {
       await api.logout();
-      await wipeUserData({ personalSettings: false });
+      await wipeUserData({ settings: "keep" });
       onSignedOut();
     } catch (e) {
       setError(passkeyErrorMessage(e));

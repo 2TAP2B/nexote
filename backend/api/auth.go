@@ -84,18 +84,23 @@ func (h *Handler) SetupCode() string {
 }
 
 // authStatus tells the frontend what to show: first-time setup, the login
-// screen, or the app for the logged-in user.
+// screen, or the app for the logged-in user. "local" marks local mode,
+// where the user is always signed in.
 func (h *Handler) authStatus(w http.ResponseWriter, r *http.Request) {
 	hasUsers, err := h.Accounts.HasUsers()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	status := map[string]any{
 		"setupRequired": !hasUsers,
 		"user":          toPublicUser(currentUser(r)),
 		"origin":        h.origin.String(),
-	})
+	}
+	if h.localUserID != "" {
+		status["local"] = true
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 // --- registration ceremonies (setup, invite, recovery, extra passkey) ---
@@ -297,7 +302,13 @@ func (h *Handler) loginFinish(w http.ResponseWriter, r *http.Request) {
 	h.startSession(w, r, &found)
 }
 
+// logout ends the browser's session. In local mode there is none to end:
+// the next request acts as the local user again.
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	if h.localUserID != "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		_ = h.Accounts.DeleteSession(c.Value)
 	}
