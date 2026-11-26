@@ -36,8 +36,9 @@ const FOLDER_CREATE_PATH = /^\/api\/vaults\/([^/]+)\/folders$/;
 const MUTATION = ["POST", "PUT", "PATCH", "DELETE"];
 
 // Never touched by the worker: accounts/sessions (never cached, never
-// replayed), the AI proxy, git sync and the live event stream.
-const BYPASS = /^\/api\/(auth|admin|me|users|ai|git|events)(\/|$)/;
+// replayed), paired devices and the device sync API, the AI proxy, git sync
+// and the live event stream.
+const BYPASS = /^\/api\/(auth|admin|me|users|devices|sync|ai|git|events)(\/|$)/;
 
 // The backend can't be reached even though the network works: a reverse
 // proxy's 502/503/504, or the Next.js /api proxy's plain-text 500 when the

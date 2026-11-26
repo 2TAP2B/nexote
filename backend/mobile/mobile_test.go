@@ -1,14 +1,49 @@
 package mobile
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"nexote/engine"
+	"nexote/engine/serversync"
 )
+
+func TestEngineReadsTheConnectionFromTheHost(t *testing.T) {
+	t.Cleanup(Stop)
+	t.Cleanup(func() { SetHost(nil) })
+	host := serversync.NewMemoryHost("Test phone")
+	// Nothing listens on port 1, so the engine's check of the token fails
+	// as if offline and the saved state is shown as it is.
+	saved := `{"server":"http://127.0.0.1:1","token":"t","device":{"id":"d1","name":"Test phone"},"user":{"id":"u1","username":"alice","displayName":"Alice"}}`
+	if err := host.SaveSecret("sync", saved); err != nil {
+		t.Fatal(err)
+	}
+	SetHost(host)
+	SetUserCAs("")
+	port, err := Start(t.TempDir(), 0, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest("GET", "http://127.0.0.1:"+strconv.Itoa(port)+"/api/local/sync", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: engine.CookieName, Value: "s"})
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"connected":true`) || !strings.Contains(string(body), `"username":"alice"`) {
+		t.Fatalf("status %d %s, want the host's connection", res.StatusCode, body)
+	}
+}
 
 func authStatusCode(t *testing.T, port int, secret string) int {
 	t.Helper()

@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"nexote/engine"
+	"nexote/engine/serversync"
 )
 
 //go:embed all:web
@@ -29,6 +30,73 @@ var (
 	// runningSecret is the running engine's cookie secret.
 	runningSecret string
 )
+
+// Host is implemented by the app (Kotlin: app.nexote.mobile.Host). It keeps
+// the server connection's secrets outside the data folder, which is
+// user-visible and may be copied by other sync tools.
+type Host interface {
+	// LoadSecret returns the secret saved under name, "" if none.
+	LoadSecret(name string) (string, error)
+	// SaveSecret saves value under name; "" deletes it.
+	SaveSecret(name, value string) error
+	// DeviceName names this device in the server's list, e.g. "Google Pixel 8".
+	DeviceName() string
+}
+
+var (
+	// hostMu guards host and userCAs, which the app sets from any thread.
+	hostMu  sync.Mutex
+	host    Host
+	userCAs string
+	// fallback keeps secrets for the process's lifetime when no host was
+	// set (tests, desktop builds of the package).
+	fallback = serversync.NewMemoryHost("Android device")
+)
+
+// SetHost sets the app's Host; call it before Start. A running engine uses
+// the new host from its next call on.
+func SetHost(h Host) {
+	hostMu.Lock()
+	defer hostMu.Unlock()
+	host = h
+}
+
+// SetUserCAs sets the PEM bundle of user-installed CAs, trusted besides the
+// system roots for server connections; call it before Start. A running
+// engine picks it up at once (the user may have installed a CA meanwhile).
+func SetUserCAs(pem string) {
+	hostMu.Lock()
+	userCAs = pem
+	hostMu.Unlock()
+	mu.Lock()
+	defer mu.Unlock()
+	if running != nil {
+		running.SetUserCAs(pem)
+	}
+}
+
+func currentUserCAs() string {
+	hostMu.Lock()
+	defer hostMu.Unlock()
+	return userCAs
+}
+
+// currentHost hands each call to the host set last, so engines keep working
+// across SetHost calls (a recreated activity sets a new one).
+type currentHost struct{}
+
+func (currentHost) get() serversync.Host {
+	hostMu.Lock()
+	defer hostMu.Unlock()
+	if host != nil {
+		return host
+	}
+	return fallback
+}
+
+func (h currentHost) LoadSecret(name string) (string, error) { return h.get().LoadSecret(name) }
+func (h currentHost) SaveSecret(name, value string) error    { return h.get().SaveSecret(name, value) }
+func (h currentHost) DeviceName() string                     { return h.get().DeviceName() }
 
 // Start serves the data folder home on 127.0.0.1 and returns the port.
 // port is the preferred port (0 or busy: any free one). With home already
@@ -57,10 +125,10 @@ func Start(home string, port int, secret string) (int, error) {
 		prev.Stop()
 		running, runningSecret = nil, ""
 	}
-	e, err := engine.Start(engine.Config{Home: abs, Port: port, Secret: secret, Web: web})
+	e, err := engine.Start(config(abs, port, secret, web))
 	if err != nil {
 		if prev != nil {
-			restored, rerr := engine.Start(engine.Config{Home: prev.Home(), Port: prev.Port(), Secret: prevSecret, Web: web})
+			restored, rerr := engine.Start(config(prev.Home(), prev.Port(), prevSecret, web))
 			if rerr != nil {
 				log.Printf("engine: restart %s: %v", prev.Home(), rerr)
 			} else {
@@ -71,6 +139,10 @@ func Start(home string, port int, secret string) (int, error) {
 	}
 	running, runningSecret = e, secret
 	return e.Port(), nil
+}
+
+func config(home string, port int, secret string, web fs.FS) engine.Config {
+	return engine.Config{Home: home, Port: port, Secret: secret, Web: web, Host: currentHost{}, UserCAs: currentUserCAs()}
 }
 
 // Stop shuts the engine down; it does nothing when none runs.

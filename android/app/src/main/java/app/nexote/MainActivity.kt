@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var prefs: AppPrefs
+    private val engineHost by lazy { EngineHost(applicationContext) }
     private lateinit var root: FrameLayout
     private lateinit var webContainer: FrameLayout
     private lateinit var overlay: FrameLayout
@@ -429,7 +430,13 @@ class MainActivity : ComponentActivity() {
         val port = runningPort ?: prefs.port
         val secret = prefs.secret
         engineThread.execute {
-            val result = runCatching { Mobile.start(folder, port.toLong(), secret).toInt() }
+            val result = runCatching {
+                // Every start: the activity (and with it the host) may be new, and the user may
+                // have installed or removed a CA certificate since the last one.
+                Mobile.setHost(engineHost)
+                Mobile.setUserCAs(userCaPem())
+                Mobile.start(folder, port.toLong(), secret).toInt()
+            }
             runOnUiThread {
                 if (isDestroyed || generation != startGeneration) return@runOnUiThread
                 result.onSuccess { bound ->

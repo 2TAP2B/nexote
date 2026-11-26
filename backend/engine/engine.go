@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"nexote/api"
+	"nexote/engine/serversync"
 	"nexote/server"
 )
 
@@ -41,6 +42,12 @@ type Config struct {
 	Secret string
 	// Web holds the frontend's static export (index.html at its root).
 	Web fs.FS
+	// Host keeps the server connection's secrets and names the device;
+	// nil keeps them in memory for the engine's lifetime.
+	Host serversync.Host
+	// UserCAs is a PEM bundle of user-installed CAs trusted (besides the
+	// system roots) when talking to a Nexote server.
+	UserCAs string
 }
 
 // Engine is a running engine.
@@ -48,6 +55,7 @@ type Engine struct {
 	home    string
 	port    int
 	handler *api.Handler
+	remote  *serversync.Service
 	srv     *http.Server
 	done    chan struct{}
 	stop    sync.Once
@@ -92,10 +100,15 @@ func Start(cfg Config) (*Engine, error) {
 		ln.Close()
 		return nil, err
 	}
+	host := cfg.Host
+	if host == nil {
+		host = serversync.NewMemoryHost("Nexote engine")
+	}
+	remote := serversync.New(host, cfg.UserCAs)
 
 	base, cancel := context.WithCancel(context.Background())
 	srv := &http.Server{
-		Handler:           newHandler(h.Routes(), cfg.Web, cfg.Secret),
+		Handler:           newHandler(h.Routes(), remote.Handler(), cfg.Web, cfg.Secret, origin.String()),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Request contexts derive from base, so cancelling it at shutdown
 		// ends the long-lived /api/events streams, which Shutdown would
@@ -103,7 +116,7 @@ func Start(cfg Config) (*Engine, error) {
 		BaseContext: func(net.Listener) context.Context { return base },
 	}
 	srv.RegisterOnShutdown(cancel)
-	e := &Engine{home: home, port: addr.Port, handler: h, srv: srv, done: make(chan struct{})}
+	e := &Engine{home: home, port: addr.Port, handler: h, remote: remote, srv: srv, done: make(chan struct{})}
 	go func() {
 		defer close(e.done)
 		defer cancel()
@@ -130,6 +143,10 @@ func (e *Engine) Port() int { return e.port }
 // Home is the absolute data folder.
 func (e *Engine) Home() string { return e.home }
 
+// SetUserCAs replaces the user-installed CAs trusted for server
+// connections (they can change while the engine runs).
+func (e *Engine) SetUserCAs(pem string) { e.remote.SetUserCAs(pem) }
+
 // Stop shuts the engine down gracefully and returns once the port is free
 // and the folder's background work (git sync) has ended. Safe to call more
 // than once.
@@ -145,16 +162,28 @@ func (e *Engine) Stop() {
 	})
 }
 
-// newHandler gates everything behind the secret cookie, then sends /api/*
-// to the API and the rest to the frontend export. It never wraps the
-// ResponseWriter, so the SSE stream keeps its Flusher.
-func newHandler(api http.Handler, web fs.FS, secret string) http.Handler {
+// newHandler gates everything behind the secret cookie, then sends
+// /api/local/* to the engine's own routes (the server connection), the rest
+// of /api/* to the API and everything else to the frontend export. It never
+// wraps the ResponseWriter, so the SSE stream keeps its Flusher.
+func newHandler(api, local http.Handler, web fs.FS, secret, origin string) http.Handler {
 	static := newStatic(web)
 	want := []byte(secret)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(CookieName)
 		if err != nil || subtle.ConstantTimeCompare([]byte(c.Value), want) != 1 {
 			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/local/") {
+			// The API's rule for changes: only from the page's own origin.
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				if o := r.Header.Get("Origin"); o != "" && o != origin {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+			local.ServeHTTP(w, r)
 			return
 		}
 		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {

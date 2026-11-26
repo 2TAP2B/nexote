@@ -115,6 +115,7 @@ The app runs the backend on the phone. `android/build-engine.sh` builds the fron
 - **Same origin across starts.** The app keeps the port, so the WebView's origin, and with it localStorage and IndexedDB, stays the same.
 - **Bridge.** The app injects a `NexoteAndroid` object (`addWebMessageListener`, restricted to the engine's origin). The page sends `hello`, `chooseFolder` and `theme`; the app answers with `info` (data folder, version) and delivers content shared from other apps as `share`. System Back first asks the page through `window.__nexoteAndroidBack()` whether it closed an overlay.
 - **No service worker.** The app build unregisters service workers: the engine is always on the phone, and a cached shell would outlive app updates.
+- **Pairing.** The server's `POST /api/devices/pairing` creates a one-time code (16 Crockford base32 characters, 10 minutes, stored as a hash); the pairing link `<origin>/pair#<code>` keeps the code in the fragment. The engine (`backend/engine/serversync`) redeems it at `POST /api/auth/pair` for a device token, checks it with `GET /api/sync/hello` and stores the connection through the gomobile `Host` (Kotlin encrypts it with an Android keystore key), never in the data folder. On the server a device token is accepted only on `/api/sync/*`, and session cookies are not accepted there. The engine's HTTPS client trusts Android's system roots (including the updatable `/apex/com.android.conscrypt/cacerts`) plus the user-installed CAs the app passes in (`Mobile.setUserCAs`).
 
 ## Releases
 

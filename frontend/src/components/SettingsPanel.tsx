@@ -42,8 +42,9 @@ export default function SettingsPanel({ open, onClose, colorScheme, onColorSchem
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      // Escape first closes an open icon picker or cancels an inline edit.
-      if (document.querySelector("[data-settings-popover]")) return;
+      // Escape first closes an open icon picker, a dialog opened from a
+      // page (it closes itself) or cancels an inline edit.
+      if (document.querySelector("[data-settings-popover], [data-overlay-dialog]")) return;
       if (e.target instanceof Element && e.target.closest("[data-settings-escape]")) return;
       onClose();
     };

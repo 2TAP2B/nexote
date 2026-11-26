@@ -90,6 +90,10 @@ const serverConfig = {
       { source: "/note/:vaultId/:noteId", destination: "/" },
       { source: "/journal/:noteId", destination: "/" },
       { source: "/dashboard", destination: "/" },
+      // A pairing link (`/pair#CODE`, made for the Android app) opened in a
+      // browser lands on the app instead of a 404; the code stays in the
+      // fragment and never reaches the server.
+      { source: "/pair", destination: "/" },
     ];
   },
   // The touch interface used to live under /m; both share one address now.

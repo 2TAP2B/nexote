@@ -238,6 +238,79 @@ export type InviteInfo = {
   displayName?: string;
 };
 
+/** A one-time code that pairs the Android app with this server (10 minutes,
+ *  single use). `link` is `<origin>/pair#<code>`, what the QR code shows. */
+export type PairingCode = { code: string; link: string; expiresAt: string };
+
+/** A phone paired with the account; its token may only call the sync API. */
+export type PairedDevice = {
+  id: string;
+  name: string;
+  platform: string;
+  createdAt: string;
+  /** Absent until the device first used its token. */
+  lastSeenAt?: string;
+};
+
+/** The Android app's link to a server (`GET /api/local/sync` on its engine).
+ *  `revoked`: the server no longer accepts the token (device removed there). */
+export type LocalSyncStatus =
+  | { connected: false }
+  | {
+      connected: true;
+      server: string;
+      user: { username: string; displayName: string };
+      device: { id: string; name: string };
+      revoked: boolean;
+    };
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+const isString = (v: unknown): v is string => typeof v === "string";
+
+function parsePairingCode(data: unknown): PairingCode | null {
+  if (!isObject(data) || !isString(data.code) || !isString(data.link) || !isString(data.expiresAt)) return null;
+  return { code: data.code, link: data.link, expiresAt: data.expiresAt };
+}
+
+function parseDevices(data: unknown): PairedDevice[] | null {
+  if (!isObject(data) || !Array.isArray(data.devices)) return null;
+  const devices: PairedDevice[] = [];
+  for (const d of data.devices) {
+    if (!isObject(d) || !isString(d.id) || !isString(d.name) || !isString(d.createdAt)) return null;
+    devices.push({
+      id: d.id,
+      name: d.name,
+      platform: isString(d.platform) ? d.platform : "",
+      createdAt: d.createdAt,
+      // The zero time or "" both mean "never".
+      lastSeenAt: isString(d.lastSeenAt) && d.lastSeenAt && !d.lastSeenAt.startsWith("0001-") ? d.lastSeenAt : undefined,
+    });
+  }
+  return devices;
+}
+
+function parseLocalSync(data: unknown): LocalSyncStatus | null {
+  if (!isObject(data)) return null;
+  if (data.connected !== true) return data.connected === false ? { connected: false } : null;
+  const { server, user, device } = data;
+  if (!isString(server) || !isObject(user) || !isObject(device)) return null;
+  if (!isString(user.username) || !isString(device.id) || !isString(device.name)) return null;
+  return {
+    connected: true,
+    server,
+    user: { username: user.username, displayName: isString(user.displayName) ? user.displayName : user.username },
+    device: { id: device.id, name: device.name },
+    revoked: data.revoked === true,
+  };
+}
+
+// Answers that don't match the contract (an old engine or server) surface
+// as an error instead of half-rendered pages.
+function parsed<T>(value: T | null, what: string): T {
+  if (value === null) throw new ApiError(200, `Unexpected answer from ${what}`);
+  return value;
+}
+
 // The auto-created system vault that holds collection folders. Hidden from
 // every user-facing vault list (tree, move dialog, palette, settings); the
 // Collections sidebar view/galleries still read its data. Name-comparison
@@ -738,6 +811,25 @@ export const api = {
   removePasskey: (id: string) => request<void>(`/api/me/passkeys/${encodeURIComponent(id)}`, json("DELETE")),
   /** Active accounts, to add as space members. */
   listUsers: () => request<{ users: DirectoryUser[] }>("/api/users"),
+
+  // --- Paired devices (the Android app; server build) ---
+  /** A new pairing code; earlier unused codes stop working. */
+  createPairing: async () =>
+    parsed(parsePairingCode(await request<unknown>("/api/devices/pairing", json("POST", {}))), "the server"),
+  /** The account's paired devices, newest first. */
+  listDevices: async () => parsed(parseDevices(await request<unknown>("/api/devices")), "the server"),
+  /** Unpairs a device: its token stops working at once. */
+  removeDevice: (id: string) => request<void>(`/api/devices/${encodeURIComponent(id)}`, json("DELETE")),
+
+  // --- Server connection (the Android app's engine only) ---
+  localSyncStatus: async () => parsed(parseLocalSync(await request<unknown>("/api/local/sync")), "the app"),
+  /** Pairs with a server: either the whole link or the address and the code.
+   *  Failures carry a sentence for the user (ApiError message). */
+  localSyncPair: async (input: { link: string } | { server: string; code: string }) =>
+    parsed(parseLocalSync(await request<unknown>("/api/local/sync/pair", json("POST", input))), "the app"),
+  /** Unpairs (tells the server when it can) and forgets the credentials. */
+  localSyncDisconnect: async () =>
+    parsed(parseLocalSync(await request<unknown>("/api/local/sync", json("DELETE"))), "the app"),
 
   // --- Administration (admins only) ---
   adminListUsers: () => request<{ users: AdminUser[] }>("/api/admin/users"),

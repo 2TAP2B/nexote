@@ -148,15 +148,17 @@ func ValidDisplayName(s string) bool {
 	return n >= 1 && n <= 64
 }
 
-// Store persists users, sessions and invites. Files are re-read when they
-// change on disk, so the server's recover command can run next to a live
-// server.
+// Store persists users, sessions, invites, paired devices and pairing codes.
+// Files are re-read when they change on disk, so the server's recover
+// command can run next to a live server.
 type Store struct {
 	mu       sync.Mutex
 	dir      string
 	users    jsonFile[User]
 	sessions jsonFile[Session]
 	invites  jsonFile[Invite]
+	devices  jsonFile[Device]
+	pairings jsonFile[pairing]
 	now      func() time.Time
 }
 
@@ -170,6 +172,8 @@ func Open(dir string) (*Store, error) {
 		users:    jsonFile[User]{path: filepath.Join(dir, "users.json")},
 		sessions: jsonFile[Session]{path: filepath.Join(dir, "sessions.json")},
 		invites:  jsonFile[Invite]{path: filepath.Join(dir, "invites.json")},
+		devices:  jsonFile[Device]{path: filepath.Join(dir, "devices.json")},
+		pairings: jsonFile[pairing]{path: filepath.Join(dir, "pairings.json")},
 		now:      time.Now,
 	}, nil
 }

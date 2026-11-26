@@ -1,8 +1,10 @@
 // Package api wires the notes store to HTTP handlers and exposes a small
 // REST surface consumed by the Next.js frontend. All note/bookmark/folder
 // routes are scoped under /api/vaults/{vaultId}/... so multiple vaults can
-// coexist. Every route except login, setup and invite links needs a
-// session; vaults are reachable only by members of the vault's space.
+// coexist. Every route needs a session except login, setup, invite links and
+// device pairing, and the sync API (/api/sync/), which takes a paired
+// device's token instead. Vaults are reachable only by members of the
+// vault's space.
 package api
 
 import (
@@ -121,6 +123,16 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /api/auth/invites/{token}", h.inviteInfo)
 	mux.HandleFunc("POST /api/auth/invites/{token}/begin", h.inviteBegin)
 	mux.HandleFunc("POST /api/auth/invites/{token}/finish", h.inviteFinish)
+	mux.HandleFunc("POST /api/auth/pair", h.serverOnly(h.pairDevice))
+
+	// Paired devices (the Android app): pairing codes, the owner's device
+	// list, and the sync API, which takes only a device token. Not served
+	// in local mode.
+	mux.HandleFunc("POST /api/devices/pairing", h.serverOnly(h.createPairing))
+	mux.HandleFunc("GET /api/devices", h.serverOnly(h.listDevices))
+	mux.HandleFunc("DELETE /api/devices/{id}", h.serverOnly(h.deleteDevice))
+	mux.HandleFunc("GET /api/sync/hello", h.serverOnly(h.syncHello))
+	mux.HandleFunc("DELETE /api/sync/device", h.serverOnly(h.syncUnpair))
 
 	// The logged-in account
 	mux.HandleFunc("GET /api/me", h.getMe)

@@ -41,9 +41,13 @@ A recovery link adds a new passkey to an existing account, for someone who lost 
 
 ## Managing accounts
 
-In **Settings › Users**, admins can change an account's role and deactivate or reactivate it. Deactivating signs the person out everywhere, and a deactivated account cannot sign in. Admins cannot deactivate their own account.
+In **Settings › Users**, admins can change an account's role and deactivate or reactivate it. Deactivating signs the person out everywhere, and a deactivated account cannot sign in or sync from a paired phone. Admins cannot deactivate their own account.
 
-Server-side, invite and session tokens are stored only as SHA-256 hashes.
+## Paired devices
+
+**Settings › Devices** connects the [Android app](./android-app) to your account and lists the paired phones with their last contact. **Connect** shows a QR code and a link with a one-time code, valid for 10 minutes. A paired phone gets a key that only works for syncing, never for signing in or changing the account. **Disconnect** revokes it at once.
+
+Server-side, invite and session tokens, pairing codes and device keys are stored only as SHA-256 hashes.
 
 ## Spaces
 

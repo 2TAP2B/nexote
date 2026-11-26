@@ -1,6 +1,6 @@
 # Android app
 
-The Android app runs Nexote on the phone itself, without a server. Notes are Markdown files in a folder on the phone, in the same format as on a server, and the app shows the same [touch interface](./mobile-app) as the browser. Syncing with a Nexote server is not part of the app yet; pairing a server by QR code is planned.
+The Android app runs Nexote on the phone itself, without a server. Notes are Markdown files in a folder on the phone, in the same format as on a server, and the app shows the same [touch interface](./mobile-app) as the browser. The app can be paired with your Nexote server; syncing the notes follows in the next version.
 
 ## Install
 
@@ -33,6 +33,19 @@ Everything in the interface works on the phone alone: notes, the editor, journal
 ## Settings › Storage
 
 **Settings › Storage** shows the folder the app uses. **Change folder** opens the system folder picker. Another folder is a separate set of notes: the notes in the old folder stay there, and the app opens the new folder's notes, or an empty set.
+
+## Settings › Server
+
+Pairing connects the app to your Nexote server, so it can sync with your account there.
+
+1. On the server, open **Settings › Devices** and choose **Connect**. It shows a QR code, the server address and a code, valid for 10 minutes and usable once.
+2. In the app, open **Settings › Server** and choose **Scan QR code**. Without a camera, or on the same phone, use **Copy link** on the server and paste the link in the app, or enter the address and the code.
+
+The app gets a key of its own that only works for syncing: it can't sign in to the server or change the account. The server keeps only a hash of it; the app keeps it encrypted with a key from the Android keystore, outside the notes folder. **Settings › Devices** on the server lists the paired phones with the last contact, and **Disconnect** there stops the key at once. A phone that hasn't contacted the server for 180 days is disconnected automatically.
+
+The server address has to start with `https://` and have a certificate Android trusts: a public one, or one from a certificate authority you installed on the phone under **Settings › Security › Encryption & credentials**. Plain `http://` only works for `localhost`, for development.
+
+**Disconnect** in the app unpairs the phone; the notes on it stay.
 
 ## Your files
 

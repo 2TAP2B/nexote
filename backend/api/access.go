@@ -76,13 +76,43 @@ func (h *Handler) clearSessionCookie(w http.ResponseWriter) {
 	})
 }
 
-var errLoginRequired = errors.New("login required")
+var (
+	errLoginRequired  = errors.New("login required")
+	errDeviceRequired = errors.New("this device isn't paired with the server (anymore) — pair it again")
+)
+
+type deviceKey struct{}
+
+// currentDevice returns the paired device a sync request comes from. Every
+// /api/sync/ route runs behind authenticate, so there it is never nil.
+func currentDevice(r *http.Request) *accounts.Device {
+	d, _ := r.Context().Value(deviceKey{}).(*accounts.Device)
+	return d
+}
+
+// isSyncPath reports whether a route belongs to the sync API, the only one
+// paired devices may call and the only one that takes no session.
+func isSyncPath(path string) bool { return strings.HasPrefix(path, "/api/sync/") }
+
+// bearerToken returns the token of an "Authorization: Bearer" header.
+func bearerToken(r *http.Request) string {
+	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(token)
+}
 
 // authenticate attaches the session's user to the request and refuses
-// requests without one, except for the login/setup/invite routes under
-// /api/auth/. In local mode the local user needs no session. Changing
+// requests without one, except for the login/setup/invite/pairing routes
+// under /api/auth/. In local mode the local user needs no session. Changing
 // requests must come from the public origin: the SameSite cookie already
 // stops cross-site posts, this also stops other sites on the same domain.
+//
+// The sync API (/api/sync/) is the opposite: it takes only a paired
+// device's bearer token and ignores session cookies, so a device token
+// can't reach the rest of the API and a browser session can't act as a
+// device. In local mode it isn't served (those routes answer 404).
 func (h *Handler) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -91,6 +121,22 @@ func (h *Handler) authenticate(next http.Handler) http.Handler {
 					"this server only accepts changes from %s (NEXOTE_PUBLIC_URL)", h.origin))
 				return
 			}
+		}
+		if isSyncPath(r.URL.Path) && h.localUserID == "" {
+			dev, u, err := h.Accounts.DeviceUser(bearerToken(r))
+			// Only a refused token is a 401: the app treats that as being
+			// unpaired, which a storage hiccup must not look like.
+			if errors.Is(err, accounts.ErrDeviceInvalid) {
+				writeError(w, http.StatusUnauthorized, errDeviceRequired)
+				return
+			}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			ctx := context.WithValue(r.Context(), userKey{}, &u)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, deviceKey{}, &dev)))
+			return
 		}
 		if u := h.requestUser(r); u != nil {
 			r = r.WithContext(context.WithValue(r.Context(), userKey{}, u))

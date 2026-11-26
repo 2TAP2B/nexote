@@ -81,6 +81,7 @@ export function ResponsiveDialog({
 
   return createPortal(
     <div
+      data-overlay-dialog=""
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -142,6 +143,7 @@ export function ConfirmDialog({
 
   return createPortal(
     <div
+      data-overlay-dialog=""
       className="fixed inset-0 z-[65] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();

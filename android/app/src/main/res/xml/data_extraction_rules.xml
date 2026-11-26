@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 12+: nothing leaves the device, neither by cloud backup nor by
      device-to-device transfer (allowBackup="false" doesn't stop the latter).
-     The saved folder, port and engine secret describe this device. -->
+     The saved folder, port and engine secret describe this device, and the
+     server connection (nexote-secrets) is encrypted with a key that only
+     this device's keystore holds. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="root" path="." />

@@ -9,7 +9,9 @@ import {
   Music,
   Palette,
   PenLine,
+  Server,
   SlidersHorizontal,
+  Smartphone,
   UserRound,
   Users,
   Zap,
@@ -24,10 +26,12 @@ import { AccountSettings } from "./AccountSettings";
 import { AISettings } from "./AISettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { DashboardSettings } from "./DashboardSettings";
+import { DevicesSettings } from "./DevicesSettings";
 import { EditorSettings } from "./EditorSettings";
 import { FeatureSettings } from "./FeatureSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { MetadataSettings } from "./MetadataSettings";
+import { ServerSettings } from "./ServerSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { StorageSettings } from "./StorageSettings";
 import { SyncSettings } from "./SyncSettings";
@@ -42,7 +46,9 @@ export type SectionProps = {
 
 export type SettingsCategoryId =
   | "storage"
+  | "server"
   | "account"
+  | "devices"
   | "users"
   | "general"
   | "editor"
@@ -65,8 +71,9 @@ export type SettingsCategory = {
   desktopOnly?: boolean;
   /** Server-wide settings only admins may change. */
   adminOnly?: boolean;
-  /** Only with a server: hidden in local mode (the Android app's engine has
-   *  one account, no passkeys and no git sync). */
+  /** Only with a server: hidden in local mode and in the Android app's
+   *  build (the app's engine has one account, no passkeys, no git sync and
+   *  no paired devices). */
   serverOnly?: boolean;
   /** Only in the Android app's build. */
   appOnly?: boolean;
@@ -76,7 +83,10 @@ type SettingsNav = { label?: string; categories: SettingsCategory[] }[];
 
 const SETTINGS_NAV: SettingsNav = [
   {
-    categories: [{ id: "storage", label: "Storage", icon: FolderOpen, Section: StorageSettings, appOnly: true }],
+    categories: [
+      { id: "storage", label: "Storage", icon: FolderOpen, Section: StorageSettings, appOnly: true },
+      { id: "server", label: "Server", icon: Server, Section: ServerSettings, appOnly: true },
+    ],
   },
   {
     label: "Account",
@@ -84,6 +94,7 @@ const SETTINGS_NAV: SettingsNav = [
       // Without other accounts only server things remain: the name and
       // picture are for the other members, the rest is passkeys and sign-out.
       { id: "account", label: "Account", icon: UserRound, Section: AccountSettings, serverOnly: true },
+      { id: "devices", label: "Devices", icon: Smartphone, Section: DevicesSettings, serverOnly: true },
       { id: "users", label: "Users", icon: Users, Section: UsersSettings, adminOnly: true, serverOnly: true },
     ],
   },
@@ -122,7 +133,7 @@ export function settingsNav(role: UserRole, platform: "desktop" | "mobile", loca
       (c) =>
         (role === "admin" || !c.adminOnly) &&
         (platform === "desktop" || !c.desktopOnly) &&
-        (!local || !c.serverOnly) &&
+        (!(local || isAndroidApp) || !c.serverOnly) &&
         (isAndroidApp || !c.appOnly),
     ),
   })).filter((group) => group.categories.length > 0);
