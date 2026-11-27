@@ -37,6 +37,9 @@ type NoteEvent struct {
 	// FromSync marks changes the engine's sync applied, so it doesn't take
 	// them for local edits. Never sent to clients.
 	FromSync bool `json:"-"`
+	// DeviceID is the paired device whose sync caused the change ("" for
+	// everything else); its own change stream leaves these out. Never sent.
+	DeviceID string `json:"-"`
 }
 
 // hub fans events out to subscribed SSE streams. A mutex protects the

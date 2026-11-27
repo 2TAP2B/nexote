@@ -49,7 +49,7 @@ The server address has to start with `https://` and have a certificate Android t
 
 Everything in the spaces you own on the server: vaults with their notes, folders and folder colors, images and PDFs, collections, bookmarks and shortcuts, plus your journal and Quick notes, and where your Notepad lives. Shared spaces you are only a member of stay on the server for now. Note history, AI settings and the server's settings don't sync.
 
-The phone syncs when the app opens, about 10 seconds after a change, every 2 minutes while it runs, and in the background about every 15 minutes when there is a network connection. **Settings › Server** shows when it last synced and has **Sync now**.
+Changes reach the other side within seconds: the server tells the phone immediately when something changed there, and the phone syncs about 2 seconds after you stop typing. A small indicator in the top bar shows it: a spinning circle while a sync runs or is waiting, a green check for a moment when it finished, and a red dot when the last sync failed (tap it for details). The phone also syncs when the app opens and, in the background, about every 15 minutes when there is a network connection — changes made while the app is closed reach the phone then. **Settings › Server** shows when it last synced and has **Sync now**.
 
 ### The first sync
 

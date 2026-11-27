@@ -11,6 +11,7 @@ import { ActionMenu, anchorBelow, type MenuAnchor } from "@/components/ActionMen
 import ItemHero from "@/components/collections/ItemHero";
 import { useItemActions } from "@/components/collections/useItemActions";
 import RawMarkdownTextarea from "@/components/RawMarkdownTextarea";
+import { SyncDot } from "@/components/SyncDot";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
 import { editorFontStack } from "@/lib/editor-fonts";
@@ -501,7 +502,10 @@ function MobileTopBar({
           </CircleButton>
         </div>
         {viewOnly && <ViewOnlyPill />}
-        {note && <ItemActionsButton note={note} onOpenHistory={onOpenHistory} />}
+        <div className="flex items-center gap-2">
+          <SyncDot look="floating" />
+          {note && <ItemActionsButton note={note} onOpenHistory={onOpenHistory} />}
+        </div>
       </div>
     );
   }
@@ -524,6 +528,7 @@ function MobileTopBar({
       </div>
       {viewOnly && <ViewOnlyPill />}
       <div className="flex items-center gap-2">
+        <SyncDot look="floating" />
         <div className="pointer-events-auto">
           {showThemeToggle && (
             <CircleButton

@@ -341,6 +341,7 @@ func (s *Service) pair(ctx context.Context, in pairInput) (*credentials, error) 
 	}
 	s.cancelRun()
 	s.resetStatus()
+	s.relisten()
 	// The first sync aligns the device with the account right away.
 	s.SyncNow()
 	return next, nil
@@ -369,6 +370,7 @@ func (s *Service) disconnect() error {
 	}
 	removeState(s.host.StateDir())
 	s.resetStatus()
+	s.relisten()
 	return nil
 }
 

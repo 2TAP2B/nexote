@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -34,6 +35,7 @@ import (
 //	POST   /api/sync/scopes/{scope}/folders           SyncFolderChange → 204
 //	PUT    /api/sync/scopes/{scope}/lists             SyncLists → 204
 //	POST   /api/sync/done                             → {"lastSyncAt": time}
+//	GET    /api/sync/events                           → SSE stream (changes to sync)
 
 // maxSyncAttachment bounds an uploaded attachment (PDFs may be 50 MB).
 const maxSyncAttachment = 64 << 20
@@ -58,6 +60,7 @@ func (h *Handler) syncRoutes(mux *http.ServeMux) {
 	route("POST /api/sync/scopes/{scope}/folders", h.syncFoldersRoute)
 	route("PUT /api/sync/scopes/{scope}/lists", h.syncListsRoute)
 	route("POST /api/sync/done", h.syncDoneRoute)
+	route("GET /api/sync/events", h.syncEventsRoute)
 }
 
 // writeSyncError maps a primitive's error to a status and code.
@@ -115,36 +118,36 @@ func (h *Handler) syncPutSpaceRoute(w http.ResponseWriter, r *http.Request) {
 	var in SyncSpace
 	if syncDecode(w, r, &in) {
 		in.ID = r.PathValue("id")
-		syncDone(w, h.SyncPutSpace(currentUser(r).ID, in))
+		syncDone(w, h.SyncPutSpace(currentUser(r).ID, currentDevice(r).ID, in))
 	}
 }
 
 func (h *Handler) syncDeleteSpaceRoute(w http.ResponseWriter, r *http.Request) {
-	syncDone(w, h.SyncDeleteSpace(currentUser(r).ID, r.PathValue("id")))
+	syncDone(w, h.SyncDeleteSpace(currentUser(r).ID, currentDevice(r).ID, r.PathValue("id")))
 }
 
 func (h *Handler) syncPutVaultRoute(w http.ResponseWriter, r *http.Request) {
 	var in SyncVault
 	if syncDecode(w, r, &in) {
 		in.ID = r.PathValue("id")
-		syncDone(w, h.SyncPutVault(currentUser(r).ID, in))
+		syncDone(w, h.SyncPutVault(currentUser(r).ID, currentDevice(r).ID, in))
 	}
 }
 
 func (h *Handler) syncDeleteVaultRoute(w http.ResponseWriter, r *http.Request) {
-	syncDone(w, h.SyncDeleteVault(currentUser(r).ID, r.PathValue("id")))
+	syncDone(w, h.SyncDeleteVault(currentUser(r).ID, currentDevice(r).ID, r.PathValue("id")))
 }
 
 func (h *Handler) syncPutCollectionRoute(w http.ResponseWriter, r *http.Request) {
 	var col notes.CollectionMeta
 	if syncDecode(w, r, &col) {
 		col.ID = r.PathValue("col")
-		syncDone(w, h.SyncPutCollection(currentUser(r).ID, r.PathValue("id"), col))
+		syncDone(w, h.SyncPutCollection(currentUser(r).ID, currentDevice(r).ID, r.PathValue("id"), col))
 	}
 }
 
 func (h *Handler) syncDeleteCollectionRoute(w http.ResponseWriter, r *http.Request) {
-	syncDone(w, h.SyncDeleteCollection(currentUser(r).ID, r.PathValue("id"), r.PathValue("col")))
+	syncDone(w, h.SyncDeleteCollection(currentUser(r).ID, currentDevice(r).ID, r.PathValue("id"), r.PathValue("col")))
 }
 
 func (h *Handler) syncManifestRoute(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +177,7 @@ func (h *Handler) syncPutNoteRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Note.Meta.ID = r.PathValue("id")
-	info, err := h.SyncPutNote(currentUser(r).ID, r.PathValue("scope"), in.Note, in.Expect)
+	info, err := h.SyncPutNote(currentUser(r).ID, currentDevice(r).ID, r.PathValue("scope"), in.Note, in.Expect)
 	if err != nil {
 		writeSyncError(w, err)
 		return
@@ -183,7 +186,7 @@ func (h *Handler) syncPutNoteRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) syncDeleteNoteRoute(w http.ResponseWriter, r *http.Request) {
-	syncDone(w, h.SyncDeleteNote(currentUser(r).ID, r.PathValue("scope"), r.PathValue("id"), r.URL.Query().Get("expect")))
+	syncDone(w, h.SyncDeleteNote(currentUser(r).ID, currentDevice(r).ID, r.PathValue("scope"), r.PathValue("id"), r.URL.Query().Get("expect")))
 }
 
 func (h *Handler) syncGetAttachmentRoute(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +215,7 @@ func (h *Handler) syncDeleteAttachmentRoute(w http.ResponseWriter, r *http.Reque
 func (h *Handler) syncFoldersRoute(w http.ResponseWriter, r *http.Request) {
 	var in SyncFolderChange
 	if syncDecode(w, r, &in) {
-		syncDone(w, h.SyncChangeFolders(currentUser(r).ID, r.PathValue("scope"), in))
+		syncDone(w, h.SyncChangeFolders(currentUser(r).ID, currentDevice(r).ID, r.PathValue("scope"), in))
 	}
 }
 
@@ -232,4 +235,57 @@ func (h *Handler) syncDoneRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]time.Time{"lastSyncAt": at})
+}
+
+// syncEventsHeartbeat is how often the device stream proves it is alive
+// (and re-checks the token).
+const syncEventsHeartbeat = 20 * time.Second
+
+// syncEventsRoute streams the changes of the device's user as Server-Sent
+// Events, so the app syncs within moments instead of at its next poll. The
+// changes this device's own sync wrote are left out (announcing them would
+// only make it sync again for nothing); another device's are sent, so a
+// second phone's edits reach this one at once. Each heartbeat re-checks the
+// token, so an unpaired device's stream ends.
+func (h *Handler) syncEventsRoute(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, errors.New("streaming unsupported"))
+		return
+	}
+	token, self := bearerToken(r), currentDevice(r).ID
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	sub := h.Events.subscribe(currentUser(r).ID)
+	defer h.Events.unsubscribe(sub)
+
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(syncEventsHeartbeat)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case e := <-sub.ch:
+			if e.FromSync && e.DeviceID == self {
+				continue
+			}
+			data, err := json.Marshal(e)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, data)
+			flusher.Flush()
+		case <-ticker.C:
+			if _, _, err := h.Accounts.DeviceUser(token); err != nil {
+				return
+			}
+			fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
 }

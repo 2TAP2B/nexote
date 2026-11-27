@@ -1,6 +1,6 @@
 # Sync and offline
 
-The server holds the only copy of the notes that counts. Browsers stay in sync with it through a live event stream, keep a local copy for offline use, and queue changes made without a connection. The [Android app](./android-app) keeps a full copy on the phone and syncs it with your account both ways. Separately, an admin can back up the whole data directory to a git repository.
+The server holds the only copy of the notes that counts. Browsers stay in sync with it through a live event stream, keep a local copy for offline use, and queue changes made without a connection. The [Android app](./android-app) keeps a full copy on the phone and syncs it with your account both ways, within seconds of a change. Separately, an admin can back up the whole data directory to a git repository.
 
 ## Live updates
 

@@ -57,22 +57,22 @@ func (l localSide) PutPrefs(_ context.Context, prefs map[string]string) error {
 	return l.h.SyncPutPrefs(l.user, prefs)
 }
 func (l localSide) PutSpace(_ context.Context, s api.SyncSpace) error {
-	return l.h.SyncPutSpace(l.user, s)
+	return l.h.SyncPutSpace(l.user, "", s)
 }
 func (l localSide) DeleteSpace(_ context.Context, id string) error {
-	return l.h.SyncDeleteSpace(l.user, id)
+	return l.h.SyncDeleteSpace(l.user, "", id)
 }
 func (l localSide) PutVault(_ context.Context, v api.SyncVault) error {
-	return l.h.SyncPutVault(l.user, v)
+	return l.h.SyncPutVault(l.user, "", v)
 }
 func (l localSide) DeleteVault(_ context.Context, id string) error {
-	return l.h.SyncDeleteVault(l.user, id)
+	return l.h.SyncDeleteVault(l.user, "", id)
 }
 func (l localSide) PutCollection(_ context.Context, spaceID string, col notes.CollectionMeta) error {
-	return l.h.SyncPutCollection(l.user, spaceID, col)
+	return l.h.SyncPutCollection(l.user, "", spaceID, col)
 }
 func (l localSide) DeleteCollection(_ context.Context, spaceID, id string) error {
-	return l.h.SyncDeleteCollection(l.user, spaceID, id)
+	return l.h.SyncDeleteCollection(l.user, "", spaceID, id)
 }
 func (l localSide) Manifest(_ context.Context, scope string) (api.SyncManifest, error) {
 	return l.h.SyncManifest(l.user, scope)
@@ -81,10 +81,10 @@ func (l localSide) GetNote(_ context.Context, scope, id string) (api.SyncNote, e
 	return l.h.SyncGetNote(l.user, scope, id)
 }
 func (l localSide) PutNote(_ context.Context, scope string, note api.SyncNote, expect string) (api.SyncNoteInfo, error) {
-	return l.h.SyncPutNote(l.user, scope, note, expect)
+	return l.h.SyncPutNote(l.user, "", scope, note, expect)
 }
 func (l localSide) DeleteNote(_ context.Context, scope, id, expect string) error {
-	return l.h.SyncDeleteNote(l.user, scope, id, expect)
+	return l.h.SyncDeleteNote(l.user, "", scope, id, expect)
 }
 func (l localSide) GetAttachment(_ context.Context, scope, path string) ([]byte, error) {
 	return l.h.SyncReadAttachment(l.user, scope, path)
@@ -96,7 +96,7 @@ func (l localSide) DeleteAttachment(_ context.Context, scope, path string) error
 	return l.h.SyncDeleteAttachment(l.user, scope, path)
 }
 func (l localSide) ChangeFolders(_ context.Context, scope string, change api.SyncFolderChange) error {
-	return l.h.SyncChangeFolders(l.user, scope, change)
+	return l.h.SyncChangeFolders(l.user, "", scope, change)
 }
 func (l localSide) PutLists(_ context.Context, scope string, lists api.SyncLists) error {
 	return l.h.SyncPutLists(l.user, scope, lists)

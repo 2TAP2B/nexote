@@ -205,24 +205,27 @@ func (h *Handler) syncAudience(userID, scope string) map[string]bool {
 	return h.vaultAudience(u, scope)
 }
 
-func (h *Handler) publishSyncNote(userID, scope, id string, updatedAt time.Time) {
+// The publish helpers tag what sync wrote with the device that caused it
+// (deviceID; "" for the engine's own writes): the device stream leaves out
+// only that device's own changes, so another device's writes still reach it.
+func (h *Handler) publishSyncNote(userID, deviceID, scope, id string, updatedAt time.Time) {
 	audience := h.syncAudience(userID, scope)
-	h.Events.publish(NoteEvent{Type: "note-change", VaultID: scope, ID: id, UpdatedAt: updatedAt.Format(timeRFC3339Millis), FromSync: true}, audience)
-	h.Events.publish(NoteEvent{Type: "tree-change", VaultID: scope, FromSync: true}, audience)
+	h.Events.publish(NoteEvent{Type: "note-change", VaultID: scope, ID: id, UpdatedAt: updatedAt.Format(timeRFC3339Millis), FromSync: true, DeviceID: deviceID}, audience)
+	h.Events.publish(NoteEvent{Type: "tree-change", VaultID: scope, FromSync: true, DeviceID: deviceID}, audience)
 }
 
-func (h *Handler) publishSyncTree(userID, scope string) {
-	h.Events.publish(NoteEvent{Type: "tree-change", VaultID: scope, FromSync: true}, h.syncAudience(userID, scope))
+func (h *Handler) publishSyncTree(userID, deviceID, scope string) {
+	h.Events.publish(NoteEvent{Type: "tree-change", VaultID: scope, FromSync: true, DeviceID: deviceID}, h.syncAudience(userID, scope))
 }
 
-func (h *Handler) publishSyncSpaces(userID, spaceID string) {
+func (h *Handler) publishSyncSpaces(userID, deviceID, spaceID string) {
 	audience := map[string]bool{userID: true}
 	if s, err := h.Spaces.Get(spaceID); err == nil {
 		for _, m := range s.Members {
 			audience[m.UserID] = true
 		}
 	}
-	h.Events.publish(NoteEvent{Type: "spaces-change", SpaceID: spaceID, FromSync: true}, audience)
+	h.Events.publish(NoteEvent{Type: "spaces-change", SpaceID: spaceID, FromSync: true, DeviceID: deviceID}, audience)
 }
 
 // SubscribeEvents delivers the events the user would get on their event
@@ -281,12 +284,12 @@ func (h *Handler) SyncStructure(userID string) (SyncStructure, error) {
 
 // SyncPutSpace creates the space with its id, or renames it / changes its
 // icon.
-func (h *Handler) SyncPutSpace(userID string, in SyncSpace) error {
+func (h *Handler) SyncPutSpace(userID, deviceID string, in SyncSpace) error {
 	if _, err := h.Spaces.Get(in.ID); err != nil {
 		if _, err := h.Spaces.CreateWithID(in.ID, in.Name, in.Icon, userID); err != nil {
 			return refused("space %q: %v", in.Name, err)
 		}
-		h.publishSyncSpaces(userID, in.ID)
+		h.publishSyncSpaces(userID, deviceID, in.ID)
 		return nil
 	}
 	s, err := h.ownedSpace(userID, in.ID)
@@ -299,13 +302,13 @@ func (h *Handler) SyncPutSpace(userID string, in SyncSpace) error {
 	if _, err := h.Spaces.Update(in.ID, &in.Name, &in.Icon); err != nil {
 		return refused("space %q: %v", in.Name, err)
 	}
-	h.publishSyncSpaces(userID, in.ID)
+	h.publishSyncSpaces(userID, deviceID, in.ID)
 	return nil
 }
 
 // SyncDeleteSpace deletes an owned space with its vaults. The user's only
 // space is refused.
-func (h *Handler) SyncDeleteSpace(userID, spaceID string) error {
+func (h *Handler) SyncDeleteSpace(userID, deviceID, spaceID string) error {
 	space, err := h.ownedSpace(userID, spaceID)
 	if err != nil {
 		if errors.Is(err, notes.ErrNotFound) {
@@ -319,7 +322,7 @@ func (h *Handler) SyncDeleteSpace(userID, spaceID string) error {
 	if err := h.removeSpace(space); err != nil {
 		return err
 	}
-	h.Events.publish(NoteEvent{Type: "spaces-change", SpaceID: spaceID, FromSync: true}, memberSet(space, userID))
+	h.Events.publish(NoteEvent{Type: "spaces-change", SpaceID: spaceID, FromSync: true, DeviceID: deviceID}, memberSet(space, userID))
 	return nil
 }
 
@@ -334,7 +337,7 @@ func memberSet(s notes.Space, extra string) map[string]bool {
 // SyncPutVault creates the vault with its id in an owned space, or renames
 // it / changes its icon / sets its type. Moving a vault to another space
 // isn't a thing in Nexote and is refused.
-func (h *Handler) SyncPutVault(userID string, in SyncVault) error {
+func (h *Handler) SyncPutVault(userID, deviceID string, in SyncVault) error {
 	if _, err := h.ownedSpace(userID, in.SpaceID); err != nil {
 		return err
 	}
@@ -353,7 +356,7 @@ func (h *Handler) SyncPutVault(userID string, in SyncVault) error {
 		if err != nil {
 			return refused("vault %q: %v", in.Name, err)
 		}
-		h.publishSyncSpaces(userID, in.SpaceID)
+		h.publishSyncSpaces(userID, deviceID, in.SpaceID)
 		return nil
 	}
 	if existing.SpaceID != in.SpaceID {
@@ -383,14 +386,14 @@ func (h *Handler) SyncPutVault(userID string, in SyncVault) error {
 		changed = true
 	}
 	if changed {
-		h.publishSyncSpaces(userID, in.SpaceID)
+		h.publishSyncSpaces(userID, deviceID, in.SpaceID)
 	}
 	return nil
 }
 
 // SyncDeleteVault deletes a vault of an owned space. The Collections vault
 // and a space's last regular vault are refused.
-func (h *Handler) SyncDeleteVault(userID, vaultID string) error {
+func (h *Handler) SyncDeleteVault(userID, deviceID, vaultID string) error {
 	vault, err := h.ownedVault(userID, vaultID)
 	if err != nil {
 		if errors.Is(err, notes.ErrNotFound) {
@@ -417,7 +420,7 @@ func (h *Handler) SyncDeleteVault(userID, vaultID string) error {
 	if err := h.Registry.Delete(vaultID); err != nil {
 		return err
 	}
-	h.publishSyncSpaces(userID, vault.SpaceID)
+	h.publishSyncSpaces(userID, deviceID, vault.SpaceID)
 	return nil
 }
 
@@ -429,7 +432,7 @@ func (h *Handler) spaceCollectionRegistry(userID, spaceID string) (*notes.Collec
 }
 
 // SyncPutCollection creates or replaces a collection definition.
-func (h *Handler) SyncPutCollection(userID, spaceID string, col notes.CollectionMeta) error {
+func (h *Handler) SyncPutCollection(userID, deviceID, spaceID string, col notes.CollectionMeta) error {
 	reg, err := h.spaceCollectionRegistry(userID, spaceID)
 	if err != nil {
 		return err
@@ -437,14 +440,14 @@ func (h *Handler) SyncPutCollection(userID, spaceID string, col notes.Collection
 	if err := reg.Put(col); err != nil {
 		return refused("collection %q: %v", col.Name, err)
 	}
-	h.publishSyncSpaces(userID, spaceID)
+	h.publishSyncSpaces(userID, deviceID, spaceID)
 	return nil
 }
 
 // SyncDeleteCollection deletes a collection definition (its items are
 // notes and sync on their own). Built-ins are refused: they come back on
 // every start anyway.
-func (h *Handler) SyncDeleteCollection(userID, spaceID, id string) error {
+func (h *Handler) SyncDeleteCollection(userID, deviceID, spaceID, id string) error {
 	reg, err := h.spaceCollectionRegistry(userID, spaceID)
 	if err != nil {
 		return err
@@ -459,7 +462,7 @@ func (h *Handler) SyncDeleteCollection(userID, spaceID, id string) error {
 	if err := reg.Delete(id); err != nil && !errors.Is(err, notes.ErrNotFound) {
 		return err
 	}
-	h.publishSyncSpaces(userID, spaceID)
+	h.publishSyncSpaces(userID, deviceID, spaceID)
 	return nil
 }
 
@@ -540,7 +543,7 @@ func (h *Handler) SyncGetNote(userID, scope, id string) (SyncNote, error) {
 // still has the content hash expect ("" = there is no such note). A note
 // that already has the new content counts as written. Overwrites keep the
 // previous version in the note's history.
-func (h *Handler) SyncPutNote(userID, scope string, note SyncNote, expect string) (SyncNoteInfo, error) {
+func (h *Handler) SyncPutNote(userID, deviceID, scope string, note SyncNote, expect string) (SyncNoteInfo, error) {
 	store, err := h.syncStore(userID, scope)
 	if err != nil {
 		return SyncNoteInfo{}, err
@@ -560,13 +563,13 @@ func (h *Handler) SyncPutNote(userID, scope string, note SyncNote, expect string
 	if err != nil {
 		return SyncNoteInfo{}, err
 	}
-	h.publishSyncNote(userID, scope, doc.Meta.ID, doc.Meta.UpdatedAt)
+	h.publishSyncNote(userID, deviceID, scope, doc.Meta.ID, doc.Meta.UpdatedAt)
 	return noteInfo(doc), nil
 }
 
 // SyncDeleteNote deletes a note if it still has the content hash expect.
 // A missing note counts as deleted.
-func (h *Handler) SyncDeleteNote(userID, scope, id, expect string) error {
+func (h *Handler) SyncDeleteNote(userID, deviceID, scope, id, expect string) error {
 	store, err := h.syncStore(userID, scope)
 	if err != nil {
 		return err
@@ -583,7 +586,7 @@ func (h *Handler) SyncDeleteNote(userID, scope, id, expect string) error {
 		return err
 	}
 	if deleted {
-		h.publishSyncTree(userID, scope)
+		h.publishSyncTree(userID, deviceID, scope)
 	}
 	return nil
 }
@@ -628,7 +631,7 @@ func (h *Handler) SyncDeleteAttachment(userID, scope, path string) error {
 }
 
 // SyncChangeFolders creates folders, removes empty ones and sets labels.
-func (h *Handler) SyncChangeFolders(userID, scope string, change SyncFolderChange) error {
+func (h *Handler) SyncChangeFolders(userID, deviceID, scope string, change SyncFolderChange) error {
 	store, err := h.syncStore(userID, scope)
 	if err != nil {
 		return err
@@ -651,7 +654,7 @@ func (h *Handler) SyncChangeFolders(userID, scope string, change SyncFolderChang
 			return err
 		}
 	}
-	h.publishSyncTree(userID, scope)
+	h.publishSyncTree(userID, deviceID, scope)
 	return nil
 }
 
@@ -706,17 +709,17 @@ func (h *Handler) SyncRekey(userID string, spaces, vaults map[string]string) err
 		h.Events.publish(NoteEvent{Type: "rekey", Spaces: done["spaces"], Vaults: done["vaults"], FromSync: true}, me)
 		for oldID, newID := range done["spaces"] {
 			h.Events.publish(NoteEvent{Type: "spaces-change", SpaceID: oldID, FromSync: true}, me)
-			h.publishSyncSpaces(userID, newID)
+			h.publishSyncSpaces(userID, "", newID)
 		}
 		for oldID, newID := range done["vaults"] {
 			h.Events.publish(NoteEvent{Type: "tree-change", VaultID: oldID, FromSync: true}, me)
-			h.publishSyncTree(userID, newID)
+			h.publishSyncTree(userID, "", newID)
 			if v, err := h.Registry.Get(newID); err == nil {
-				h.publishSyncSpaces(userID, v.SpaceID)
+				h.publishSyncSpaces(userID, "", v.SpaceID)
 			}
 		}
 		for _, scope := range []string{"journal", "home"} {
-			h.publishSyncTree(userID, scope)
+			h.publishSyncTree(userID, "", scope)
 		}
 	}
 	return err

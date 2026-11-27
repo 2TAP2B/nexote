@@ -3,6 +3,7 @@
 import { ArrowDown, CircleCheck, Copy, FilePlus, MessageSquarePlus, MessagesSquare, Pencil, Pin, PinOff, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { SyncDot } from "@/components/SyncDot";
 import { useAndroidBack } from "@/lib/android-back";
 import { appendToDraft, shareFiles, shareText, takeAndroidShares, type AndroidShare } from "@/lib/android-bridge";
 import { api, ApiError, isCollectionsVault } from "@/lib/api";
@@ -827,6 +828,8 @@ export default function QuickCapturePane({
                   Saved to your &quot;{NOTEPAD_TITLE}&quot; note
                 </span>
               </span>
+              {/* The desktop shell's tab bar above already has one. */}
+              {!desktop && <SyncDot />}
               {entries.length > 0 && (
                 <HeaderButton label="Select memos" onClick={() => setSelectMode(true)}>
                   <CircleCheck size={19} />

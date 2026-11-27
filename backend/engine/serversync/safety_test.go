@@ -275,7 +275,7 @@ func TestServerRefusesOtherUsersAndHiddenPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = w.server.h.SyncPutVault(w.server.user, api.SyncVault{ID: foreign.ID, SpaceID: space, Name: "Mine"})
+	err = w.server.h.SyncPutVault(w.server.user, "", api.SyncVault{ID: foreign.ID, SpaceID: space, Name: "Mine"})
 	if !errors.Is(err, notes.ErrNotFound) || strings.Contains(err.Error(), "Secret") {
 		t.Errorf("putting another user's vault id: %v, want plain not found", err)
 	}

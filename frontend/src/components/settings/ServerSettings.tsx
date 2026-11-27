@@ -1,11 +1,12 @@
 "use client";
 
 import { Link2, RefreshCw, ScanQrCode, Unplug } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import CodeScanner from "@/components/CodeScanner";
 import { ConfirmDialog } from "@/components/ResponsiveDialog";
 import { api, type LocalSyncStatus } from "@/lib/api";
+import { refreshLocalSync, setLocalSync, useLocalSync } from "@/lib/local-sync";
 import { parsePairingLink } from "@/lib/pairing";
 import { timeAgo } from "@/lib/time-ago";
 import {
@@ -23,76 +24,28 @@ import {
 
 type PairInput = { link: string } | { server: string; code: string };
 
-const POLL_MS = 3000;
-
 /** Android app: pairs this phone with a Nexote server (a QR code or link
  *  from the server's Settings › Devices) and shows how syncing goes. The
  *  engine does the exchange, keeps the credentials in the phone's protected
  *  storage and syncs on its own. */
 export function ServerSettings() {
   const touch = useIsMobileSettings();
-  const [sync, setSync] = useState<LocalSyncStatus | null>(null);
-  const [status, setStatus] = useState<Status | null>(null);
+  // Shared with the header sync dots: one polling loop follows syncs (and a
+  // revoke on the server) while the page is open.
+  const { status: sync, loadError } = useLocalSync();
+  const [actionStatus, setStatus] = useState<Status | null>(null);
+  const status: Status | null = actionStatus ?? (loadError && !sync ? { tone: "error", text: loadError } : null);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [confirming, setConfirming] = useState(false);
   // A revoked phone shows the pairing form again on request.
   const [repairing, setRepairing] = useState(false);
-  // Bumped by every action that sets the status itself: a poll that started
-  // before it would otherwise put the old state back for a moment.
-  const generation = useRef(0);
-  const loaded = useRef(false);
-
-  const refresh = useCallback(async () => {
-    const started = generation.current;
-    try {
-      const s = await api.localSyncStatus();
-      if (!loaded.current) {
-        // A first load that failed showed an error; this one replaces it.
-        loaded.current = true;
-        setStatus(null);
-      }
-      if (started === generation.current) setSync(s);
-    } catch (e) {
-      // Only the first load reports: a missed poll is retried in 3 s.
-      if (!loaded.current) setStatus({ tone: "error", text: errorText(e, "Couldn't read the server connection") });
-    }
-  }, []);
-
-  // Follows syncs (and a revoke on the server) while the page is open and
-  // visible: one loop, one request at a time.
-  useEffect(() => {
-    let cancelled = false;
-    let timer: number | undefined;
-    let inFlight = false;
-    const tick = async () => {
-      inFlight = true;
-      if (document.visibilityState === "visible") await refresh();
-      inFlight = false;
-      if (!cancelled) timer = window.setTimeout(() => void tick(), POLL_MS);
-    };
-    // Coming back: poll at once instead of waiting out the timer, unless a
-    // request is running (its loop schedules the next one).
-    const onVisible = () => {
-      if (document.visibilityState !== "visible" || inFlight) return;
-      clearTimeout(timer);
-      void tick();
-    };
-    void tick();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [refresh]);
 
   const pair = useCallback(async (input: PairInput) => {
-    generation.current++;
     setBusy(true);
     setStatus(null);
     try {
-      setSync(await api.localSyncPair(input));
+      setLocalSync(await api.localSyncPair(input));
       setRepairing(false);
     } catch (e) {
       // The engine's sentences are written for the user: show them as they are.
@@ -103,11 +56,10 @@ export function ServerSettings() {
   }, []);
 
   const disconnect = async () => {
-    generation.current++;
     setBusy(true);
     setStatus(null);
     try {
-      setSync(await api.localSyncDisconnect());
+      setLocalSync(await api.localSyncDisconnect());
     } catch (e) {
       setStatus({ tone: "error", text: errorText(e, "Couldn't disconnect") });
     } finally {
@@ -125,7 +77,7 @@ export function ServerSettings() {
     } finally {
       setBusy(false);
     }
-    await refresh();
+    await refreshLocalSync();
   };
 
   const scanned = (link: { server: string; code: string }) => {

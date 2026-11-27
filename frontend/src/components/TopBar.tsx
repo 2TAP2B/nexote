@@ -6,6 +6,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useAndroidBack } from "@/lib/android-back";
 import { useNotes, DASHBOARD_ID } from "@/lib/notes-context";
 import { useCanEdit } from "@/components/useCanEdit";
+import { SyncDot } from "@/components/SyncDot";
 
 type TopBarProps = {
   onOpenPalette: () => void;
@@ -279,6 +280,9 @@ export default function TopBar({
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* The Android app's sync (tablets in the desktop shell). */}
+        <SyncDot />
 
         {/* Tab list overflow menu */}
         <div className="flex items-stretch">

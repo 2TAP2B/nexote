@@ -15,10 +15,13 @@ import (
 )
 
 const (
-	// changeDelay is how long after the last local change a sync starts,
-	// so a burst of typing becomes one sync.
-	changeDelay = 10 * time.Second
-	// syncInterval is the regular sync while the engine runs.
+	// changeDelay is how long after the last local change a sync starts:
+	// long enough that a burst of typing (every keystroke saves after a
+	// moment) becomes one sync, short enough that the server has the change
+	// within a few seconds.
+	changeDelay = 2 * time.Second
+	// syncInterval is the regular sync while the engine runs, a fallback
+	// for changes the server's change stream didn't announce.
 	syncInterval = 2 * time.Minute
 	// runTimeout bounds one sync run.
 	runTimeout = 15 * time.Minute
@@ -31,8 +34,9 @@ var errStopped = errors.New("sync stopped")
 var errNoEngine = errors.New("the engine isn't running")
 
 // scheduler runs syncs one at a time on its own goroutine. Triggers: the
-// start, local changes (debounced), a timer, SyncNow. A trigger during a
-// run queues exactly one follow-up (kick holds at most one).
+// start, local changes (debounced), the server's change stream (listen.go),
+// a timer, SyncNow. A trigger during a run queues exactly one follow-up
+// (kick holds at most one).
 type scheduler struct {
 	mu        sync.Mutex
 	local     *api.Handler
@@ -50,6 +54,16 @@ type scheduler struct {
 	// the run in progress answers.
 	waiters []chan error
 	running []chan error
+	// listenCancel drops the change stream's connection, listenWake makes
+	// the listener look at the pairing again, listenDone closes when it
+	// ended.
+	listenCancel context.CancelFunc
+	listenWake   chan struct{}
+	listenDone   chan struct{}
+	// listening is set while the change stream is connected; runs counts
+	// started sync runs (both for tests and logs).
+	listening bool
+	runs      int
 
 	syncing       bool
 	lastSyncAt    time.Time
@@ -83,11 +97,18 @@ func (s *Service) Attach(h *api.Handler, userID, folder, home string) {
 	sc.kick = make(chan struct{}, 1)
 	sc.quit = make(chan struct{})
 	sc.done = make(chan struct{})
+	sc.listenWake = make(chan struct{}, 1)
+	sc.listenDone = make(chan struct{})
+	quit, wake, listenDone := sc.quit, sc.listenWake, sc.listenDone
 	sc.mu.Unlock()
 	events, unsubscribe := h.SubscribeEvents(userID)
 	go func() {
 		defer unsubscribe()
 		s.loop(events)
+	}()
+	go func() {
+		defer close(listenDone)
+		s.listen(quit, wake)
 	}()
 	s.SyncNow()
 }
@@ -104,9 +125,13 @@ func (s *Service) Close() {
 	if sc.cancel != nil {
 		sc.cancel()
 	}
-	done := sc.done
+	if sc.listenCancel != nil {
+		sc.listenCancel()
+	}
+	done, listenDone := sc.done, sc.listenDone
 	sc.mu.Unlock()
 	<-done
+	<-listenDone
 	sc.mu.Lock()
 	for _, w := range sc.waiters {
 		w <- errNoEngine
@@ -247,6 +272,7 @@ func (s *Service) runOnce() {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	sc.mu.Lock()
 	sc.cancel, sc.syncing = cancel, true
+	sc.runs++
 	sc.running, sc.waiters = sc.waiters, nil
 	changesBefore := sc.pending
 	sc.mu.Unlock()
