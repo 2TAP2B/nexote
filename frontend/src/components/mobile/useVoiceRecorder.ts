@@ -69,26 +69,40 @@ export function useVoiceRecorder({ maxMs, onLimit }: { maxMs: number; onLimit: (
           ? "Microphone access is blocked. Allow it for this site in the browser settings."
           : name === "NotFoundError"
             ? "No microphone found."
-            : "Couldn't start the microphone.",
+            : name === "NotReadableError"
+              ? "The microphone is busy: another app (a recorder, the assistant, a call) may be using it. Close it and try again."
+              : `Couldn't start the microphone${name ? ` (${name})` : ""}.`,
       );
     }
-    const format = FORMATS.find((f) => MediaRecorder.isTypeSupported(f.mime));
-    const recorder = new MediaRecorder(stream, format ? { mimeType: format.mime } : undefined);
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      const ms = Date.now() - startedAt;
-      setElapsedMs(ms);
-      if (ms >= maxMs) {
-        window.clearInterval(timer);
-        onLimitRef.current();
-      }
-    }, 250);
-    session.current = { recorder, stream, chunks, timer, ext: format?.ext ?? extensionFor(recorder.mimeType) };
-    recorder.start(1000);
+    // The recorder setup must not leak the captured stream: a failure after
+    // getUserMedia would keep the mic held, and every retry would then fail
+    // as "busy" even though it is free.
+    let recorder: MediaRecorder;
+    let ext: string;
+    try {
+      const format = FORMATS.find((f) => MediaRecorder.isTypeSupported(f.mime));
+      recorder = new MediaRecorder(stream, format ? { mimeType: format.mime } : undefined);
+      ext = format?.ext ?? extensionFor(recorder.mimeType);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      recorder.start(1000);
+      const startedAt = Date.now();
+      const timer = window.setInterval(() => {
+        const ms = Date.now() - startedAt;
+        setElapsedMs(ms);
+        if (ms >= maxMs) {
+          window.clearInterval(timer);
+          onLimitRef.current();
+        }
+      }, 250);
+      session.current = { recorder, stream, chunks, timer, ext };
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      const name = e instanceof DOMException ? e.name : "";
+      throw new VoiceError(`Couldn't start the recording${name ? ` (${name})` : ""}.`);
+    }
     setRecording(true);
   }, [maxMs]);
 
