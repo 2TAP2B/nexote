@@ -703,6 +703,11 @@ type scopeRun struct {
 	// skip are notes this run leaves alone (a singleton merge that didn't
 	// go through): their base stays, the next run decides again.
 	skip map[string]bool
+	// copied are attachments this run placed on a side. The manifests were
+	// taken before that, so the deletion step must not read their absence
+	// as "deleted on the other side" (a cover only the frontmatter
+	// references has no refs to protect it either).
+	copied map[string]bool
 }
 
 // syncScope brings one scope in line on both sides. A scope with an
@@ -738,7 +743,7 @@ func (r *run) syncScopeWith(scope string, lm, rm api.SyncManifest) error {
 		b = newScopeBase()
 		r.st.Scopes[scope] = b
 	}
-	s := &scopeRun{run: r, scope: scope, lm: lm, rm: rm, b: b, skip: map[string]bool{}}
+	s := &scopeRun{run: r, scope: scope, lm: lm, rm: rm, b: b, skip: map[string]bool{}, copied: map[string]bool{}}
 	for _, step := range []func() error{s.singletons, s.copyAttachments, s.notes, s.deleteAttachments, s.folders, s.lists} {
 		if err := step(); err != nil {
 			return err
@@ -981,10 +986,12 @@ func (s *scopeRun) copyAttachments() error {
 		case lok && (!bok || s.referenced(p)):
 			if err = s.copyAttachment(s.local, s.remote, p); err == nil {
 				s.b.Attachments[p] = ls
+				s.copied[p] = true
 			}
 		case rok && (!bok || s.referenced(p)):
 			if err = s.copyAttachment(s.remote, s.local, p); err == nil {
 				s.b.Attachments[p] = rs
+				s.copied[p] = true
 			}
 		}
 		if err := s.soft("attachment "+p, err); err != nil {
@@ -995,9 +1002,14 @@ func (s *scopeRun) copyAttachments() error {
 }
 
 // deleteAttachments propagates attachment deletions, never of a file a note
-// on either side still points to.
+// on either side still points to, and never of a file this run just copied:
+// the manifests predate the copy, so their silence about the other side
+// means "was never there", not "was deleted".
 func (s *scopeRun) deleteAttachments() error {
 	for _, p := range orderedIDs(sortedKeys(s.rm.Attachments), sortedKeys(s.lm.Attachments), sortedKeys(s.b.Attachments)) {
+		if s.copied[p] {
+			continue
+		}
 		_, lok := s.lm.Attachments[p]
 		_, rok := s.rm.Attachments[p]
 		_, bok := s.b.Attachments[p]

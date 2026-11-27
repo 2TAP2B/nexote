@@ -155,6 +155,8 @@ Each account has a personal journal with one note per day, titled `YYYY-MM-DD`. 
 
 Below the calendar, the Daily notes view lists the entries of the month shown, newest first. Each entry has a date tile (weekday and day; today's is filled), "Today", "Yesterday" or the weekday for the last week and the date for older days, and the first two lines of what you wrote. While today has no entry yet, the current month's list starts with **Write today's entry**.
 
+**Settings › Editor › Daily notes** changes how the dates in that list are shown (for example `DD.MM.YYYY` instead of "Today" and "Yesterday"). The note titles stay `YYYY-MM-DD` so the days keep matching.
+
 ## Note tree
 
 The sidebar lists the vaults of the active space with their folders and notes. Folders come first (A–Z) and show how many notes they hold, subfolders included; thin guide lines show what belongs to an open folder.

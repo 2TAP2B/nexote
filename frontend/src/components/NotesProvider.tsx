@@ -84,6 +84,10 @@ export type AppSettings = {
   dashboardTouch: DashSection[] | null;
   // Format of the toolbar's "insert date" (formatTitle codes).
   dateFormat: string;
+  // How the dates of daily notes are shown in the journal sidebar
+  // (formatTitle codes; empty: Today/Yesterday and the locale's date).
+  // The note titles stay YYYY-MM-DD so the days keep matching.
+  dailyDateFormat: string;
   // Touch or desktop interface on this device (Settings › General).
   interface: InterfaceMode;
   // Callouts ("> [!info]") and ==highlights== styled and offered in the
@@ -126,6 +130,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dashboardDesktop: null,
   dashboardTouch: null,
   dateFormat: "YYYY-MM-DD",
+  dailyDateFormat: "",
   interface: "auto",
   calloutsAndHighlights: true,
   formattingToolbar: true,

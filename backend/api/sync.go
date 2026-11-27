@@ -500,7 +500,7 @@ func (h *Handler) SyncManifest(userID, scope string) (SyncManifest, error) {
 	refs := map[string]bool{}
 	for id, doc := range snap.Notes {
 		m.Notes[id] = noteInfo(doc)
-		for _, p := range notes.AttachmentRefs(doc.Body, scope) {
+		for _, p := range notes.AttachmentRefs(doc, scope) {
 			if !refs[p] {
 				refs[p] = true
 				m.Refs = append(m.Refs, p)

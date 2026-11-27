@@ -105,7 +105,70 @@ export function EditorSettings() {
       <SettingGroup heading="Insert date">
         <DateFormatSetting />
       </SettingGroup>
+
+      <SettingGroup heading="Daily notes">
+        <DailyDateFormatSetting />
+      </SettingGroup>
     </SettingsPage>
+  );
+}
+
+// How the dates of daily notes show in the journal sidebar. Empty keeps the
+// smart labels (Today, Yesterday, the locale's weekday and date); a format
+// replaces them everywhere. The note titles stay YYYY-MM-DD — the sidebar
+// and the calendar match days by title, so they must not change.
+function DailyDateFormatSetting() {
+  const { settings, updateSettings } = useNotes();
+  const id = useId();
+  const now = new Date();
+  const [customOpen, setCustomOpen] = useState(
+    () => settings.dailyDateFormat !== "" && !DATE_PRESETS.includes(settings.dailyDateFormat),
+  );
+  const value = settings.dailyDateFormat;
+  return (
+    <>
+      <DropdownSetting
+        name="Date format"
+        description="The dates in the journal sidebar. “Default” shows Today and Yesterday and the weekday or date of older entries."
+        value={customOpen ? CUSTOM : value === "" ? "default" : value}
+        options={[
+          { value: "default", label: `Default (${formatTitle("DAY", now)}, ${formatTitle("DD MMM YYYY", now)})` },
+          ...DATE_PRESETS.map((p) => ({ value: p, label: formatTitle(p, now) })),
+          { value: CUSTOM, label: "Custom…" },
+        ]}
+        onChange={(v) => {
+          setCustomOpen(v === CUSTOM);
+          updateSettings({ dailyDateFormat: v === "default" ? "" : v === CUSTOM ? settings.dailyDateFormat : v });
+        }}
+      />
+      {customOpen && (
+        <SettingItem
+          stacked
+          htmlFor={id}
+          name="Custom format"
+          description="Codes like YYYY or MMM are replaced with the entry's date."
+        >
+          <TextInput
+            id={id}
+            full
+            value={value}
+            placeholder="DD.MM.YYYY"
+            onChange={(v) => updateSettings({ dailyDateFormat: v })}
+          />
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {TITLE_CODES.map((code) => (
+              <span
+                key={code}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px]"
+              >
+                <code className="font-mono text-foreground">{code}</code>
+                <span className="text-muted-foreground">{formatTitle(code, now)}</span>
+              </span>
+            ))}
+          </div>
+        </SettingItem>
+      )}
+    </>
   );
 }
 

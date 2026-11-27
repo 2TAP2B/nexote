@@ -703,6 +703,57 @@ func TestCollectionsPrefsFoldersLabelsAndBookmarks(t *testing.T) {
 	w.expectInSync()
 }
 
+// A collection item's cover lives only in the note's frontmatter (never in
+// the body), so nothing but the refs protects it: it must sync, survive
+// repeated runs (an older bug ping-ponged it away), and come back when a
+// side loses it while the note still points at it.
+func TestCollectionCoverSurvivesRepeatedSyncs(t *testing.T) {
+	w := newWorld(t)
+	cv := w.server.vault("collections")
+	id := w.server.createNote(cv, "Abbey Road", "Vinyls", "The Beatles, 1969.\n")
+	store, err := w.server.h.Registry.Store(cv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := store.SaveImage(id, "png", cv, pngBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.server.call("PUT", "/api/vaults/"+cv+"/notes/"+id, map[string]any{
+		"title": "Abbey Road", "body": "The Beatles, 1969.\n", "cover": img.URL,
+	}, nil)
+
+	w.sync()
+	if _, ok := w.phone.note(cv, id); !ok {
+		t.Fatal("the item didn't reach the phone")
+	}
+	if n := len(w.phone.manifest(cv).Attachments); n != 1 {
+		t.Fatalf("the phone holds %d attachments, want the cover", n)
+	}
+
+	// Repeated runs: the cover is still there on both sides and the note
+	// still points at it.
+	for i := 0; i < 3; i++ {
+		w.sync()
+	}
+	w.expectInSync()
+	n, _ := w.phone.note(cv, id)
+	if n.Meta.Cover != img.URL {
+		t.Errorf("the phone's cover reference is %q, want %q", n.Meta.Cover, img.URL)
+	}
+	if len(w.phone.manifest(cv).Attachments) != 1 || len(w.server.manifest(cv).Attachments) != 1 {
+		t.Errorf("cover lost: phone %v server %v", w.phone.manifest(cv).Attachments, w.server.manifest(cv).Attachments)
+	}
+
+	// A side that loses the cover file gets it back from the other.
+	w.phone.call("DELETE", "/api/vaults/"+cv+"/images/"+img.Path+"/"+img.Name, nil, nil)
+	w.sync()
+	if n := len(w.phone.manifest(cv).Attachments); n != 1 {
+		t.Errorf("the phone holds %d attachments after the restore, want the cover back", n)
+	}
+	w.expectInSync()
+}
+
 func slicesContain(list []string, s string) bool {
 	for _, x := range list {
 		if x == s {

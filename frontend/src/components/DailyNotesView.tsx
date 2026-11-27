@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { NoteMeta } from "@/lib/api";
+import { formatTitle, useNotes } from "@/lib/notes-context";
 import { localDateKey } from "@/lib/note-utils";
 import JournalCalendar from "./JournalCalendar";
 
@@ -23,8 +24,9 @@ const atMidnight = (key: string) => new Date(`${key}T00:00`);
  * "Saturday" and older ones "November 17"; a note with a title of its own
  * keeps that title.
  */
-function entryTitle(n: Pick<NoteMeta, "title">, day: string, todayKey: string): string {
+function entryTitle(n: Pick<NoteMeta, "title">, day: string, todayKey: string, dateFormat: string): string {
   if (!DATE_TITLE.test(n.title)) return n.title || "Untitled";
+  if (dateFormat.trim()) return formatTitle(dateFormat.trim(), atMidnight(day));
   const days = Math.round((atMidnight(todayKey).getTime() - atMidnight(day).getTime()) / DAY_MS);
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
@@ -53,6 +55,8 @@ export default function DailyNotesView({
   onOpenNote: (id: string) => void;
   onOpenDaily: (date?: string) => void;
 }) {
+  const { settings } = useNotes();
+  const dateFormat = settings.dailyDateFormat;
   const [cursor, setCursor] = useState<{ year: number; month: number } | null>(null);
   const onMonthChange = useCallback((year: number, month: number) => setCursor({ year, month }), []);
   // Client-only "today" (no SSR/hydration date mismatch), like the calendar.
@@ -117,7 +121,7 @@ export default function DailyNotesView({
                   touch={touch}
                   fs={fs}
                   tile={<DateTile day={day} touch={touch} today={day === todayKey} />}
-                  title={entryTitle(note, day, todayKey)}
+                  title={entryTitle(note, day, todayKey, dateFormat)}
                   preview={
                     note.snippet ? (
                       note.snippet

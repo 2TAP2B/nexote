@@ -65,7 +65,7 @@ export default function MobileSidebar({
 }: Props) {
   const fileTreeBox = useRef<HTMLDivElement>(null);
 
-  const { openDaily, settings, updateSettings } = useNotes();
+  const { settings, updateSettings } = useNotes();
   // The "View" sheet: note order and compact/card rows.
   const [viewSheet, setViewSheet] = useState(false);
   // Viewers of a shared space can't add notes or folders.
@@ -157,15 +157,7 @@ export default function MobileSidebar({
                 type="button"
                 aria-label={item.label}
                 title={item.label}
-                onClick={() => {
-                  if (item.view === "journal") {
-                    onSelectView(item.view);
-                    void openDaily();
-                    onClose();
-                    return;
-                  }
-                  onSelectView(item.view);
-                }}
+                onClick={() => onSelectView(item.view)}
                 className="flex shrink-0 items-center justify-center rounded-lg transition-colors"
                 style={{
                   width: 38,

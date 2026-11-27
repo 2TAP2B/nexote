@@ -92,19 +92,23 @@ func IsSyncAttachmentPath(rel string) bool {
 	return IsAttachmentName(rel)
 }
 
-// AttachmentRefs returns the attachment paths a note body references in the
-// store with id vaultID (/api/vaults/<vaultID>/images/<path> URLs).
-func AttachmentRefs(body, vaultID string) []string {
+// AttachmentRefs returns the attachment paths a note references in the
+// store with id vaultID (/api/vaults/<vaultID>/images/<path> URLs): the
+// body and the frontmatter cover (collection items keep their picture
+// there, so a cover must be protected like a body image).
+func AttachmentRefs(doc Document, vaultID string) []string {
 	var out []string
-	for _, m := range imageURLRe.FindAllStringSubmatch(body, -1) {
-		if m[1] != vaultID {
-			continue
+	for _, text := range []string{doc.Body, doc.Meta.Cover} {
+		for _, m := range imageURLRe.FindAllStringSubmatch(text, -1) {
+			if m[1] != vaultID {
+				continue
+			}
+			p := strings.TrimRight(m[2], ">\"'")
+			if unescaped, err := url.PathUnescape(p); err == nil {
+				p = unescaped
+			}
+			out = append(out, p)
 		}
-		p := strings.TrimRight(m[2], ">\"'")
-		if unescaped, err := url.PathUnescape(p); err == nil {
-			p = unescaped
-		}
-		out = append(out, p)
 	}
 	return out
 }
