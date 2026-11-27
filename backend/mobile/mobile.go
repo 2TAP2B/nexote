@@ -10,10 +10,12 @@ package mobile
 
 import (
 	"embed"
+	"errors"
 	"io/fs"
 	"log"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"nexote/engine"
 	"nexote/engine/serversync"
@@ -41,6 +43,9 @@ type Host interface {
 	SaveSecret(name, value string) error
 	// DeviceName names this device in the server's list, e.g. "Google Pixel 8".
 	DeviceName() string
+	// StateDir is the absolute path of an existing app-private directory
+	// for the sync state (never the user-visible data folder).
+	StateDir() string
 }
 
 var (
@@ -97,6 +102,7 @@ func (currentHost) get() serversync.Host {
 func (h currentHost) LoadSecret(name string) (string, error) { return h.get().LoadSecret(name) }
 func (h currentHost) SaveSecret(name, value string) error    { return h.get().SaveSecret(name, value) }
 func (h currentHost) DeviceName() string                     { return h.get().DeviceName() }
+func (h currentHost) StateDir() string                       { return h.get().StateDir() }
 
 // Start serves the data folder home on 127.0.0.1 and returns the port.
 // port is the preferred port (0 or busy: any free one). With home already
@@ -106,6 +112,11 @@ func (h currentHost) DeviceName() string                     { return h.get().De
 func Start(home string, port int, secret string) (int, error) {
 	mu.Lock()
 	defer mu.Unlock()
+	return start(home, port, secret)
+}
+
+// start is Start with mu held.
+func start(home string, port int, secret string) (int, error) {
 	abs, err := filepath.Abs(home)
 	if err != nil {
 		return 0, err
@@ -145,6 +156,19 @@ func config(home string, port int, secret string, web fs.FS) engine.Config {
 	return engine.Config{Home: home, Port: port, Secret: secret, Web: web, Host: currentHost{}, UserCAs: currentUserCAs()}
 }
 
+// StartIfIdle returns the running engine's port, leaving it alone (whatever
+// folder it serves), or starts one like Start when none runs. The app's
+// background worker uses it: it must never switch the folder under an open
+// page.
+func StartIfIdle(home string, port int, secret string) (int, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if running != nil {
+		return running.Port(), nil
+	}
+	return start(home, port, secret)
+}
+
 // Stop shuts the engine down; it does nothing when none runs.
 func Stop() {
 	mu.Lock()
@@ -153,4 +177,30 @@ func Stop() {
 		running.Stop()
 		running, runningSecret = nil, ""
 	}
+}
+
+// SyncNow starts a sync with the paired server without waiting (the app
+// calls it on resume); it does nothing when not paired or not running.
+func SyncNow() {
+	mu.Lock()
+	defer mu.Unlock()
+	if running != nil {
+		running.SyncNow()
+	}
+}
+
+// SyncNowWait syncs with the paired server and blocks until that sync
+// finished, at most timeoutSeconds (the app's periodic background job).
+// Returns nil at once when not paired, an error when the sync failed, timed
+// out or the engine isn't running.
+func SyncNowWait(timeoutSeconds int) error {
+	mu.Lock()
+	e := running
+	mu.Unlock()
+	if e == nil {
+		return errors.New("the engine isn't running")
+	}
+	// Not under mu: a sync may take a while, and Start/Stop must not wait
+	// for it (Stop ends a running sync).
+	return e.SyncNowWait(time.Duration(timeoutSeconds) * time.Second)
 }

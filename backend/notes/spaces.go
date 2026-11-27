@@ -76,6 +76,9 @@ var (
 	ErrLastOwner = errors.New("a space needs at least one owner")
 	// ErrInvalidSpaceName is returned for empty or overlong names.
 	ErrInvalidSpaceName = errors.New("space names are 1–64 characters")
+	// ErrSpaceExists is returned when a space is created or rekeyed to an
+	// id that is already registered.
+	ErrSpaceExists = errors.New("space id already exists")
 )
 
 // SpaceRegistry persists spaces in spaces.json under $NEXOTE_HOME. Only the
@@ -160,13 +163,22 @@ func (r *SpaceRegistry) RoleOf(spaceID, userID string) (SpaceRole, bool) {
 
 // Create adds a space owned by ownerID.
 func (r *SpaceRegistry) Create(name, icon, ownerID string) (Space, error) {
+	return r.CreateWithID(NewID(), name, icon, ownerID)
+}
+
+// CreateWithID is Create with a caller-chosen id, for a space that already
+// exists on a synced peer and must keep its id there and here.
+func (r *SpaceRegistry) CreateWithID(id, name, icon, ownerID string) (Space, error) {
+	if !validID(id) {
+		return Space{}, fmt.Errorf("invalid space id %q", id)
+	}
 	name, err := cleanSpaceName(name)
 	if err != nil {
 		return Space{}, err
 	}
 	now := time.Now().UTC()
 	s := Space{
-		ID:        NewID(),
+		ID:        id,
 		Name:      name,
 		Icon:      icon,
 		CreatedBy: ownerID,
@@ -175,11 +187,45 @@ func (r *SpaceRegistry) Create(name, icon, ownerID string) (Space, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for _, existing := range r.spaces {
+		if existing.ID == id {
+			return Space{}, ErrSpaceExists
+		}
+	}
 	next := append(cloneSpaces(r.spaces), s)
 	if err := r.save(next); err != nil {
 		return Space{}, err
 	}
 	return cloneSpace(s), nil
+}
+
+// Rekey changes a space's id in place, keeping its position so the
+// oldest-first order (and with it the default space) is unchanged. Vaults
+// pointing at the old id are the caller's business (VaultRegistry.MoveSpace).
+func (r *SpaceRegistry) Rekey(oldID, newID string) error {
+	if !validID(newID) {
+		return fmt.Errorf("invalid space id %q", newID)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	at := -1
+	for i, s := range r.spaces {
+		switch s.ID {
+		case oldID:
+			at = i
+		case newID:
+			return ErrSpaceExists
+		}
+	}
+	if at < 0 {
+		return ErrNotFound
+	}
+	if oldID == newID {
+		return nil
+	}
+	next := cloneSpaces(r.spaces)
+	next[at].ID = newID
+	return r.save(next)
 }
 
 // Update changes a space's name and/or icon (nil leaves a field as is).

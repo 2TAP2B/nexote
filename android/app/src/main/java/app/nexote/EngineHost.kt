@@ -8,6 +8,7 @@ import android.util.Base64
 import android.util.Log
 import androidx.core.content.edit
 import app.nexote.mobile.Host
+import java.io.File
 import java.security.KeyStore
 import java.security.cert.Certificate
 import javax.crypto.AEADBadTagException
@@ -25,7 +26,16 @@ import javax.crypto.spec.GCMParameterSpec
  * Go calls in from its own threads, hence the synchronized methods.
  */
 class EngineHost(context: Context) : Host {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    // The engine's sync bookkeeping: app-private, never in the user-visible data folder (and
+    // excluded from backup and device transfer with the rest of filesDir).
+    override fun stateDir(): String {
+        val dir = File(appContext.filesDir, "sync-state")
+        dir.mkdirs()
+        return dir.absolutePath
+    }
 
     @Synchronized
     override fun loadSecret(name: String): String {

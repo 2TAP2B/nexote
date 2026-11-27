@@ -23,6 +23,7 @@ import (
 
 	"nexote/api"
 	"nexote/engine/serversync"
+	"nexote/notes"
 	"nexote/server"
 )
 
@@ -105,6 +106,14 @@ func Start(cfg Config) (*Engine, error) {
 		host = serversync.NewMemoryHost("Nexote engine")
 	}
 	remote := serversync.New(host, cfg.UserCAs)
+	folder, err := folderID(home)
+	if err != nil {
+		ln.Close()
+		h.Close()
+		return nil, err
+	}
+	// Syncs with the paired server account (if any) while the engine runs.
+	remote.Attach(h, h.LocalUserID(), folder, home)
 
 	base, cancel := context.WithCancel(context.Background())
 	srv := &http.Server{
@@ -127,6 +136,30 @@ func Start(cfg Config) (*Engine, error) {
 	return e, nil
 }
 
+// folderID returns the data folder's random id (.nexote/folder-id, created
+// on first use). It is part of the sync state's key: a folder that was
+// emptied or replaced at the same path has no id file (or another one), so
+// its first sync merges instead of reading the old base and taking the
+// missing notes for deletions.
+func folderID(home string) (string, error) {
+	p := filepath.Join(home, ".nexote", "folder-id")
+	if data, err := os.ReadFile(p); err == nil {
+		if id := strings.TrimSpace(string(data)); id != "" {
+			return id, nil
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("data folder id: %w", err)
+	}
+	id := notes.NewID()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return "", fmt.Errorf("data folder id: %w", err)
+	}
+	if err := os.WriteFile(p, []byte(id+"\n"), 0o644); err != nil {
+		return "", fmt.Errorf("data folder id: %w", err)
+	}
+	return id, nil
+}
+
 // listen binds 127.0.0.1 on port, falling back to any free port.
 func listen(port int) (net.Listener, error) {
 	if port > 0 {
@@ -147,11 +180,19 @@ func (e *Engine) Home() string { return e.home }
 // connections (they can change while the engine runs).
 func (e *Engine) SetUserCAs(pem string) { e.remote.SetUserCAs(pem) }
 
+// SyncNow starts a sync with the paired server soon (no-op if not paired).
+func (e *Engine) SyncNow() { e.remote.SyncNow() }
+
+// SyncNowWait syncs with the paired server and waits up to timeout for the
+// result; nil at once when not paired.
+func (e *Engine) SyncNowWait(timeout time.Duration) error { return e.remote.SyncNowWait(timeout) }
+
 // Stop shuts the engine down gracefully and returns once the port is free
-// and the folder's background work (git sync) has ended. Safe to call more
-// than once.
+// and the folder's background work (sync, git sync) has ended. Safe to call
+// more than once.
 func (e *Engine) Stop() {
 	e.stop.Do(func() {
+		e.remote.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 		defer cancel()
 		if err := e.srv.Shutdown(ctx); err != nil {

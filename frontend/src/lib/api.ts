@@ -250,10 +250,14 @@ export type PairedDevice = {
   createdAt: string;
   /** Absent until the device first used its token. */
   lastSeenAt?: string;
+  /** Absent until the device's first completed sync. */
+  lastSyncAt?: string;
 };
 
 /** The Android app's link to a server (`GET /api/local/sync` on its engine).
- *  `revoked`: the server no longer accepts the token (device removed there). */
+ *  `revoked`: the server no longer accepts the token (device removed there).
+ *  `pending`: local changes not yet sent; `lastConflicts`: notes the last sync
+ *  found edited on both sides (the phone's version kept as a copy). */
 export type LocalSyncStatus =
   | { connected: false }
   | {
@@ -262,10 +266,18 @@ export type LocalSyncStatus =
       user: { username: string; displayName: string };
       device: { id: string; name: string };
       revoked: boolean;
+      syncing: boolean;
+      lastSyncAt?: string;
+      lastError?: string;
+      lastConflicts: number;
+      pending: number;
     };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const isString = (v: unknown): v is string => typeof v === "string";
+const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+// A timestamp, or undefined for "never" (missing, "" or Go's zero time).
+const time = (v: unknown) => (isString(v) && v && !v.startsWith("0001-") ? v : undefined);
 
 function parsePairingCode(data: unknown): PairingCode | null {
   if (!isObject(data) || !isString(data.code) || !isString(data.link) || !isString(data.expiresAt)) return null;
@@ -282,8 +294,8 @@ function parseDevices(data: unknown): PairedDevice[] | null {
       name: d.name,
       platform: isString(d.platform) ? d.platform : "",
       createdAt: d.createdAt,
-      // The zero time or "" both mean "never".
-      lastSeenAt: isString(d.lastSeenAt) && d.lastSeenAt && !d.lastSeenAt.startsWith("0001-") ? d.lastSeenAt : undefined,
+      lastSeenAt: time(d.lastSeenAt),
+      lastSyncAt: time(d.lastSyncAt),
     });
   }
   return devices;
@@ -301,6 +313,11 @@ function parseLocalSync(data: unknown): LocalSyncStatus | null {
     user: { username: user.username, displayName: isString(user.displayName) ? user.displayName : user.username },
     device: { id: device.id, name: device.name },
     revoked: data.revoked === true,
+    syncing: data.syncing === true,
+    lastSyncAt: time(data.lastSyncAt),
+    lastError: isString(data.lastError) && data.lastError ? data.lastError : undefined,
+    lastConflicts: count(data.lastConflicts),
+    pending: count(data.pending),
   };
 }
 
@@ -823,6 +840,8 @@ export const api = {
 
   // --- Server connection (the Android app's engine only) ---
   localSyncStatus: async () => parsed(parseLocalSync(await request<unknown>("/api/local/sync")), "the app"),
+  /** Starts a sync right away (202); the status shows its progress. */
+  localSyncNow: () => request<unknown>("/api/local/sync/now", json("POST", {})),
   /** Pairs with a server: either the whole link or the address and the code.
    *  Failures carry a sentence for the user (ApiError message). */
   localSyncPair: async (input: { link: string } | { server: string; code: string }) =>

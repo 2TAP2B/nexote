@@ -133,6 +133,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/devices/{id}", h.serverOnly(h.deleteDevice))
 	mux.HandleFunc("GET /api/sync/hello", h.serverOnly(h.syncHello))
 	mux.HandleFunc("DELETE /api/sync/device", h.serverOnly(h.syncUnpair))
+	h.syncRoutes(mux)
 
 	// The logged-in account
 	mux.HandleFunc("GET /api/me", h.getMe)

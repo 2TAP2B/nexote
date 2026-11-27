@@ -29,6 +29,9 @@ export const THREADS_FOLDER = "Threads";
 export const THREADS_CHANGED_EVENT = "nexote:threads-changed";
 /** NotesProvider re-fires every SSE note change (detail: `{ vaultId, id, updatedAt }`). */
 export const NOTE_CHANGE_EVENT = "nexote:note-change";
+/** NotesProvider re-fires every SSE tree change (detail: `{ vaultId }`): notes
+ *  were created, moved, renamed or deleted in that vault, e.g. by a sync. */
+export const TREE_CHANGE_EVENT = "nexote:tree-change";
 /** Opens a thread in the thread view (detail: `{ vaultId, id }`). */
 export const OPEN_THREAD_EVENT = "nexote:open-thread";
 

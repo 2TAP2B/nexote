@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAndroidBack } from "@/lib/android-back";
 import { appendToDraft, shareFiles, shareText, takeAndroidShares, type AndroidShare } from "@/lib/android-bridge";
-import { api, isCollectionsVault } from "@/lib/api";
+import { api, ApiError, isCollectionsVault } from "@/lib/api";
 import { isAndroidApp } from "@/lib/app-info";
 import { copyText } from "@/lib/clipboard";
 import { localDateKey, makeSnippet } from "@/lib/note-utils";
@@ -30,10 +30,12 @@ import {
   deleteThread,
   lastActivity,
   mutateThread,
+  NOTE_CHANGE_EVENT,
   openThread,
   postStamp,
   postTags,
   replyLabel,
+  TREE_CHANGE_EVENT,
   type Thread,
 } from "@/lib/threads";
 import { useScrolledAway } from "../threads/JumpButton";
@@ -126,6 +128,8 @@ export default function QuickCapturePane({
   // image upload and a post can't create two notes.
   const targetRef = useRef<Target | null>(null);
   const creatingRef = useRef<Promise<Target> | null>(null);
+  // Whether a memo is being posted (read by reloads, which run outside it).
+  const postingRef = useRef(false);
   // Whether the pane is on screen right now (read after awaits).
   const focusedRef = useRef(focused);
   useEffect(() => {
@@ -134,7 +138,8 @@ export default function QuickCapturePane({
 
   // The Notepad lives where Settings › Features says: the personal "home"
   // store (default, the same in every space) or a chosen notebook. Found and
-  // (re)loaded whenever the pane is shown, so edits made elsewhere appear.
+  // (re)loaded whenever the pane is shown, and while it is shown whenever the
+  // Notepad or its store changes, so edits made elsewhere appear.
   // Creating it on the first post only sets targetRef: reloading then would
   // race the post and show the empty new note.
   const { vaultId: locVault, folder: locFolder } = notepadLocation(settings);
@@ -158,21 +163,47 @@ export default function QuickCapturePane({
   useEffect(() => {
     if (!focused) return;
     let cancelled = false;
-    void (async () => {
+    let timer: number | undefined;
+    const load = async () => {
       try {
         const id = await findNotepad({ vaultId: locVault, folder: locFolder });
         if (cancelled || !id) return;
         targetRef.current = { vaultId: locVault, id };
         const note = await api.get(locVault, id);
-        if (!cancelled) setBody(note.body);
+        // A post in flight shows its new memo already; the version read
+        // here may predate it.
+        if (!cancelled && !postingRef.current) setBody(note.body);
       } catch {
         // Offline or not created yet: the pane keeps what it shows.
       } finally {
         if (!cancelled) setLookedUp(`${locVault}\n${locFolder}`);
       }
-    })();
+    };
+    void load();
+    // While shown, the Notepad can change underneath: a memo from another
+    // device arrives by sync, or a sync merges two Notepads into the
+    // server's, which has another id. Reload on its changes and on note
+    // list changes in its store (debounced: a sync sends bursts).
+    const reload = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void load(), 400);
+    };
+    const detailOf = (e: Event): unknown => (e instanceof CustomEvent ? e.detail : null);
+    const onNote = (e: Event) => {
+      const d = detailOf(e);
+      if (typeof d === "object" && d !== null && "vaultId" in d && "id" in d && d.vaultId === locVault && d.id === targetRef.current?.id) reload();
+    };
+    const onTree = (e: Event) => {
+      const d = detailOf(e);
+      if (typeof d === "object" && d !== null && "vaultId" in d && d.vaultId === locVault) reload();
+    };
+    window.addEventListener(NOTE_CHANGE_EVENT, onNote);
+    window.addEventListener(TREE_CHANGE_EVENT, onTree);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener(NOTE_CHANGE_EVENT, onNote);
+      window.removeEventListener(TREE_CHANGE_EVENT, onTree);
     };
   }, [focused, locVault, locFolder]);
 
@@ -318,6 +349,26 @@ export default function QuickCapturePane({
     return creatingRef.current;
   };
 
+  // The Notepad's id and latest text. The remembered note can vanish while
+  // the pane is open — a sync merged it into the server's Notepad, which has
+  // another id — so a missing note is looked up again by title. `create`:
+  // make one when there is none (posting); otherwise null.
+  const readNotepad = async (create: boolean): Promise<{ target: Target; body: string } | null> => {
+    const known = create ? await ensureTarget() : targetRef.current;
+    if (known) {
+      try {
+        return { target: known, body: (await api.get(known.vaultId, known.id)).body };
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 404)) throw e;
+      }
+    }
+    const id = await findNotepad({ vaultId: locVault, folder: locFolder });
+    targetRef.current = id ? { vaultId: locVault, id } : null;
+    if (!targetRef.current && !create) return null;
+    const target = targetRef.current ?? (await ensureTarget());
+    return { target, body: (await api.get(target.vaultId, target.id)).body };
+  };
+
   const {
     inputRef,
     input,
@@ -369,11 +420,14 @@ export default function QuickCapturePane({
     submit(
       async (text, edit) => {
         let previous = body;
+        postingRef.current = true;
         try {
-          const target = await ensureTarget();
           // Write into the latest version, not this pane's copy, so edits made in
           // the editor or on another device are kept.
-          previous = (await api.get(target.vaultId, target.id)).body;
+          const notepad = await readNotepad(true);
+          if (!notepad) throw new Error("The notepad note is gone");
+          const { target } = notepad;
+          previous = notepad.body;
           const next = edit ? replaceNotepadEntry(previous, edit, text) : appendNotepadEntry(previous, text);
           if (next === null) throw new Error("This memo was changed elsewhere in the meantime. Try again.");
           setBody(next);
@@ -382,6 +436,8 @@ export default function QuickCapturePane({
         } catch (e) {
           setBody(previous);
           throw e;
+        } finally {
+          postingRef.current = false;
         }
       },
       "Couldn't save to the notepad",
@@ -442,9 +498,9 @@ export default function QuickCapturePane({
     void refresh();
     // Only now take the memos out, from the notepad's latest version.
     try {
-      const target = targetRef.current;
-      if (!target) throw new Error("The notepad note is gone");
-      const latest = (await api.get(target.vaultId, target.id)).body;
+      const notepad = await readNotepad(false);
+      if (!notepad) throw new Error("The notepad note is gone");
+      const { target, body: latest } = notepad;
       const next = removeNotepadEntries(latest, list);
       if (next === latest) {
         showToast(`Saved as “${created.title}” — the memos changed elsewhere, so they stay`, open);
@@ -463,12 +519,13 @@ export default function QuickCapturePane({
   // Deletes memos from the notepad's latest version; Undo puts that version
   // back unless the notepad changed again since.
   const deleteMemos = async (list: NotepadEntry[]) => {
-    const target = targetRef.current;
-    if (!target || list.length === 0) return;
+    if (!targetRef.current || list.length === 0) return;
     setError(null);
     if (isEditing(list)) cancelEdit();
     try {
-      const before = (await api.get(target.vaultId, target.id)).body;
+      const notepad = await readNotepad(false);
+      if (!notepad) return;
+      const { target, body: before } = notepad;
       const after = removeNotepadEntries(before, list);
       if (after === before) {
         showToast("Those memos changed elsewhere");
@@ -488,11 +545,13 @@ export default function QuickCapturePane({
 
   // Pins or unpins memos in the notepad's latest version, written once.
   const pinMemos = async (list: NotepadEntry[], pinned: boolean) => {
-    const target = targetRef.current;
-    if (!target || list.length === 0) return;
+    if (!targetRef.current || list.length === 0) return;
     let previous = body;
     try {
-      previous = (await api.get(target.vaultId, target.id)).body;
+      const notepad = await readNotepad(false);
+      if (!notepad) return;
+      const { target } = notepad;
+      previous = notepad.body;
       const next = list.reduce((b, entry) => setNotepadEntryPinned(b, entry, pinned) ?? b, previous);
       if (next === previous) {
         showToast("Those memos changed elsewhere");
@@ -524,9 +583,9 @@ export default function QuickCapturePane({
   // Takes memos out of the notepad's latest version, shown at once; null when
   // none of them is there anymore (changed elsewhere).
   const takeFromNotepad = async (list: NotepadEntry[]) => {
-    const target = targetRef.current;
-    if (!target) throw new Error("The notepad note is gone");
-    const before = (await api.get(target.vaultId, target.id)).body;
+    const notepad = await readNotepad(false);
+    if (!notepad) throw new Error("The notepad note is gone");
+    const { target, body: before } = notepad;
     const after = removeNotepadEntries(before, list);
     if (after === before) return null;
     setBody(after);

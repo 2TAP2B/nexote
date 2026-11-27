@@ -18,6 +18,9 @@ import (
 //     renamed or deleted; clients refetch the vault's note list.
 //   - "spaces-change": the user's spaces, a space's members or its vaults
 //     changed (SpaceID); clients refetch spaces and vaults.
+//   - "rekey" (the Android app only): its first sync gave the device's
+//     space and vaults the server's ids (Spaces, Vaults: old → new); sent
+//     before the matching spaces-change.
 //
 // VaultID uses the same ids as the REST routes: a real vault id, or the
 // personal pseudo vaults "journal" and "home".
@@ -27,6 +30,13 @@ type NoteEvent struct {
 	SpaceID   string `json:"spaceId,omitempty"`
 	ID        string `json:"id,omitempty"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
+	// Spaces and Vaults map old to new ids in a "rekey" event: the engine's
+	// first sync gave the device's space and vaults the server's ids.
+	Spaces map[string]string `json:"spaces,omitempty"`
+	Vaults map[string]string `json:"vaults,omitempty"`
+	// FromSync marks changes the engine's sync applied, so it doesn't take
+	// them for local edits. Never sent to clients.
+	FromSync bool `json:"-"`
 }
 
 // hub fans events out to subscribed SSE streams. A mutex protects the

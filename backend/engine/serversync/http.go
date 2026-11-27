@@ -4,16 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"sync"
 )
 
 // Handler serves the page's routes: GET and DELETE /api/local/sync, POST
-// /api/local/sync/pair. The engine mounts it behind its secret cookie.
+// /api/local/sync/pair and /api/local/sync/now. The engine mounts it behind
+// its secret cookie.
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/local/sync", s.handleStatus)
 	mux.HandleFunc("DELETE /api/local/sync", s.handleDisconnect)
 	mux.HandleFunc("POST /api/local/sync/pair", s.handlePair)
+	mux.HandleFunc("POST /api/local/sync/now", s.handleSyncNow)
 	return mux
 }
 
@@ -23,7 +26,7 @@ func (s *Service) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, statusBody(c))
+	writeJSON(w, http.StatusOK, s.statusBody(c))
 }
 
 func (s *Service) handlePair(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +40,7 @@ func (s *Service) handlePair(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, statusBody(c))
+	writeJSON(w, http.StatusOK, s.statusBody(c))
 }
 
 func (s *Service) handleDisconnect(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +48,14 @@ func (s *Service) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, statusBody(nil))
+	writeJSON(w, http.StatusOK, s.statusBody(nil))
+}
+
+// handleSyncNow starts a sync without waiting for it; the page follows it
+// through the status.
+func (s *Service) handleSyncNow(w http.ResponseWriter, r *http.Request) {
+	s.SyncNow()
+	writeJSON(w, http.StatusAccepted, struct{}{})
 }
 
 type disconnectedStatus struct {
@@ -63,20 +73,22 @@ type connectedStatus struct {
 	User      statusUser `json:"user"`
 	Device    Device     `json:"device"`
 	Revoked   bool       `json:"revoked"`
+	syncStatus
 }
 
-// statusBody is the page's view of a connection (nil: none). The token
-// never leaves the engine.
-func statusBody(c *credentials) any {
+// statusBody is the page's view of a connection (nil: none) and of the
+// sync. The token never leaves the engine.
+func (s *Service) statusBody(c *credentials) any {
 	if c == nil {
 		return disconnectedStatus{}
 	}
 	return connectedStatus{
-		Connected: true,
-		Server:    c.Server,
-		User:      statusUser{Username: c.User.Username, DisplayName: c.User.DisplayName},
-		Device:    c.Device,
-		Revoked:   c.Revoked,
+		Connected:  true,
+		Server:     c.Server,
+		User:       statusUser{Username: c.User.Username, DisplayName: c.User.DisplayName},
+		Device:     c.Device,
+		Revoked:    c.Revoked,
+		syncStatus: s.syncStatus(),
 	}
 }
 
@@ -92,16 +104,40 @@ func writeError(w http.ResponseWriter, status int, err error) {
 }
 
 // MemoryHost keeps secrets in memory: for tests and engines started without
-// a host, where a connection only lasts as long as the process.
+// a host, where a connection only lasts as long as the process. Its state
+// directory is a temporary one unless SetStateDir chose another.
 type MemoryHost struct {
-	name    string
-	mu      sync.Mutex
-	secrets map[string]string
+	name     string
+	mu       sync.Mutex
+	secrets  map[string]string
+	stateDir string
 }
 
 // NewMemoryHost returns an empty MemoryHost naming the device deviceName.
 func NewMemoryHost(deviceName string) *MemoryHost {
 	return &MemoryHost{name: deviceName, secrets: map[string]string{}}
+}
+
+// SetStateDir sets the directory StateDir returns.
+func (h *MemoryHost) SetStateDir(dir string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.stateDir = dir
+}
+
+// StateDir implements Host; without SetStateDir it makes a temporary
+// directory on first use.
+func (h *MemoryHost) StateDir() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.stateDir == "" {
+		dir, err := os.MkdirTemp("", "nexote-sync-")
+		if err != nil {
+			dir = os.TempDir()
+		}
+		h.stateDir = dir
+	}
+	return h.stateDir
 }
 
 // LoadSecret implements Host.

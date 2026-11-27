@@ -83,6 +83,9 @@ func (h *Handler) localUser() *accounts.User {
 	return &u
 }
 
+// LocalUserID is the local user's id in local mode, "" on a server.
+func (h *Handler) LocalUserID() string { return h.localUserID }
+
 // Close stops the handler's background work (git sync timers) once nothing
 // serves it anymore. A server runs until the process ends and never calls
 // it; the engine does when it closes a data folder.

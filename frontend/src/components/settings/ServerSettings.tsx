@@ -1,12 +1,13 @@
 "use client";
 
-import { Link2, ScanQrCode, Unplug } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Link2, RefreshCw, ScanQrCode, Unplug } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import CodeScanner from "@/components/CodeScanner";
 import { ConfirmDialog } from "@/components/ResponsiveDialog";
 import { api, type LocalSyncStatus } from "@/lib/api";
 import { parsePairingLink } from "@/lib/pairing";
+import { timeAgo } from "@/lib/time-ago";
 import {
   Button,
   InfoItem,
@@ -22,9 +23,12 @@ import {
 
 type PairInput = { link: string } | { server: string; code: string };
 
+const POLL_MS = 3000;
+
 /** Android app: pairs this phone with a Nexote server (a QR code or link
- *  from the server's Settings › Devices). The engine does the exchange and
- *  keeps the credentials in the phone's protected storage. */
+ *  from the server's Settings › Devices) and shows how syncing goes. The
+ *  engine does the exchange, keeps the credentials in the phone's protected
+ *  storage and syncs on its own. */
 export function ServerSettings() {
   const touch = useIsMobileSettings();
   const [sync, setSync] = useState<LocalSyncStatus | null>(null);
@@ -34,23 +38,57 @@ export function ServerSettings() {
   const [confirming, setConfirming] = useState(false);
   // A revoked phone shows the pairing form again on request.
   const [repairing, setRepairing] = useState(false);
+  // Bumped by every action that sets the status itself: a poll that started
+  // before it would otherwise put the old state back for a moment.
+  const generation = useRef(0);
+  const loaded = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .localSyncStatus()
-      .then((s) => {
-        if (!cancelled) setSync(s);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setStatus({ tone: "error", text: errorText(e, "Couldn't read the server connection") });
-      });
-    return () => {
-      cancelled = true;
-    };
+  const refresh = useCallback(async () => {
+    const started = generation.current;
+    try {
+      const s = await api.localSyncStatus();
+      if (!loaded.current) {
+        // A first load that failed showed an error; this one replaces it.
+        loaded.current = true;
+        setStatus(null);
+      }
+      if (started === generation.current) setSync(s);
+    } catch (e) {
+      // Only the first load reports: a missed poll is retried in 3 s.
+      if (!loaded.current) setStatus({ tone: "error", text: errorText(e, "Couldn't read the server connection") });
+    }
   }, []);
 
+  // Follows syncs (and a revoke on the server) while the page is open and
+  // visible: one loop, one request at a time.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    let inFlight = false;
+    const tick = async () => {
+      inFlight = true;
+      if (document.visibilityState === "visible") await refresh();
+      inFlight = false;
+      if (!cancelled) timer = window.setTimeout(() => void tick(), POLL_MS);
+    };
+    // Coming back: poll at once instead of waiting out the timer, unless a
+    // request is running (its loop schedules the next one).
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || inFlight) return;
+      clearTimeout(timer);
+      void tick();
+    };
+    void tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [refresh]);
+
   const pair = useCallback(async (input: PairInput) => {
+    generation.current++;
     setBusy(true);
     setStatus(null);
     try {
@@ -65,6 +103,7 @@ export function ServerSettings() {
   }, []);
 
   const disconnect = async () => {
+    generation.current++;
     setBusy(true);
     setStatus(null);
     try {
@@ -74,6 +113,19 @@ export function ServerSettings() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const syncNow = async () => {
+    setBusy(true);
+    setStatus(null);
+    try {
+      await api.localSyncNow();
+    } catch (e) {
+      setStatus({ tone: "error", text: errorText(e, "Couldn't start the sync") });
+    } finally {
+      setBusy(false);
+    }
+    await refresh();
   };
 
   const scanned = (link: { server: string; code: string }) => {
@@ -100,7 +152,7 @@ export function ServerSettings() {
             description={
               connected.revoked
                 ? "The server disconnected this phone. Pair it again with a new code from the server — the notes on this phone stay."
-                : "This phone is paired with your Nexote server. Sync follows in the next version."
+                : "This phone keeps its notes in sync with your account on the server, both ways."
             }
           >
             <InfoItem name="Server" value={connected.server} mono />
@@ -123,6 +175,7 @@ export function ServerSettings() {
               </Button>
             </SettingItem>
           </SettingGroup>
+          {!connected.revoked && <SyncGroup sync={connected} busy={busy} onSyncNow={() => void syncNow()} />}
           {connected.revoked && !repairing && (
             <SettingGroup heading="Pair again">
               <SettingItem name="Pair this phone again" description="Needs a new code from the server's Settings › Devices.">
@@ -138,7 +191,7 @@ export function ServerSettings() {
         </>
       ) : (
         <PairForm
-          intro="Pairing connects this phone to your Nexote server, so your notes can sync between them. Sync follows in the next version."
+          intro="Pairing keeps the notes on this phone and your account's notes on a Nexote server in sync, both ways. The first sync merges both sides; nothing is deleted."
           busy={busy}
           onScan={() => setScanning(true)}
           onPair={(input) => void pair(input)}
@@ -169,6 +222,49 @@ export function ServerSettings() {
         />
       )}
     </SettingsPage>
+  );
+}
+
+type ConnectedSync = Extract<LocalSyncStatus, { connected: true }>;
+
+/** How syncing goes: when it last ran, what's waiting, the last problem. */
+function SyncGroup({ sync, busy, onSyncNow }: { sync: ConnectedSync; busy: boolean; onSyncNow: () => void }) {
+  const { syncing, lastSyncAt, lastError, lastConflicts, pending } = sync;
+  return (
+    <SettingGroup heading="Sync">
+      <SettingItem
+        name={syncing ? "Syncing…" : lastSyncAt ? `Synced ${timeAgo(lastSyncAt)}` : "Not synced yet"}
+        description={
+          pending > 0 ? `${pending} change${pending === 1 ? "" : "s"} on this phone waiting to be sent.` : undefined
+        }
+      >
+        <Button disabled={busy || syncing} onClick={onSyncNow}>
+          <RefreshCw className={syncing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+          Sync now
+        </Button>
+      </SettingItem>
+      {lastError && (
+        <SettingItem
+          name="The last sync failed"
+          description={
+            <>
+              <StatusText status={{ tone: "error", text: lastError }} /> Check the phone's internet connection and
+              that the server is reachable.
+            </>
+          }
+        />
+      )}
+      {lastConflicts > 0 && (
+        <SettingItem
+          name="Edited on both sides"
+          description={
+            lastConflicts === 1
+              ? "1 note was edited on both sides; the phone's version was saved as “(offline copy)”."
+              : `${lastConflicts} notes were edited on both sides; the phone's versions were saved as “(offline copy)”.`
+          }
+        />
+      )}
+    </SettingGroup>
   );
 }
 

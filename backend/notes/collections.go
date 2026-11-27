@@ -232,6 +232,29 @@ func (r *CollectionRegistry) Delete(id string) error {
 	return r.writeLocked(out)
 }
 
+// Put stores col as given, replacing the collection with its id in place
+// (keeping its position in the list) or appending it. Sync uses it to take
+// a peer's definition verbatim, built-in flags and all.
+func (r *CollectionRegistry) Put(col CollectionMeta) error {
+	if col.ID == "" {
+		return errors.New("collection id cannot be empty")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cols, err := r.readLocked()
+	if err != nil {
+		return err
+	}
+	for i := range cols {
+		if cols[i].ID == col.ID {
+			cols[i] = col
+			return r.writeLocked(cols)
+		}
+	}
+	return r.writeLocked(append(cols, col))
+}
+
 func (r *CollectionRegistry) readLocked() ([]CollectionMeta, error) {
 	data, err := os.ReadFile(r.registryPath())
 	if err != nil {

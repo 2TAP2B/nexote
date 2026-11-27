@@ -41,7 +41,7 @@ More screenshots, including the phone app, are in the [documentation](https://2t
 - Touch interface for phones and tablets at the same address as the desktop one, chosen per device (switchable in Settings › General).
 - Four swipeable panes: spaces, note tree, note, and table of contents or quick notes.
 - Bottom pill navigation, bottom sheets, a toolbar above the keyboard, chrome that hides while scrolling, haptic feedback.
-- Android app without a server: notes stay as Markdown files in a folder on the phone, "Share to Nexote" opens Quick notes, and Settings › Devices pairs the app with your server by QR code. The signed APK is attached to every [release](https://github.com/2TAP2B/nexote/releases) (Obtainium works with this repository).
+- Android app that works without a server: notes stay as Markdown files in a folder on the phone, "Share to Nexote" opens Quick notes, and once paired with your server by QR code (Settings › Devices) it syncs both ways, with offline copies when a note changed on both sides. The signed APK is attached to every [release](https://github.com/2TAP2B/nexote/releases) (Obtainium works with this repository).
 
 **Quick notes**
 - Messenger-style Notepad for short memos, with images and `@` note links.

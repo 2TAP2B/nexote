@@ -20,6 +20,7 @@ type devicePayload struct {
 	Platform   string    `json:"platform"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
+	LastSyncAt time.Time `json:"lastSyncAt,omitzero"`
 }
 
 // deviceRef and syncUser are the device and account a paired app shows.
@@ -110,7 +111,7 @@ func (h *Handler) listDevices(w http.ResponseWriter, r *http.Request) {
 	out := make([]devicePayload, 0, len(devices))
 	for _, d := range devices {
 		out = append(out, devicePayload{
-			ID: d.ID, Name: d.Name, Platform: d.Platform, CreatedAt: d.CreatedAt, LastSeenAt: d.LastSeenAt,
+			ID: d.ID, Name: d.Name, Platform: d.Platform, CreatedAt: d.CreatedAt, LastSeenAt: d.LastSeenAt, LastSyncAt: d.LastSyncAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": out})

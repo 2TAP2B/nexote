@@ -20,6 +20,9 @@ type Device struct {
 	TokenHash  string    `json:"tokenHash"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
+	// LastSyncAt is the last completed sync, shown in the device list so a
+	// user can tell a stale phone from an active one. Zero until it syncs.
+	LastSyncAt time.Time `json:"lastSyncAt,omitzero"`
 }
 
 // pairing is an unredeemed pairing code. Redeeming deletes it, so a code
@@ -253,6 +256,30 @@ func (s *Store) DeleteDevice(userID, id string) error {
 		}
 	}
 	return ErrNotFound
+}
+
+// TouchDeviceSync records that the user's device just finished a sync and
+// returns the time stored. A sync is also use, so LastSeenAt moves with it.
+// Other users' devices are ErrNotFound.
+func (s *Store) TouchDeviceSync(userID, deviceID string) (time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	devices, err := s.devices.load()
+	if err != nil {
+		return time.Time{}, err
+	}
+	now := s.now().UTC()
+	for i := range devices {
+		if devices[i].ID == deviceID && devices[i].UserID == userID {
+			devices[i].LastSyncAt = now
+			devices[i].LastSeenAt = now
+			if err := s.devices.save(devices); err != nil {
+				return time.Time{}, err
+			}
+			return now, nil
+		}
+	}
+	return time.Time{}, ErrNotFound
 }
 
 // activeUser returns the account with the id unless it is missing or

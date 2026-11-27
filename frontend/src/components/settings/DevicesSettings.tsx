@@ -7,6 +7,7 @@ import { QrCode } from "@/components/QrCode";
 import { ConfirmDialog, ResponsiveDialog } from "@/components/ResponsiveDialog";
 import { api, type PairedDevice, type PairingCode } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
+import { timeAgo } from "@/lib/time-ago";
 import {
   Button,
   SettingGroup,
@@ -20,26 +21,6 @@ import {
 
 const dateFormat: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" };
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, dateFormat);
-
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["year", 365 * 24 * 3600],
-  ["month", 30 * 24 * 3600],
-  ["week", 7 * 24 * 3600],
-  ["day", 24 * 3600],
-  ["hour", 3600],
-  ["minute", 60],
-];
-
-// "3 hours ago"; the server touches lastSeenAt at most hourly, so anything
-// under a minute is "just now".
-function ago(iso: string): string {
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-  for (const [unit, size] of UNITS) {
-    if (seconds >= size) return relative.format(-Math.floor(seconds / size), unit);
-  }
-  return "just now";
-}
 
 const platformLabel = (platform: string) =>
   platform === "android" ? "Android" : platform ? platform[0].toUpperCase() + platform.slice(1) : "Device";
@@ -108,7 +89,11 @@ export function DevicesSettings() {
               description={[
                 platformLabel(d.platform),
                 `paired ${day(d.createdAt)}`,
-                d.lastSeenAt ? `last seen ${ago(d.lastSeenAt)}` : "not used yet",
+                d.lastSyncAt
+                  ? `last sync ${timeAgo(d.lastSyncAt)}`
+                  : d.lastSeenAt
+                    ? `last seen ${timeAgo(d.lastSeenAt)}`
+                    : "not used yet",
               ].join(" · ")}
             >
               <Button variant="danger" onClick={() => setRemoving(d)}>

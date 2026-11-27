@@ -125,15 +125,24 @@ func (h *Handler) deleteSpace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, errors.New("you can't delete your only space"))
 		return
 	}
+	if err := h.removeSpace(space); err != nil {
+		h.writeRegistryError(w, err)
+		return
+	}
+	h.publishSpaces(space.ID, memberIDs(space))
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// removeSpace deletes a space with all its vaults, notes and collection
+// definitions (the route and sync both use it).
+func (h *Handler) removeSpace(space notes.Space) error {
 	vaults, err := h.Registry.ListSpace(space.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		return err
 	}
 	for _, v := range vaults {
 		if err := h.Registry.DeleteWithSpace(v.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+			return err
 		}
 	}
 	h.colMu.Lock()
@@ -142,12 +151,7 @@ func (h *Handler) deleteSpace(w http.ResponseWriter, r *http.Request) {
 	if err := os.RemoveAll(filepath.Join(h.home, "spaces", space.ID)); err != nil {
 		log.Printf("delete space %s: %v", space.ID, err)
 	}
-	if err := h.Spaces.Delete(space.ID); err != nil {
-		h.writeRegistryError(w, err)
-		return
-	}
-	h.publishSpaces(space.ID, memberIDs(space))
-	w.WriteHeader(http.StatusNoContent)
+	return h.Spaces.Delete(space.ID)
 }
 
 // memberPayload is a space member as listed in the space settings.

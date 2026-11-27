@@ -1,6 +1,6 @@
 # Android app
 
-The Android app runs Nexote on the phone itself, without a server. Notes are Markdown files in a folder on the phone, in the same format as on a server, and the app shows the same [touch interface](./mobile-app) as the browser. The app can be paired with your Nexote server; syncing the notes follows in the next version.
+The Android app runs Nexote on the phone itself, without a server. Notes are Markdown files in a folder on the phone, in the same format as on a server, and the app shows the same [touch interface](./mobile-app) as the browser. Paired with your Nexote server, the app keeps the phone and your account in sync both ways, and keeps working without a connection.
 
 ## Install
 
@@ -32,20 +32,37 @@ Everything in the interface works on the phone alone: notes, the editor, journal
 
 ## Settings › Storage
 
-**Settings › Storage** shows the folder the app uses. **Change folder** opens the system folder picker. Another folder is a separate set of notes: the notes in the old folder stay there, and the app opens the new folder's notes, or an empty set.
+**Settings › Storage** shows the folder the app uses. **Change folder** opens the system folder picker. Another folder is a separate set of notes on the phone: the notes in the old folder stay there, and the app opens the new folder's notes, or an empty set. When the phone is paired, the new folder is merged with your account like a first sync.
 
-## Settings › Server
+## Sync with your server
 
-Pairing connects the app to your Nexote server, so it can sync with your account there.
+### Pairing
 
 1. On the server, open **Settings › Devices** and choose **Connect**. It shows a QR code, the server address and a code, valid for 10 minutes and usable once.
 2. In the app, open **Settings › Server** and choose **Scan QR code**. Without a camera, or on the same phone, use **Copy link** on the server and paste the link in the app, or enter the address and the code.
 
-The app gets a key of its own that only works for syncing: it can't sign in to the server or change the account. The server keeps only a hash of it; the app keeps it encrypted with a key from the Android keystore, outside the notes folder. **Settings › Devices** on the server lists the paired phones with the last contact, and **Disconnect** there stops the key at once. A phone that hasn't contacted the server for 180 days is disconnected automatically.
+The app gets a key of its own that only works for syncing: it can't sign in to the server or change the account. The server keeps only a hash of it; the app keeps it encrypted with a key from the Android keystore, outside the notes folder. **Settings › Devices** on the server lists the paired phones with their last sync, and **Disconnect** there stops the key at once. A phone that hasn't contacted the server for 180 days is disconnected automatically.
 
 The server address has to start with `https://` and have a certificate Android trusts: a public one, or one from a certificate authority you installed on the phone under **Settings › Security › Encryption & credentials**. Plain `http://` only works for `localhost`, for development.
 
-**Disconnect** in the app unpairs the phone; the notes on it stay.
+### What syncs
+
+Everything in the spaces you own on the server: vaults with their notes, folders and folder colors, images and PDFs, collections, bookmarks and shortcuts, plus your journal and Quick notes, and where your Notepad lives. Shared spaces you are only a member of stay on the server for now. Note history, AI settings and the server's settings don't sync.
+
+The phone syncs when the app opens, about 10 seconds after a change, every 2 minutes while it runs, and in the background about every 15 minutes when there is a network connection. **Settings › Server** shows when it last synced and has **Sync now**.
+
+### The first sync
+
+The first sync after pairing merges both sides; nothing is deleted. The phone's own space, its Default vault and its Collections vault become the matching ones of your account, other vaults are copied over in both directions, and if both sides have a Notepad or a journal entry for the same day, their entries are combined into one.
+
+### Changes on both sides
+
+- A note changed only on one side is updated on the other side, and a deleted note is deleted on the other side too. The last version of a note that sync deletes stays in that side's note history.
+- A note changed on both sides keeps the server's version. The phone's version is saved next to it as "*title* (offline copy)", on the phone and on the server. **Settings › Server** says how many offline copies the last sync made.
+- A note deleted on one side but changed on the other is kept.
+- An emptied or replaced notes folder never empties your account: the app keeps an id in the folder's hidden `.nexote` folder, and a folder it doesn't recognize is merged like a first sync.
+
+**Disconnect** in the app unpairs the phone and stops syncing; the notes on it stay.
 
 ## Your files
 

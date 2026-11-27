@@ -94,3 +94,21 @@ func TestStartKeepsOnePortAcrossFolders(t *testing.T) {
 		t.Error("engine still answers after Stop")
 	}
 }
+
+func TestStartIfIdleNeverSwitchesTheRunningFolder(t *testing.T) {
+	t.Cleanup(Stop)
+	dir := t.TempDir()
+	port, err := StartIfIdle(filepath.Join(dir, "page"), 0, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, err := StartIfIdle(filepath.Join(dir, "worker"), 0, "other"); err != nil || again != port {
+		t.Fatalf("StartIfIdle with an engine running: %d, %v; want %d", again, err, port)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "worker")); err == nil {
+		t.Error("the worker's folder was opened")
+	}
+	if code := authStatusCode(t, port, "s"); code != http.StatusOK {
+		t.Errorf("the running engine changed: status %d with its secret", code)
+	}
+}

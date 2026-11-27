@@ -94,6 +94,20 @@ func (l *idList) Sorted() ([]string, error) {
 	return sorted, nil
 }
 
+// Replace stores exactly ids (duplicates dropped, first occurrence kept),
+// for sync taking over a peer's list wholesale.
+func (l *idList) Replace(ids []string) error {
+	seen := make(map[string]bool, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return l.write(out)
+}
+
 func (l *idList) write(ids []string) error {
 	if ids == nil {
 		ids = []string{}

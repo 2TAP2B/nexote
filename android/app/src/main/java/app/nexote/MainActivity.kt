@@ -62,7 +62,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private lateinit var prefs: AppPrefs
-    private val engineHost by lazy { EngineHost(applicationContext) }
     private lateinit var root: FrameLayout
     private lateinit var webContainer: FrameLayout
     private lateinit var overlay: FrameLayout
@@ -129,6 +128,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         prefs = AppPrefs(this)
         pageTheme = prefs.pageTheme
+        SyncWorker.schedule(this)
         applySystemBars()
         setContentView(R.layout.activity_main)
         root = findViewById(R.id.root)
@@ -187,6 +187,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (screen !is Screen.Setup) ensureEngine()
+        // Back in the app: catch up with the paired server now (queued after the start above;
+        // a no-op when not paired).
+        if (screen == Screen.Web && runningPort != null) engineThread.execute { runCatching { Mobile.syncNow() } }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -428,21 +431,11 @@ class MainActivity : ComponentActivity() {
     private fun startEngine(folder: String, then: (Result<Int>) -> Unit) {
         val generation = ++startGeneration
         val port = runningPort ?: prefs.port
-        val secret = prefs.secret
         engineThread.execute {
-            val result = runCatching {
-                // Every start: the activity (and with it the host) may be new, and the user may
-                // have installed or removed a CA certificate since the last one.
-                Mobile.setHost(engineHost)
-                Mobile.setUserCAs(userCaPem())
-                Mobile.start(folder, port.toLong(), secret).toInt()
-            }
+            val result = runCatching { Engine.start(this, prefs, folder, port) }
             runOnUiThread {
                 if (isDestroyed || generation != startGeneration) return@runOnUiThread
-                result.onSuccess { bound ->
-                    runningPort = bound
-                    prefs.keepFirstPort(bound)
-                }
+                result.onSuccess { bound -> runningPort = bound }
                 then(result)
             }
         }

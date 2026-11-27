@@ -1,6 +1,6 @@
 # Sync and offline
 
-The server holds the only copy of the notes that counts. Browsers stay in sync with it through a live event stream, keep a local copy for offline use, and queue changes made without a connection. Separately, an admin can back up the whole data directory to a git repository.
+The server holds the only copy of the notes that counts. Browsers stay in sync with it through a live event stream, keep a local copy for offline use, and queue changes made without a connection. The [Android app](./android-app) keeps a full copy on the phone and syncs it with your account both ways. Separately, an admin can back up the whole data directory to a git repository.
 
 ## Live updates
 
@@ -8,7 +8,7 @@ Every open Nexote tab keeps a server-sent event connection to `/api/events`. The
 
 | Event | Sent when | What the browser does |
 | --- | --- | --- |
-| `note-change` | A note was saved | Reloads the note if it is open and the server copy is newer. A note you typed in during the last 1.5 seconds is left alone. |
+| `note-change` | A note was saved | Reloads the note if it is open and the server has another version of it (newer, or older from a phone with a slow clock). A note you typed in during the last 1.5 seconds is left alone. |
 | `tree-change` | Notes or folders were created, moved or deleted | Reloads the note list of that vault. |
 | `spaces-change` | Spaces, members or vaults changed | Reloads spaces and vaults. |
 

@@ -2,6 +2,7 @@ package notes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,10 +112,24 @@ func (r *VaultRegistry) List() ([]VaultMeta, error) {
 	return vaults, nil
 }
 
+// ErrVaultExists is returned when a vault is created or rekeyed to an id
+// that is already registered.
+var ErrVaultExists = errors.New("vault id already exists")
+
 // Create registers a new vault with the given name in a space. Names are
 // unique per space; the directory under the vaults root gets a number
 // suffix when another space already uses the name.
 func (r *VaultRegistry) Create(name, icon, spaceID string) (VaultMeta, error) {
+	return r.CreateWithID(NewID(), name, icon, spaceID, "")
+}
+
+// CreateWithID is Create with a caller-chosen id and type, for a vault that
+// already exists elsewhere (a synced device or server) and must keep its id
+// so both sides keep referring to the same vault.
+func (r *VaultRegistry) CreateWithID(id, name, icon, spaceID, vaultType string) (VaultMeta, error) {
+	if !validID(id) {
+		return VaultMeta{}, fmt.Errorf("invalid vault id %q", id)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -129,12 +144,14 @@ func (r *VaultRegistry) Create(name, icon, spaceID string) (VaultMeta, error) {
 	}
 
 	for _, v := range vaults {
+		if v.ID == id {
+			return VaultMeta{}, ErrVaultExists
+		}
 		if v.SpaceID == spaceID && v.Name == name {
 			return VaultMeta{}, fmt.Errorf("vault %q already exists", name)
 		}
 	}
 
-	id := NewID()
 	vaultPath := r.freeDir(vaults, name, "")
 	if err := os.MkdirAll(vaultPath, 0o755); err != nil {
 		return VaultMeta{}, fmt.Errorf("create vault dir: %w", err)
@@ -145,6 +162,7 @@ func (r *VaultRegistry) Create(name, icon, spaceID string) (VaultMeta, error) {
 		Name:    name,
 		Icon:    icon,
 		Path:    vaultPath,
+		Type:    vaultType,
 		SpaceID: spaceID,
 	}
 	vaults = append(vaults, vault)
@@ -213,6 +231,60 @@ func (r *VaultRegistry) SetSpace(id, spaceID string) error {
 		}
 	}
 	return ErrNotFound
+}
+
+// MoveSpace re-points every vault of space oldSpaceID at newSpaceID, after
+// the space itself was rekeyed (SpaceRegistry.Rekey).
+func (r *VaultRegistry) MoveSpace(oldSpaceID, newSpaceID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	vaults, err := r.read()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := range vaults {
+		if vaults[i].SpaceID == oldSpaceID {
+			vaults[i].SpaceID = newSpaceID
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return r.write(vaults)
+}
+
+// Rekey changes only a vault's id, so it can adopt the id a synced peer
+// knows it by. The directory stays put, so the store cache (keyed by path)
+// and the per-user lists inside the vault stay valid.
+func (r *VaultRegistry) Rekey(oldID, newID string) error {
+	if !validID(newID) {
+		return fmt.Errorf("invalid vault id %q", newID)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	vaults, err := r.read()
+	if err != nil {
+		return err
+	}
+	at := -1
+	for i, v := range vaults {
+		switch v.ID {
+		case oldID:
+			at = i
+		case newID:
+			return ErrVaultExists
+		}
+	}
+	if at < 0 {
+		return ErrNotFound
+	}
+	if oldID == newID {
+		return nil
+	}
+	vaults[at].ID = newID
+	return r.write(vaults)
 }
 
 // SetType records the vault's system type (e.g. the collections vault). It

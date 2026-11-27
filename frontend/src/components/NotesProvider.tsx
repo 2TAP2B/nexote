@@ -10,12 +10,12 @@ import {
   useState,
 } from "react";
 
-import { api, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
+import { api, ApiError, isCollectionsVault, type CollectionMeta, type FolderMeta, type GitConfig, type GitStatusInfo, type Note, type NoteMeta, type SpaceInfo, type TagCount, type TaskItem, type VaultMeta } from "@/lib/api";
 import { migrateLegacyDashboard, type DashSection } from "@/lib/dashboard";
 import { localDateKey, replaceOrAddTitleHeading } from "@/lib/note-utils";
 import { HOME_VAULT, NOTEPAD_TITLE } from "@/lib/notepad";
 import { OPEN_WIKILINK_EVENT } from "@/lib/editor-events";
-import { NOTE_CHANGE_EVENT } from "@/lib/threads";
+import { NOTE_CHANGE_EVENT, TREE_CHANGE_EVENT } from "@/lib/threads";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { isAndroidApp } from "@/lib/app-info";
 import type { InterfaceMode } from "@/lib/shell";
@@ -280,6 +280,16 @@ function readSpaceTabs(spaceId: string): { openTabs: string[]; activeId: string 
   }
 }
 
+/** Old id → new id of spaces and vaults the Android app's engine renamed to
+ *  a server's ids on the first sync (its local `rekey` event). */
+type Rekey = { spaces: Map<string, string>; vaults: Map<string, string> };
+
+// One side of a `rekey` event's data: an object of old id → new id strings.
+function idMap(value: unknown): [string, string][] {
+  if (typeof value !== "object" || value === null) return [];
+  return Object.entries(value).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "");
+}
+
 const NotesContext = createContext<NotesContextValue | null>(null);
 
 export function useNotes() {
@@ -371,6 +381,11 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   // so links and tabs into another space still resolve.
   const [allVaults, setAllVaults] = useState<VaultMeta[]>([]);
   const [spaces, setSpaces] = useState<SpaceInfo[]>([]);
+  // The last applied list, for telling which spaces a refresh removed.
+  const spacesRef = useRef<SpaceInfo[]>(spaces);
+  useEffect(() => {
+    spacesRef.current = spaces;
+  }, [spaces]);
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const vaults = useMemo(
     () => allVaults.filter((v) => v.spaceId === activeSpaceId),
@@ -437,6 +452,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
   const switchSpaceRef = useRef<(id: string) => void>(() => {});
   const refreshSpacesRef = useRef<() => Promise<void>>(async () => {});
   const refreshVaultTreeRef = useRef<(vaultId: string) => Promise<void>>(async () => {});
+  const closeTabRef = useRef<(id: string) => void>(() => {});
+  // Re-keys announced by the engine and not yet applied by refreshSpaces.
+  const rekeyRef = useRef<Rekey>({ spaces: new Map(), vaults: new Map() });
 
   useEffect(() => {
     allVaultsRef.current = allVaults;
@@ -526,49 +544,44 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
 
   // Pull the account's preferences over this device's settings: the server
   // wins, so every device points at the same Notepad. When the account has
-  // none yet (first use), this device's choice is uploaded.
+  // none yet (first use) and `upload` is set, this device's choice is
+  // uploaded.
   const { user, local } = useAuth();
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { prefs } = await api.getPrefs();
-        if (cancelled) return;
-        if (Object.keys(prefs).length === 0) {
-          const local: Record<string, string> = {};
-          for (const k of ACCOUNT_SETTINGS) {
-            const v = settingsRef.current[k];
-            local[k] = typeof v === "boolean" ? String(v) : v;
-          }
-          void api.updatePrefs(local).catch(() => {});
-          return;
-        }
-        const patch: Partial<AppSettings> = {};
-        for (const [k, v] of Object.entries(prefs)) {
-          if (!isAccountSetting(k)) continue;
-          if (k === "notepadInTree") patch.notepadInTree = v === "true";
-          else {
-            const key = k as "notepadVault" | "notepadFolder" | "memoNoteVault" | "memoNoteFolder";
-            patch[key] = v;
-          }
-        }
-        setSettings((prev) => {
-          const next = { ...prev, ...patch };
-          try {
-            localStorage.setItem("nexote:settings", JSON.stringify(next));
-          } catch {
-            // ignore
-          }
-          return next;
-        });
-      } catch {
-        // Offline or old backend: the device's own settings stay.
+  const pullPrefs = useCallback(async (upload: boolean) => {
+    const { prefs } = await api.getPrefs();
+    if (Object.keys(prefs).length === 0) {
+      if (!upload) return;
+      const local: Record<string, string> = {};
+      for (const k of ACCOUNT_SETTINGS) {
+        const v = settingsRef.current[k];
+        local[k] = typeof v === "boolean" ? String(v) : v;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
+      void api.updatePrefs(local).catch(() => {});
+      return;
+    }
+    const patch: Partial<AppSettings> = {};
+    for (const [k, v] of Object.entries(prefs)) {
+      if (!isAccountSetting(k)) continue;
+      if (k === "notepadInTree") patch.notepadInTree = v === "true";
+      else {
+        const key = k as "notepadVault" | "notepadFolder" | "memoNoteVault" | "memoNoteFolder";
+        patch[key] = v;
+      }
+    }
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem("nexote:settings", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    // Offline or old backend: the device's own settings stay.
+    void pullPrefs(true).catch(() => {});
+  }, [user?.id, pullPrefs]);
 
   const activeVault = useMemo(
     () => vaults.find((v) => v.id === activeVaultId) ?? null,
@@ -695,6 +708,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       }),
     );
     setMarksByVault((prev) => ({ ...prev, ...marks }));
+    return data;
   }, []);
 
   // Load spaces + vaults on mount, then pick the space (the one a deep link
@@ -1062,16 +1076,66 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // After vaults vanished: open notes that lived in them are re-read from
+  // where they are now (a re-keyed vault; bodies may have changed, e.g. image
+  // URLs), and tabs of notes that are gone close instead of showing a note
+  // whose saves would fail. Journal tabs are checked too: the first sync
+  // merges a daily note made on the phone into the server's, and the phone's
+  // id disappears.
+  const reconcileOpenNotes = useCallback(
+    async (
+      goneVaults: Set<string>,
+      oldNoteVaults: Record<string, string>,
+      addedData: Record<string, { notes: NoteMeta[] }>,
+    ) => {
+      const where: Record<string, string> = {};
+      for (const [vid, data] of Object.entries(addedData)) for (const n of data.notes) where[n.id] = vid;
+      const ids = new Set([...openTabsRef.current, ...Object.keys(notesByIdRef.current)]);
+      ids.delete(DASHBOARD_ID);
+      await Promise.all(
+        [...ids].map(async (id) => {
+          const before = oldNoteVaults[id];
+          const journal = !before && journalIdsRef.current.has(id);
+          // Notes in vaults that are still there are untouched.
+          if (!journal && (!before || !goneVaults.has(before))) return;
+          const vid = journal ? null : where[id];
+          if (!journal && !vid) {
+            closeTabRef.current(id);
+            return;
+          }
+          try {
+            const fresh = vid ? await api.get(vid, id) : await api.journalGet(id);
+            if (vid && id === activeIdRef.current) replaceNoteUrl(id, vid, false);
+            // Never swap the body under someone typing; the next live update will.
+            if (id === activeIdRef.current && Date.now() - lastEditAtRef.current < 1500) return;
+            setNotesById((prev) => (prev[id] && prev[id].body !== fresh.body ? { ...prev, [id]: fresh } : prev));
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 404) closeTabRef.current(id);
+          }
+        }),
+      );
+    },
+    [],
+  );
+
   // Reload spaces and vaults: after creating, leaving or deleting a space,
   // and when the server says membership or vaults changed (SSE). Loads data
   // for new vaults, drops data of vaults no longer reachable, and leaves a
-  // space that is gone.
+  // space that is gone — for its re-keyed counterpart when the engine named
+  // one (`rekey` event), carrying the tab strip and stored choices along.
   const refreshSpaces = useCallback(async () => {
     const [spaceRes, vaultRes] = await Promise.all([api.listSpaces(), api.listVaults()]);
     const spaceList = spaceRes.spaces ?? [];
     const list = vaultRes.vaults ?? [];
-    const known = new Set(allVaultsRef.current.map((v) => v.id));
+    const oldVaults = allVaultsRef.current;
+    const rekeyed = rekeyRef.current;
+    const known = new Set(oldVaults.map((v) => v.id));
     const reachable = new Set(list.map((v) => v.id));
+    const goneSpaces = spacesRef.current.filter((s) => !spaceList.some((n) => n.id === s.id));
+    const goneVaults = new Set(oldVaults.filter((v) => !reachable.has(v.id)).map((v) => v.id));
+    // Where open notes lived before this refresh (the map follows state).
+    const oldNoteVaults = noteVaultMapRef.current;
+    spacesRef.current = spaceList;
     setSpaces(spaceList);
     applyVaults(list);
     const keep = <T,>(prev: Record<string, T>) =>
@@ -1079,15 +1143,57 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
     setAllVaultData(keep);
     setMarksByVault(keep);
     const current = activeSpaceIdRef.current;
-    if (!spaceList.some((s) => s.id === current)) {
-      if (spaceList[0]) switchSpace(spaceList[0].id);
-    } else if (!list.some((v) => v.id === activeVaultIdRef.current)) {
-      const next = list.find((v) => v.spaceId === current && !isCollectionsVault(v));
-      if (next) switchVault(next.id);
+    const activeVault = activeVaultIdRef.current;
+    const movedVault = activeVault ? rekeyed.vaults.get(activeVault) : undefined;
+    if (current && !spaceList.some((s) => s.id === current)) {
+      const target = rekeyed.spaces.get(current);
+      if (target) {
+        // Re-keyed: the same space under a new id keeps its tabs and vault.
+        try {
+          if (!readSpaceTabs(target)) {
+            localStorage.setItem(
+              spaceTabsKey(target),
+              JSON.stringify({ openTabs: openTabsRef.current, activeId: activeIdRef.current }),
+            );
+          }
+          const vault = movedVault ?? activeVault;
+          if (vault && list.some((v) => v.id === vault && v.spaceId === target)) {
+            localStorage.setItem(spaceVaultKey(target), vault);
+          }
+        } catch {
+          // ignore
+        }
+        switchSpace(target);
+      } else if (spaceList[0]) {
+        switchSpace(spaceList[0].id);
+      }
+    } else if (!list.some((v) => v.id === activeVault)) {
+      const next = movedVault ?? list.find((v) => v.spaceId === current && !isCollectionsVault(v))?.id;
+      if (next) switchVault(next);
     }
+    // Stashed strips of spaces that are gone would never be read again.
+    try {
+      for (const s of goneSpaces) {
+        localStorage.removeItem(spaceTabsKey(s.id));
+        localStorage.removeItem(spaceVaultKey(s.id));
+      }
+    } catch {
+      // ignore
+    }
+    // This device's own choice follows a re-key or falls back to the default.
+    // The account's (Notepad, memo notes) are never written from here: they
+    // reach every device, and the engine re-keys them itself — read them
+    // again instead.
+    const s = settingsRef.current;
+    if (goneVaults.has(s.startVaultId)) updateSettings({ startVaultId: rekeyed.vaults.get(s.startVaultId) ?? "" });
+    if (goneVaults.has(s.notepadVault) || goneVaults.has(s.memoNoteVault)) void pullPrefs(false).catch(() => {});
+    // Applied now; the rest of a re-key (if any) waits for its own refresh.
+    for (const g of goneSpaces) rekeyed.spaces.delete(g.id);
+    for (const id of goneVaults) rekeyed.vaults.delete(id);
     const added = list.filter((v) => !known.has(v.id));
-    if (added.length) await loadVaultData(added);
-  }, [applyVaults, loadVaultData, switchSpace, switchVault]);
+    const addedData = added.length ? await loadVaultData(added) : {};
+    if (goneVaults.size > 0) await reconcileOpenNotes(goneVaults, oldNoteVaults, addedData);
+  }, [applyVaults, loadVaultData, pullPrefs, reconcileOpenNotes, switchSpace, switchVault, updateSettings]);
 
   const createSpace = useCallback(
     async (name: string, icon?: string) => {
@@ -1291,6 +1397,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
   }, [noteVaultMap]);
+  useEffect(() => {
+    closeTabRef.current = closeTab;
+  }, [closeTab]);
 
   const create = useCallback(
     async (input?: { title?: string; path?: string; vaultId?: string; rename?: boolean }) => {
@@ -1670,7 +1779,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
         ) {
           return;
         }
-        if (Date.parse(cached.updatedAt) >= Date.parse(updatedAt)) return;
+        // Any other version replaces the cached one, older ones too: a sync
+        // writes the other side's note with that side's timestamps (and
+        // the phone's clock may lag the server's), so "newer" isn't a test.
+        if (Date.parse(cached.updatedAt) === Date.parse(updatedAt)) return;
         void (async () => {
           try {
             const fresh =
@@ -1679,7 +1791,7 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
                 : await api.get(vaultId, id);
             setNotesById((prev) => {
               const cur = prev[id];
-              if (!cur || Date.parse(cur.updatedAt) >= Date.parse(fresh.updatedAt)) {
+              if (!cur || Date.parse(cur.updatedAt) === Date.parse(fresh.updatedAt)) {
                 return prev;
               }
               return { ...prev, [id]: fresh };
@@ -1699,6 +1811,9 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         if (typeof vaultId !== "string") return;
+        // For views that hold notes of a vault outside the provider's cache
+        // (quick notes: its Notepad may have been replaced).
+        window.dispatchEvent(new CustomEvent(TREE_CHANGE_EVENT, { detail: { vaultId } }));
         const id = vaultId;
         window.clearTimeout(treeTimers.get(id));
         treeTimers.set(
@@ -1709,10 +1824,27 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           }, 300),
         );
       });
+      // The Android app's engine renamed spaces/vaults to a server's ids
+      // (first sync); sent just before the spaces-change that applies it.
+      es.addEventListener("rekey", (event) => {
+        let data: unknown;
+        try {
+          data = JSON.parse(event instanceof MessageEvent ? String(event.data) : "");
+        } catch {
+          return;
+        }
+        if (typeof data !== "object" || data === null) return;
+        const { spaces, vaults } = rekeyRef.current;
+        for (const [from, to] of idMap("spaces" in data ? data.spaces : null)) spaces.set(from, to);
+        for (const [from, to] of idMap("vaults" in data ? data.vaults : null)) vaults.set(from, to);
+      });
       // The user's spaces, a space's members, vaults or collections changed.
+      // The data reload waits for the new lists: run alongside, it would
+      // reload (and replace the marks of) vaults that may have just vanished.
       es.addEventListener("spaces-change", () => {
-        void refreshSpacesRef.current().catch(() => {});
-        window.dispatchEvent(new Event("nexote:refresh-data"));
+        void refreshSpacesRef.current()
+          .catch(() => {})
+          .finally(() => window.dispatchEvent(new Event("nexote:refresh-data")));
       });
       // Reconnected after a drop: events sent meanwhile are lost, so reload
       // the trees and the open notes that changed.
@@ -1726,10 +1858,10 @@ export function NotesProvider({ children }: { children: React.ReactNode }) {
           if (!vaultId || id === activeIdRef.current && Date.now() - lastEditAtRef.current < 1500) continue;
           void (vaultId === "journal" ? api.journalGet(id) : api.get(vaultId, id))
             .then((fresh) => {
-              if (Date.parse(fresh.updatedAt) <= Date.parse(cached.updatedAt)) return;
+              if (Date.parse(fresh.updatedAt) === Date.parse(cached.updatedAt)) return;
               setNotesById((prev) => {
                 const cur = prev[id];
-                if (!cur || Date.parse(cur.updatedAt) >= Date.parse(fresh.updatedAt)) return prev;
+                if (!cur || Date.parse(cur.updatedAt) === Date.parse(fresh.updatedAt)) return prev;
                 return { ...prev, [id]: fresh };
               });
             })

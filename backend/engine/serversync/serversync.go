@@ -34,6 +34,9 @@ type Host interface {
 	SaveSecret(name, value string) error
 	// DeviceName is how the server lists this device, e.g. "Google Pixel 8".
 	DeviceName() string
+	// StateDir is an existing app-private directory for the sync state
+	// (the base of the last sync), never the user-visible data folder.
+	StateDir() string
 }
 
 // secretName is the Host secret holding the connection as JSON.
@@ -46,8 +49,13 @@ const (
 	// unpairTimeout bounds the best-effort unpair calls, so disconnecting
 	// from an unreachable server doesn't keep the user waiting long.
 	unpairTimeout = 10 * time.Second
-	// maxBody bounds what is read from the server and from the page.
-	maxBody = 1 << 20
+	// maxBody bounds what is read from the page and from the server (a
+	// sync manifest of a large vault is several MB).
+	maxBody = 64 << 20
+	// maxAttachment bounds a downloaded attachment (PDFs may be 50 MB).
+	maxAttachment = 64 << 20
+	// attachmentTimeout bounds one attachment transfer.
+	attachmentTimeout = 5 * time.Minute
 
 	defaultDeviceName = "Android device"
 	maxDeviceName     = 64
@@ -95,6 +103,12 @@ type Service struct {
 	loaded    bool
 	creds     *credentials
 	lastCheck time.Time
+
+	// sched is the sync scheduler, running while a local handler is
+	// attached (see scheduler.go).
+	sched scheduler
+	// localHook wraps the device's side of a run (tests inject failures).
+	localHook func(side) side
 }
 
 // New returns a Service keeping its connection in host and trusting the
@@ -124,6 +138,13 @@ func (s *Service) httpClient() *http.Client {
 		s.client = newHTTPClient(s.userCAs)
 	}
 	return s.client
+}
+
+// attachmentClient is httpClient with a time limit fit for large files.
+func (s *Service) attachmentClient() *http.Client {
+	c := *s.httpClient()
+	c.Timeout = attachmentTimeout
+	return &c
 }
 
 // current returns the saved connection (nil if none), reading it from the
@@ -318,6 +339,10 @@ func (s *Service) pair(ctx context.Context, in pairInput) (*credentials, error) 
 			go s.unpair(old, previous.Token)
 		}
 	}
+	s.cancelRun()
+	s.resetStatus()
+	// The first sync aligns the device with the account right away.
+	s.SyncNow()
 	return next, nil
 }
 
@@ -333,6 +358,7 @@ func (s *Service) disconnect() error {
 	if c == nil {
 		return nil
 	}
+	s.cancelRun()
 	if server, err := ParseServer(c.Server); err == nil && !c.Revoked {
 		s.unpair(server, c.Token)
 	}
@@ -341,6 +367,8 @@ func (s *Service) disconnect() error {
 	if err := s.save(nil); err != nil {
 		return fmt.Errorf("Can't forget the server connection: %v", err)
 	}
+	removeState(s.host.StateDir())
+	s.resetStatus()
 	return nil
 }
 
@@ -371,6 +399,8 @@ type serverError struct {
 	host    string
 	status  int
 	message string
+	// code is the sync API's error code ("conflict", "refused", …).
+	code string
 }
 
 func (e *serverError) Error() string {
@@ -378,6 +408,16 @@ func (e *serverError) Error() string {
 		return e.message
 	}
 	return fmt.Sprintf("%s answered with an error (%d %s).", e.host, e.status, http.StatusText(e.status))
+}
+
+// newServerError reads the server's {"error", "code"} answer.
+func newServerError(server *url.URL, status int, data []byte) *serverError {
+	var answer struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	_ = json.Unmarshal(data, &answer)
+	return &serverError{host: server.Host, status: status, message: strings.TrimSpace(answer.Error), code: answer.Code}
 }
 
 // call sends a JSON request (body may be nil) to server, authenticated with
@@ -412,11 +452,7 @@ func (s *Service) call(ctx context.Context, server *url.URL, method, path, token
 		return describeError(server, err)
 	}
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		var answer struct {
-			Error string `json:"error"`
-		}
-		_ = json.Unmarshal(data, &answer)
-		return &serverError{host: server.Host, status: res.StatusCode, message: strings.TrimSpace(answer.Error)}
+		return newServerError(server, res.StatusCode, data)
 	}
 	if out == nil {
 		return nil

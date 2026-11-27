@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -78,3 +80,13 @@ func (h *fileHost) SaveSecret(name, value string) error {
 }
 
 func (h *fileHost) DeviceName() string { return h.name }
+
+// StateDir keeps the sync state next to the secrets file
+// (<secrets without .json>.state/), outside the data folder.
+func (h *fileHost) StateDir() string {
+	dir := strings.TrimSuffix(h.path, ".json") + ".state"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Printf("sync state dir: %v", err)
+	}
+	return dir
+}
