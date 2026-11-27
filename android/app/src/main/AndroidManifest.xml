@@ -20,9 +20,14 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
-    <!-- Voice memos and the camera; asked for only when the page wants them. -->
+    <!-- Voice memos and the camera; asked for only when the page wants them.
+         MODIFY_AUDIO_SETTINGS is a normal (install-time) permission the
+         WebView's audio capture needs: without it getUserMedia fails with
+         NotReadableError on many devices while Chrome (which has it) records
+         fine. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <uses-feature
         android:name="android.hardware.camera"
